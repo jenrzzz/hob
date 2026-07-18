@@ -21,7 +21,7 @@ hob is the plumbing. The fancy embeddable chat porcelain, when it comes, is **ch
 
 - Multi-tenant SaaS. hob serves one household. Actors exist (Jenner, Tessa, guests, personas), tenants don't.
 - Cryptographic isolation between realms. Single Postgres, trusted service. If the box falls, everything falls; that risk is accepted.
-- A frontend. hob is headless. chatelaine (later) is a separate web-component project.
+- A frontend. hob is headless. chatelaine is a separate project (see [CHATELAINE.md](CHATELAINE.md)) coupled to hob only through the documented API contract.
 
 ---
 
@@ -157,7 +157,7 @@ Per-request: `SET LOCAL app.clearance = '<realm>'` inside the transaction. RLS p
 Recall filtering stops an agent from *knowing*; the IFC gate stops an agent that legitimately knows from *telling*:
 
 - Every tool declares a **sink realm**: where its effects become visible. `add_to_shopping_list → household` (Tessa reads the list), `save_memory → context realm`, `code_execution → none` (sandbox, no audience).
-- Every conversation carries a **taint**: the max realm of anything assembled into its context.
+- Every conversation carries a **taint**: the max realm of anything assembled into its context. Retrieval tools make taint **dynamic**: every tool *result* carries the tool's source realm and can raise the taint mid-conversation, so the gate re-evaluates after every tool result, not once per turn.
 - **The gate:** a tool call whose sink realm < conversation taint is blocked or routed to a human confirmation, per tool policy. The kat companion can *read* the meal plan; its attempt to *write* a note onto it trips the gate.
 
 An audit log records every cross-realm read and every gate decision.
@@ -170,16 +170,20 @@ An audit log records every cross-realm read and every gate decision.
 
 A tool registration = JSON schema + **source/sink realm annotations** + cost class + execution **venue** + auth. hob owns the tool loop (venues make client-side loops untenable); surfaces receive a normalized event stream.
 
+**Tools as context: push a little, pull the rest.** Tools are read paths, not just action paths — mise's `search_recipes` proved this before hob existed. The surface-context stage pushes only *what the user is looking at* (small, stable, one round trip); everything else — the other 400 recipes, the pantry, past plans — is exposed as retrieval tools the model pulls on demand. This beats serializing the surface's world into the prompt every turn, and it's the cache-friendly shape: tool schemas are stable prefix material, while volatile data arrives as tool results at the *end* of context instead of churning the system prompt. Big up-front context blobs are the cache-killer.
+
 **Async tools are first-class.** A call may return a job handle immediately; the conversation continues; the result lands later as a new DAG node and an SSE event. "Transcribe this and tell me when it's done" works in chat. ST structurally cannot do this.
 
 ### Venues
 
-1. **App-hosted** — surfaces register tools with a webhook endpoint (`mise: add_to_meal_plan`). hob calls back with a signed request. Apps own their domain actions.
+1. **App-hosted** — surfaces register tools with a webhook endpoint (`mise: add_to_meal_plan`). hob calls back with a signed request. Apps own their domain actions. The native venue for household surfaces, and the primary one, *because* registration carries the realm annotations the IFC gate needs.
 2. **Native** — `recall`, `remember`, `speak`, `search`. Available to every persona everywhere.
-3. **Sandboxed compute (agentbox)** — a first-class `code_execution` tool driving Coder's REST/CLI, exactly the headless path in `infra/agentbox/coder`: provision from template → execute → return output → teardown. gVisor + fail-closed egress allowlist means personas get real compute with no path to the fleet or secrets — the precondition for letting a roleplay character run code. Two flavors:
+3. **MCP bridge** — hob acts as MCP *client* to consumer-provided MCP servers; an MCP server is just a tool provider whose schemas are discovered (`list_tools`) instead of declared. This is the "home AI substrate" play: existing MCP servers plug in without hob-specific code. MCP has no realm concept, so a server registers with **per-server default source/sink realms and per-tool overrides**, annotated in hob at registration time.
+4. **Client-session** — browser surfaces (chatelaine) can't host webhooks; their tools round-trip over the live connection instead: hob emits the `tool_call` SSE event, the client executes locally and POSTs the result back, the loop resumes. Also the path for client-side capabilities (clipboard, local files) hob should never see.
+5. **Sandboxed compute (agentbox)** — a first-class `code_execution` tool driving Coder's REST/CLI, exactly the headless path in `infra/agentbox/coder`: provision from template → execute → return output → teardown. gVisor + fail-closed egress allowlist means personas get real compute with no path to the fleet or secrets — the precondition for letting a roleplay character run code. Two flavors:
    - **Warm pool** (1–2 live workspaces): sub-second "run this Python" for the calculator/scraper/chart case.
    - **Ephemeral task → PR**: the existing long-job flow, surfaced as an async tool.
-4. **GPU queue** — enqueue a typed job, async result. Below.
+6. **GPU queue** — enqueue a typed job, async result. Below.
 
 ### GPU fabric
 
@@ -227,8 +231,10 @@ providers         id, kind(anthropic|openai_compat|elevenlabs|transient), config
 model_roles       role PK, chain jsonb                  -- ordered provider/model fallbacks
 usage_events      id, principal, surface, role, provider, units jsonb, cost, ref
 
-tools             id, name, schema jsonb, venue(webhook|native|sandbox|queue),
+tools             id, name, schema jsonb, venue(webhook|native|mcp|client|sandbox|queue),
                   source_realm, sink_realm, cost_class, config jsonb
+mcp_servers       id, url, auth jsonb, default_source_realm, default_sink_realm
+                  -- discovered tools land in `tools` with venue=mcp, per-tool overrides
 tool_invocations  ulid, tool_id, conversation_id, status, args, result,
                   gate_decision(allowed|blocked|confirmed)?, job_id?
 
@@ -279,7 +285,9 @@ Python mirrors it (`hob-client`). The clients are where "abstract over all the b
 
 **v1.5 — voice.** ElevenLabs wrap, persona voices, hash-keyed audio cache (kat extraction). Cheap and immediately fun.
 
-**v2 — the fabric.** Tool registry + hob-owned loop + app-hosted webhook tools + the IFC sink gate. Async tool results into the DAG. agentbox `code_execution` (warm pool + ephemeral). Python client; feedcurator's pipeline moves to `hob.complete`. mise moves over — its contextual chat is the assembly pipeline's proving ground. chatelaine v0 (the web component) starts here, with the clearance badge (kat-purple for `intimate`, something warm for `household`).
+> **Resequencing (2026-07-18):** chatelaine has been pulled forward from v2 — it's being built now against a v1 vertical slice (gateway + DAG + assembly pipeline, no workers). The kat worker port moves out of v1 in exchange. See [CHATELAINE.md](CHATELAINE.md).
+
+**v2 — the fabric.** Tool registry + hob-owned loop + the IFC sink gate. Venue order: app-hosted webhooks first (mise is the proving consumer — its four companion tools port directly), MCP bridge second, client-session tools when chatelaine needs them. Async tool results into the DAG. agentbox `code_execution` (warm pool + ephemeral). Python client; feedcurator's pipeline moves to `hob.complete`. mise moves over — its contextual chat is the assembly pipeline's proving ground. chatelaine v0 (the web component) starts here, with the clearance badge (kat-purple for `intimate`, something warm for `household`).
 
 **v3 — the graph and the burst.** Memory extraction pipelines, hybrid recall stage, promotion queue, per-clearance digests. feedcurator's interest profile becomes graph-resident. Rig live-provider mode. RunPod burst with `owned_hardware_only` pinning.
 
@@ -294,7 +302,7 @@ The discipline: **don't build the ontology first.** Memory with no conversations
 3. **Prompt snapshot retention** — every turn forever is a lot of jsonb. Lean: keep hashes forever, GC bodies after N days except pinned.
 4. **ST import fidelity** — cards yes, full chat JSONL history yes (kat parser exists); lorebooks → observation+activation-rule mapping needs a spike.
 5. **chatelaine transport** — SSE vs WebSocket for the component; SSE is simpler and sufficient until multi-user presence matters.
-6. **Where hob runs** — tabitha next to kat, or its own box? It holds `intimate` data, so probably tabitha (home) rather than Hetzner. Decide before v1 deploy.
+6. **Where hob runs** — ~~tabitha next to kat, or its own box?~~ **Decided (2026-07-18): cadance.jfave.com (VPS)**, so hob survives home-internet outages. This accepts VPS custody of realm-tagged data; trade-off and mitigations recorded in [CHATELAINE.md](CHATELAINE.md#deployment-cadancejfavecom). The per-realm-database escape hatch stays open for pinning `intimate` to owned hardware if the placement ever feels wrong.
 
 ## Name registry status (checked 2026-07-04)
 

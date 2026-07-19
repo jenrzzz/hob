@@ -15,10 +15,12 @@ module V1
       branch = conversation.branch(params[:branch].presence || Conversation::MAIN)
       persona = params[:persona].presence && Persona.find_by!(key: params[:persona])
 
+      preset = params[:preset].presence && Preset.find_by!(key: params[:preset])
       turn = ChatTurn.new(
         conversation: conversation, branch: branch, persona: persona,
         content: params[:content], context: params[:context],
-        role: params[:role].presence, regenerate_at: params[:regenerate_at].presence
+        role: params[:role].presence, regenerate_at: params[:regenerate_at].presence,
+        preset: preset
       )
 
       if request.headers["Accept"].to_s.include?("text/event-stream")

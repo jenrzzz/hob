@@ -8,6 +8,7 @@ Rails.application.routes.draw do
       get "nodes/:hash/siblings", to: "nodes#siblings"
     end
     resources :personas, param: :key, only: %i[index show create update]
+    resources :presets, param: :key, only: %i[index show create update destroy]
     resources :snapshots, only: :show
     get "models", to: "models#index"
   end

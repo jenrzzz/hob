@@ -4,22 +4,31 @@ module Assembly
   # exactly did the model see?". Stage order is stable — persona first,
   # volatile context later — so provider prompt caching actually hits.
   class Pipeline
-    DEFAULT_BUDGETS = { "history" => 8_000 }.freeze
+    STAGE_DEFAULTS = [
+      { "name" => "persona", "enabled" => true, "budget" => 2_000 },
+      { "name" => "scenario", "enabled" => true, "budget" => 2_000 },
+      { "name" => "history", "enabled" => true, "budget" => 8_000 }
+    ].freeze
 
     Result = Struct.new(:system, :messages, :snapshot, keyword_init: true)
 
     # head: the MessageNode the turn is being assembled at (usually the just-
     # appended user node, so the snapshot shows the full picture).
-    def initialize(conversation:, head:, persona: nil, context: nil, budgets: {})
+    def initialize(conversation:, head:, persona: nil, context: nil, preset: nil)
       @conversation = conversation
       @head = head
       @persona = persona
       @context = context
-      @budgets = DEFAULT_BUDGETS.merge(budgets)
+      @preset = preset
+      @stage_config = preset&.stage_config || STAGE_DEFAULTS
     end
 
     def assemble
-      stages = [ persona_stage, scenario_stage, history_stage ].compact
+      stages = @stage_config.filter_map do |config|
+        next unless config["enabled"]
+
+        build_stage(config)
+      end
 
       system = stages.filter_map { |s| s[:system] }.join("\n\n")
       messages = stages.flat_map { |s| s[:messages] || [] }
@@ -27,6 +36,7 @@ module Assembly
       snapshot = PromptSnapshot.record!(
         conversation: @conversation,
         assembled: {
+          "preset" => @preset&.key,
           "stages" => stages.map { |s| s.except(:system, :messages).merge("tokens" => s[:tokens]) },
           "system" => system,
           "messages" => messages
@@ -36,6 +46,14 @@ module Assembly
     end
 
     private
+
+    def build_stage(config)
+      case config["name"]
+      when "persona" then persona_stage
+      when "scenario" then scenario_stage
+      when "history" then history_stage(config["budget"] || 8_000)
+      end
+    end
 
     def persona_stage
       return nil if @persona.nil? || @persona.system_core.blank?
@@ -56,8 +74,7 @@ module Assembly
 
     # Newest-first fill within budget, then flipped chronological. Event nodes
     # stay in the DAG but out of the prompt.
-    def history_stage
-      budget = @budgets["history"]
+    def history_stage(budget)
       spent = 0
       kept = []
 

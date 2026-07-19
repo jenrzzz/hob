@@ -206,6 +206,40 @@ CREATE TABLE public.personas (
 
 
 --
+-- Name: presets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.presets (
+    id bigint NOT NULL,
+    key character varying NOT NULL,
+    name character varying NOT NULL,
+    stages jsonb DEFAULT '[]'::jsonb NOT NULL,
+    params jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: presets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.presets_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: presets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.presets_id_seq OWNED BY public.presets.id;
+
+
+--
 -- Name: principals; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -365,6 +399,13 @@ ALTER TABLE ONLY public.model_roles ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: presets id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.presets ALTER COLUMN id SET DEFAULT nextval('public.presets_id_seq'::regclass);
+
+
+--
 -- Name: principals id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -439,6 +480,14 @@ ALTER TABLE ONLY public.model_roles
 
 ALTER TABLE ONLY public.personas
     ADD CONSTRAINT personas_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: presets presets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.presets
+    ADD CONSTRAINT presets_pkey PRIMARY KEY (id);
 
 
 --
@@ -536,6 +585,13 @@ CREATE UNIQUE INDEX index_model_roles_on_role ON public.model_roles USING btree 
 --
 
 CREATE UNIQUE INDEX index_personas_on_key ON public.personas USING btree (key);
+
+
+--
+-- Name: index_presets_on_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_presets_on_key ON public.presets USING btree (key);
 
 
 --
@@ -641,5 +697,6 @@ CREATE POLICY realm_visibility ON public.prompt_snapshots USING ((( SELECT realm
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260718000002'),
 ('20260718000001');
 

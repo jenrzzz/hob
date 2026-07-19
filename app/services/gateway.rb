@@ -7,7 +7,9 @@ module Gateway
   UnknownRoleError = Class.new(Error)
 
   # -> [RubyLLM::Chat, ModelRole::Resolution]
-  def self.chat(role:)
+  # params: request-level provider params (from a preset); they win over the
+  # role chain's own params.
+  def self.chat(role:, params: {})
     resolution = ModelRole.resolve!(role)
     provider = resolution.provider
 
@@ -27,7 +29,8 @@ module Gateway
       provider: provider.kind == "anthropic" ? :anthropic : :openai,
       assume_model_exists: true
     )
-    chat = chat.with_params(**resolution.params.symbolize_keys) if resolution.params.present?
+    merged = resolution.params.merge(params.to_h)
+    chat = chat.with_params(**merged.symbolize_keys) if merged.present?
     [ chat, resolution ]
   end
 

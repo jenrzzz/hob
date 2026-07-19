@@ -8,13 +8,14 @@ class ChatTurn
 
   # regenerate_at: hash of an existing user node — reply again under the same
   # parent, so the new reply lands as a *sibling* of prior ones (a swipe).
-  def initialize(conversation:, branch:, content: nil, persona: nil, context: nil, role: nil, regenerate_at: nil)
+  def initialize(conversation:, branch:, content: nil, persona: nil, context: nil, role: nil, regenerate_at: nil, preset: nil)
     @conversation = conversation
     @branch = branch
     @content = content
     @persona = persona
     @context = context
     @regenerate_at = regenerate_at
+    @preset = preset
     @role = role || persona&.model_role || DEFAULT_ROLE
   end
 
@@ -24,10 +25,10 @@ class ChatTurn
 
     assembly = Assembly::Pipeline.new(
       conversation: @conversation, head: user_node,
-      persona: @persona, context: @context
+      persona: @persona, context: @context, preset: @preset
     ).assemble
 
-    chat, resolution = Gateway.chat(role: @role)
+    chat, resolution = Gateway.chat(role: @role, params: @preset&.params || {})
     chat = chat.with_instructions(assembly.system) if assembly.system.present?
 
     # Replay everything but the final user message; `ask` sends that one.

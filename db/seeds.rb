@@ -37,6 +37,11 @@ if jenner.api_keys.where(surface: "dev").none?
   puts "dev API key (shown once): #{token}"
 end
 
+Preset.find_or_create_by!(key: "default") do |p|
+  p.name = "Default"
+  p.stages = Assembly::Pipeline::STAGE_DEFAULTS.map(&:dup)
+end
+
 Persona.find_or_create_by!(key: "hob") do |p|
   p.name = "Hob"
   p.model_role = "chat-default"

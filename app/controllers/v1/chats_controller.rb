@@ -6,6 +6,10 @@ module V1
   class ChatsController < ApplicationController
     include ActionController::Live
 
+    rescue_from ArgumentError do |e|
+      render json: { error: e.message }, status: :unprocessable_entity
+    end
+
     def create
       conversation = Conversation.find(params[:conversation_id])
       branch = conversation.branch(params[:branch].presence || Conversation::MAIN)
@@ -13,8 +17,8 @@ module V1
 
       turn = ChatTurn.new(
         conversation: conversation, branch: branch, persona: persona,
-        content: params.require(:content), context: params[:context],
-        role: params[:role].presence
+        content: params[:content], context: params[:context],
+        role: params[:role].presence, regenerate_at: params[:regenerate_at].presence
       )
 
       if request.headers["Accept"].to_s.include?("text/event-stream")

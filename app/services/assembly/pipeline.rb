@@ -71,8 +71,12 @@ module Assembly
         kept << node
       end
 
+      # Speaker tags are the multi-persona ensemble convention; with a single
+      # speaker they just teach the model to echo them back.
+      tag_speakers = kept.filter_map(&:speaker).uniq.size > 1
       messages = kept.reverse.map do |node|
-        content = node.speaker.present? ? "[#{node.speaker}]\n#{node.content}" : node.content
+        content = node.content
+        content = "[#{node.speaker}]\n#{content}" if tag_speakers && node.speaker.present?
         { "role" => node.role, "content" => content, "hash" => node.content_hash }
       end
       { "name" => "history", "count" => messages.size, tokens: spent, messages: messages }

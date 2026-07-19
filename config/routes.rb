@@ -7,7 +7,9 @@ Rails.application.routes.draw do
       resource :chat, only: :create, controller: "chats"
       get "nodes/:hash/siblings", to: "nodes#siblings"
     end
-    resources :personas, param: :key, only: %i[index show create update]
+    resources :personas, param: :key, only: %i[index show create update] do
+      post :import, on: :collection
+    end
     resources :presets, param: :key, only: %i[index show create update destroy]
     resources :snapshots, only: :show
     get "models", to: "models#index"

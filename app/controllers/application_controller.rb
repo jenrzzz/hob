@@ -6,7 +6,8 @@ class ApplicationController < ActionController::API
     render json: { error: "not found" }, status: :not_found
   end
 
-  rescue_from Gateway::UnknownRoleError, Gateway::NoProviderError do |e|
+  rescue_from Gateway::UnknownRoleError, Gateway::NoProviderError,
+              ActiveRecord::RecordInvalid, ArgumentError do |e|
     render json: { error: e.message }, status: :unprocessable_entity
   end
 

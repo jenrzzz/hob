@@ -13,6 +13,14 @@ module V1
       render json: serialize(persona), status: :created
     end
 
+    # ST character card v2/v3 -> native persona. The original card is archived
+    # in card_import; conversion is lossy on purpose (no ST settings cruft).
+    def import
+      card = params.require(:card).permit!.to_h
+      persona = Persona.from_card!(card, key: params[:key].presence)
+      render json: serialize(persona), status: :created
+    end
+
     def update
       persona = Persona.find_by!(key: params[:key])
       persona.update!(persona_params)

@@ -6,9 +6,26 @@ class ApplicationController < ActionController::API
     render json: { error: "not found" }, status: :not_found
   end
 
-  rescue_from Gateway::UnknownRoleError, Gateway::NoProviderError,
-              ActiveRecord::RecordInvalid, ArgumentError do |e|
+  # Gateway outcomes map onto HTTP once, here (EXTRACTION.md A6, §4).
+  rescue_from Gateway::Invalid, ActiveRecord::RecordInvalid, ArgumentError do |e|
     render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  rescue_from Gateway::Refused do |e|
+    render json: { status: "refused", error: e.message }, status: :ok
+  end
+
+  rescue_from Gateway::RateLimited do |e|
+    response.headers["Retry-After"] = e.retry_after.to_s if e.retry_after
+    render json: { error: e.message, status: "rate_limited" }, status: :service_unavailable
+  end
+
+  rescue_from Gateway::Unavailable do |e|
+    render json: { error: e.message, status: "unavailable" }, status: :service_unavailable
+  end
+
+  rescue_from Gateway::Unauthorized do |e|
+    render json: { error: "provider rejected hob's credentials: #{e.message}" }, status: :bad_gateway
   end
 
   private
@@ -52,5 +69,25 @@ class ApplicationController < ActionController::API
 
   def clearance_rank
     Realm.rank_of(Current.clearance)
+  end
+
+  # A new conversation's realm: requested or the key's clearance, never above it.
+  def requested_realm
+    realm = params[:realm].presence || Current.clearance
+    raise Gateway::Invalid, "realm above clearance" if Realm.rank_of(realm) > clearance_rank
+
+    realm
+  end
+
+  def streaming_requested?
+    request.headers["Accept"].to_s.include?("text/event-stream")
+  end
+
+  def node_json(node)
+    return nil if node.nil?
+
+    { hash: node.content_hash, parent: node.parent_hash, role: node.role, speaker: node.speaker,
+      kind: node.kind, content: node.content, meta: node.meta, snapshot: node.prompt_snapshot_hash,
+      created_at: node.created_at }
   end
 end

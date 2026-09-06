@@ -122,7 +122,8 @@ CREATE TABLE public.conversations (
     taint_realm character varying NOT NULL,
     title character varying,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    kind character varying DEFAULT 'chat'::character varying NOT NULL
 );
 
 ALTER TABLE ONLY public.conversations FORCE ROW LEVEL SECURITY;
@@ -147,6 +148,21 @@ CREATE TABLE public.message_nodes (
 );
 
 ALTER TABLE ONLY public.message_nodes FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: model_prices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.model_prices (
+    model character varying NOT NULL,
+    input numeric(10,4) DEFAULT 0.0 NOT NULL,
+    output numeric(10,4) DEFAULT 0.0 NOT NULL,
+    cache_read numeric(10,4) DEFAULT 0.0 NOT NULL,
+    cache_write numeric(10,4) DEFAULT 0.0 NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
 
 
 --
@@ -347,7 +363,13 @@ CREATE TABLE public.usage_events (
     units jsonb DEFAULT '{}'::jsonb NOT NULL,
     cost numeric(10,6),
     ref character varying,
-    created_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) without time zone NOT NULL,
+    operation character varying,
+    status character varying DEFAULT 'success'::character varying NOT NULL,
+    duration_ms integer,
+    error text,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    snapshot_digest character varying
 );
 
 
@@ -460,6 +482,14 @@ ALTER TABLE ONLY public.message_nodes
 
 
 --
+-- Name: model_prices model_prices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_prices
+    ADD CONSTRAINT model_prices_pkey PRIMARY KEY (model);
+
+
+--
 -- Name: model_roles model_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -553,6 +583,13 @@ CREATE UNIQUE INDEX index_branches_on_conversation_id_and_name ON public.branche
 
 
 --
+-- Name: index_conversations_on_kind_and_updated_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_conversations_on_kind_and_updated_at ON public.conversations USING btree (kind, updated_at);
+
+
+--
 -- Name: index_message_nodes_on_conversation_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -616,10 +653,31 @@ CREATE UNIQUE INDEX index_realms_on_rank ON public.realms USING btree (rank);
 
 
 --
+-- Name: index_usage_events_on_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_usage_events_on_created_at ON public.usage_events USING btree (created_at);
+
+
+--
 -- Name: index_usage_events_on_principal_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX index_usage_events_on_principal_id ON public.usage_events USING btree (principal_id);
+
+
+--
+-- Name: index_usage_events_on_ref; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_usage_events_on_ref ON public.usage_events USING btree (ref);
+
+
+--
+-- Name: index_usage_events_on_role_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_usage_events_on_role_and_created_at ON public.usage_events USING btree (role, created_at);
 
 
 --
@@ -690,6 +748,7 @@ CREATE POLICY realm_visibility ON public.prompt_snapshots USING ((( SELECT realm
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260906000001'),
 ('20260718000002'),
 ('20260718000001');
 

@@ -12,7 +12,7 @@ require "action_controller/railtie"
 # require "action_text/engine"
 require "action_view/railtie"
 # require "action_cable/engine"
-# require "rails/test_unit/railtie"
+require "rails/test_unit/railtie"
 
 # Require the gems listed in Gemfile, including any gems
 # you've limited to :test, :development, or :production.
@@ -43,5 +43,7 @@ module Hob
 
     # RLS policies and functions live in the schema; schema.rb can't express them.
     config.active_record.schema_format = :sql
+    # pg_dump's COMMENT ON EXTENSION vector breaks least-privilege db:prepare.
+    ActiveRecord::Tasks::DatabaseTasks.structure_dump_flags = [ "--no-comments" ]
   end
 end

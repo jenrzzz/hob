@@ -6,6 +6,15 @@ apps taught, what changes in hob as a result, and in what order each app
 moves over. It sequences **ahead of** DESIGN.md's v2 (tools fabric) and
 replaces the "mise moves over in v2" line with something more granular.
 
+**Status.** A and B are implemented in hob as of 2026-09-06, together with
+the Phase 0 foundations (test suite, `Gateway::Fake`) and the Phase 1
+`POST /v1/completions`, `GET /v1/completions/:id`, and `GET /v1/usage`
+endpoints. One naming change from the text below: the ruby_llm wrapper is
+`Gateway::Transport`, not `Gateway::Provider`, because `Provider` is already
+the config model. Cache token counts live in `usage_events.units` alongside
+the other token counts rather than as a column. Not yet built: C (tools) and
+D (the gem).
+
 ---
 
 ## 1. What exists today

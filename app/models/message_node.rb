@@ -15,14 +15,16 @@ class MessageNode < ApplicationRecord
 
   before_validation :compute_content_hash, on: :create
 
-  def self.hash_for(role:, speaker:, content:, parent_hash:)
-    Digest::SHA256.hexdigest(JSON.generate([ role, speaker.to_s, content, parent_hash ]))[0, 32]
+  # The conversation id is part of the address: nodes share one table, so two
+  # conversations opening with the same words must not collide on the key.
+  def self.hash_for(conversation_id:, role:, speaker:, content:, parent_hash:)
+    Digest::SHA256.hexdigest(JSON.generate([ conversation_id, role, speaker.to_s, content, parent_hash ]))[0, 32]
   end
 
   # Append under parent, deduping on content address (re-importing the same
   # turn twice is a no-op, per design).
   def self.append!(conversation:, parent_hash:, role:, content:, speaker: nil, kind: "text", meta: {}, prompt_snapshot_hash: nil)
-    hash = hash_for(role: role, speaker: speaker, content: content, parent_hash: parent_hash)
+    hash = hash_for(conversation_id: conversation.id, role: role, speaker: speaker, content: content, parent_hash: parent_hash)
     existing = conversation.message_nodes.find_by(content_hash: hash)
     return existing if existing
 
@@ -60,7 +62,7 @@ class MessageNode < ApplicationRecord
 
   def compute_content_hash
     self.content_hash ||= self.class.hash_for(
-      role: role, speaker: speaker, content: content, parent_hash: parent_hash
+      conversation_id: conversation_id, role: role, speaker: speaker, content: content, parent_hash: parent_hash
     )
   end
 end

@@ -4,9 +4,14 @@ class Persona < ApplicationRecord
 
   before_create { self.id ||= ULID.generate }
 
-  # prompt keys: system_core (required), greetings [], examples []
+  # prompt keys: system_core (required), greetings [], examples [],
+  # instruction (optional trailing user-turn text, B3)
   def system_core
     prompt["system_core"].to_s
+  end
+
+  def instruction
+    prompt["instruction"].presence
   end
 
   # ST card v2/v3 (or bare v1 fields) -> native persona. {{char}} resolves at

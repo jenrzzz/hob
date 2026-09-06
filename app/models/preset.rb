@@ -5,7 +5,7 @@ class Preset < ApplicationRecord
   validates :key, presence: true, uniqueness: true
   validates :name, presence: true
 
-  KNOWN_STAGES = %w[persona scenario history].freeze
+  KNOWN_STAGES = %w[persona scenario history instruction].freeze
 
   # Unknown stage names are kept (forward compat) but skipped by the pipeline.
   def stage_config

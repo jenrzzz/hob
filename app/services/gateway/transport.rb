@@ -3,19 +3,23 @@ module Gateway
   # chain-link params into `with_params`, always streams (A3), reads the stop
   # reason off the raw chunks (ruby_llm never does), and maps ruby_llm's
   # errors onto Gateway's.
+  #
+  # Tools go to the provider directly rather than through Chat#complete,
+  # because Chat's loop executes tools in-process; hob's venue is the
+  # client session (C), so a tool call ends the request instead.
   class Transport
     Result = Struct.new(:content, :stop_reason, :input_tokens, :output_tokens, :cache_read_tokens,
-                        :cache_creation_tokens, :model, keyword_init: true)
+                        :cache_creation_tokens, :model, :tool_calls, keyword_init: true)
 
-    def call(resolution:, system:, messages:, schema:, params:, &on_delta)
+    def call(resolution:, system:, messages:, schema:, params:, tools: [], tool_choice: nil, &on_delta)
       chat = build_chat(resolution, params)
       chat = chat.with_instructions(system) if system.present?
       chat = chat.with_schema(schema) if schema
-      messages.each { |m| chat.add_message(role: m["role"].to_sym, content: m["content"]) }
+      messages.each { |m| chat.add_message(**message_attributes(m)) }
 
       text = +""
       stop_reason = nil
-      message = chat.complete do |chunk|
+      message = provider_complete(chat, tools, tool_choice) do |chunk|
         stop_reason ||= stop_reason_from(chunk.raw) if chunk.raw.is_a?(Hash)
         next if chunk.content.blank?
 
@@ -28,7 +32,8 @@ module Gateway
         stop_reason: stop_reason || stop_reason_from(message.raw.respond_to?(:body) ? message.raw.body : nil),
         input_tokens: message.input_tokens, output_tokens: message.output_tokens,
         cache_read_tokens: message.cached_tokens, cache_creation_tokens: message.cache_creation_tokens,
-        model: message.model_id
+        model: message.model_id,
+        tool_calls: (message.tool_calls || {}).values.map { |tc| { "id" => tc.id, "name" => tc.name, "arguments" => tc.arguments } }
       )
     rescue RubyLLM::RateLimitError => e
       raise RateLimited.new(e.message, retry_after: retry_after_from(e))
@@ -64,6 +69,34 @@ module Gateway
         assume_model_exists: true
       )
       params.present? ? chat.with_params(**params.deep_symbolize_keys) : chat
+    end
+
+    # Chat#complete would run the tool loop itself; the provider call alone
+    # returns the message with its tool calls unexecuted.
+    def provider_complete(chat, tools, tool_choice, &block)
+      provider = chat.instance_variable_get(:@provider)
+      tool_map = tools.to_h { |t| [ t.name.to_sym, t ] }
+      choice = tool_choice && (ToolDef::CHOICES.include?(tool_choice) ? tool_choice.to_sym : tool_choice.to_s.to_sym)
+      provider.complete(
+        chat.messages, tools: tool_map, tool_prefs: { choice: choice, calls: nil }, temperature: nil,
+        model: chat.model, params: chat.params, headers: chat.headers, schema: chat.schema, thinking: nil, &block
+      )
+    end
+
+    # user / assistant text, an assistant message carrying tool calls, or a
+    # tool result (role "tool", which each provider renders its own way).
+    def message_attributes(m)
+      case m["role"]
+      when "tool"
+        { role: :tool, content: m["content"].to_s, tool_call_id: m["tool_call_id"] }
+      when "assistant"
+        calls = Array(m["tool_calls"]).to_h do |tc|
+          [ tc["id"], RubyLLM::ToolCall.new(id: tc["id"], name: tc["name"], arguments: tc["arguments"] || {}) ]
+        end
+        calls.empty? ? { role: :assistant, content: m["content"] } : { role: :assistant, content: m["content"].presence, tool_calls: calls }
+      else
+        { role: :user, content: m["content"] }
+      end
     end
 
     # Anthropic: message_delta.delta.stop_reason (stream) / stop_reason (sync).

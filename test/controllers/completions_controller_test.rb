@@ -90,3 +90,56 @@ class CompletionsControllerTest < ActionDispatch::IntegrationTest
     assert_empty @fake.calls
   end
 end
+
+class CompletionsControllerToolsTest < ActionDispatch::IntegrationTest
+  TOOLS = [ { name: "lookup", description: "Look up", input_schema: { type: "object", properties: { q: { type: "string" } } } } ].freeze
+
+  test "a tool call comes back as status tool_calls and resumes with id + tool_results" do
+    @fake.call_tool("lookup", { q: "bees" }, id: "call_1")
+    post "/v1/completions", params: { role: "extractor", messages: [ { role: "user", content: "bees?" } ], tools: TOOLS },
+         headers: auth, as: :json
+    assert_response :ok
+    assert_equal "tool_calls", body["status"]
+    assert_equal "lookup", body["tool_calls"].first["name"]
+    assert_equal({ "q" => "bees" }, body["tool_calls"].first["arguments"])
+    assert body["tool_calls"].first["node"].present?
+    assert_nil body["node"]
+    id = body["id"]
+
+    get "/v1/completions/#{id}", headers: auth
+    assert_equal "tool_calls", body["status"]
+    assert_equal "call_1", body["tool_calls"].first["id"]
+
+    @fake.reply("Bees are fine.")
+    post "/v1/completions", params: { id: id, tool_results: [ { id: "call_1", content: "ok" } ] }, headers: auth, as: :json
+    assert_response :ok
+    assert_equal "success", body["status"]
+    assert_equal id, body["id"]
+    assert_equal "Bees are fine.", body["content"]
+    assert_equal %w[user assistant tool], @fake.calls.last.messages.map { |m| m["role"] }
+
+    post "/v1/completions", params: { id: id, tool_results: [ { id: "call_1", content: "again" } ] }, headers: auth, as: :json
+    assert_response :unprocessable_entity
+  end
+
+  test "tool_call events stream before usage and done" do
+    @fake.call_tool("lookup", { q: "x" }, id: "call_9", content: "Checking")
+    post "/v1/completions", params: { role: "chat-default", messages: [ { role: "user", content: "x" } ], tools: TOOLS },
+         headers: auth("Accept" => "text/event-stream"), as: :json
+    types = sse_events.map { |e| e["type"] }
+    assert_equal %w[tool_call usage done], types.last(3)
+    assert_equal "delta", types.first
+    assert_equal "call_9", sse_events[-3]["id"]
+    assert_equal "tool_calls", sse_events.last["status"]
+  end
+
+  test "bad tools are Invalid" do
+    post "/v1/completions", params: { role: "chat-default", messages: [ { role: "user", content: "x" } ], tools: [ { name: "no spaces here" } ] },
+         headers: auth, as: :json
+    assert_response :unprocessable_entity
+    post "/v1/completions", params: { role: "chat-default", messages: [ { role: "user", content: "x" } ], tools: TOOLS, tool_choice: "other" },
+         headers: auth, as: :json
+    assert_response :unprocessable_entity
+    assert_empty @fake.calls
+  end
+end

@@ -128,3 +128,32 @@ class GatewayTest < ActiveSupport::TestCase
     ModelPrice.singleton_class.alias_method(:cost_for, :original_cost_for)
   end
 end
+
+class GatewayToolsTest < ActiveSupport::TestCase
+  TOOLS = [ { name: "lookup", description: "d", input_schema: { type: "object" } } ].freeze
+
+  test "a tool-calling reply skips structured parsing and is metered as success" do
+    @fake.call_tool("lookup", { q: 1 }, id: "c1")
+    response = Gateway.complete(role: "extractor", messages: [ user_message("x") ], schema: { "type" => "object" }, tools: TOOLS)
+    assert response.tool_calls?
+    assert_nil response.parsed
+    assert_equal "tool_calls", response.status
+    refute response.refused?
+    assert_equal "success", UsageEvent.last.status
+    assert_equal 1, @fake.calls.size
+  end
+
+  test "tool messages may end the transcript; tool_choice is validated" do
+    @fake.reply("ok")
+    messages = [ user_message("x"),
+                 { "role" => "assistant", "content" => "", "tool_calls" => [ { "id" => "c1", "name" => "lookup", "arguments" => {} } ] },
+                 { "role" => "tool", "tool_call_id" => "c1", "content" => "r" } ]
+    Gateway.complete(role: "chat-default", messages: messages, tools: TOOLS, tool_choice: "required")
+    assert_equal "required", @fake.calls.last.tool_choice
+    assert_equal "c1", @fake.calls.last.messages[1]["tool_calls"].first["id"]
+
+    assert_raises(Gateway::Invalid) { Gateway.complete(role: "chat-default", messages: [ user_message("x") ], tools: TOOLS, tool_choice: "nope") }
+    assert_raises(Gateway::Invalid) { Gateway.complete(role: "chat-default", messages: [ { "role" => "tool", "content" => "r" } ]) }
+    assert_raises(Gateway::Invalid) { Gateway.complete(role: "chat-default", messages: [ user_message("x") ], tools: [ { name: "a" }, { name: "a" } ]) }
+  end
+end

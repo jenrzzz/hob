@@ -9,11 +9,7 @@ module V1
     end
 
     def create
-      realm = params[:realm].presence || Current.clearance
-      if Realm.rank_of(realm) > clearance_rank
-        return render json: { error: "realm above clearance" }, status: :forbidden
-      end
-
+      realm = requested_realm
       conversation = Conversation.create!(
         surface: Current.surface, realm: realm, taint_realm: realm,
         title: params[:title], kind: "chat"

@@ -90,4 +90,25 @@ class ApplicationController < ActionController::API
       kind: node.kind, content: node.content, meta: node.meta, snapshot: node.prompt_snapshot_hash,
       created_at: node.created_at }
   end
+
+  # A tool_call node as the caller sees it: the call plus where it lives.
+  def tool_call_json(node)
+    node.tool_call.merge("node" => node.content_hash)
+  end
+
+  # Free-form JSON params (schemas, tool definitions, metadata) arrive as
+  # ActionController::Parameters; hand them back as plain hashes.
+  def hash_param(name)
+    value = params[name]
+    return nil if value.blank?
+
+    value.respond_to?(:permit!) ? value.permit!.to_h : value.to_h
+  end
+
+  def array_param(name)
+    value = params[name]
+    return nil if value.blank?
+
+    Array(value).map { |v| v.respond_to?(:permit!) ? v.permit!.to_h : v }
+  end
 end

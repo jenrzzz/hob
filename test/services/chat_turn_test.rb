@@ -95,3 +95,57 @@ class ChatTurnTest < ActiveSupport::TestCase
     assert_equal "refused", UsageEvent.last.status
   end
 end
+
+class ChatTurnToolsTest < ActiveSupport::TestCase
+  TOOLS = [ { "name" => "lookup", "description" => "Look something up", "input_schema" => { "type" => "object", "properties" => { "q" => { "type" => "string" } } } } ].freeze
+
+  test "a tool call ends the turn at tool_call nodes; results resume it with the exchange in the prompt" do
+    convo = conversation
+    @fake.call_tool("lookup", { q: "bees" }, id: "call_1", content: "Let me check.")
+    first = ChatTurn.new(conversation: convo, branch: convo.branch, content: "what about bees?", tools: TOOLS).call
+
+    assert first.tool_calls?
+    assert_equal "tool_calls", first.status
+    assert_equal "Let me check.", first.assistant_node.content
+    assert_equal [ { "id" => "call_1", "name" => "lookup", "arguments" => { "q" => "bees" } } ], first.tool_calls
+    assert_equal first.assistant_node.content_hash, first.tool_call_nodes.first.parent_hash
+    assert_equal first.tool_call_nodes.last.content_hash, convo.branch.reload.head_hash
+    assert_equal TOOLS, @fake.calls.last.tools
+    assert_nil @fake.calls.last.tool_choice
+    assert_equal "success", UsageEvent.last.status
+
+    @fake.reply("Bees are fine.")
+    second = ChatTurn.new(conversation: convo, branch: convo.branch, tools: TOOLS,
+                          tool_results: [ { "id" => "call_1", "content" => "bees: ok" } ]).call
+    assert_equal "success", second.status
+    assert_nil second.user_node
+    messages = @fake.calls.last.messages
+    assert_equal %w[user assistant assistant tool], messages.map { |m| m["role"] }
+    assert_equal "call_1", messages[2]["tool_calls"].first["id"]
+    assert_equal({ "role" => "tool", "tool_call_id" => "call_1", "content" => "bees: ok" }, messages.last)
+    assert_equal "tool_result", second.assistant_node.parent.kind
+    assert_equal %w[user assistant tool_call tool_result assistant], convo.branch.reload.timeline.map { |n| n.kind == "text" ? n.role : n.kind }
+  end
+
+  test "past the iteration cap the model may not call tools" do
+    convo = conversation
+    @fake.call_tool("lookup", { q: "1" }, id: "c1")
+    ChatTurn.new(conversation: convo, branch: convo.branch, content: "go", tools: TOOLS, max_iterations: 1).call
+    @fake.reply("done")
+    ChatTurn.new(conversation: convo, branch: convo.branch, tools: TOOLS, max_iterations: 1,
+                 tool_results: [ { id: "c1", content: "r" } ]).call
+    assert_equal "none", @fake.calls.last.tool_choice
+  end
+
+  test "tool results with nothing pending, or alongside content, are Invalid" do
+    convo = conversation
+    assert_raises(Gateway::Invalid) do
+      ChatTurn.new(conversation: convo, branch: convo.branch, tools: TOOLS, tool_results: [ { id: "x", content: "y" } ]).call
+    end
+    @fake.call_tool("lookup", {}, id: "c1")
+    ChatTurn.new(conversation: convo, branch: convo.branch, content: "go", tools: TOOLS).call
+    assert_raises(Gateway::Invalid) do
+      ChatTurn.new(conversation: convo, branch: convo.branch, content: "more", tools: TOOLS, tool_results: [ { id: "c1", content: "y" } ]).call
+    end
+  end
+end

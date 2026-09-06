@@ -35,6 +35,21 @@ class MessageNode < ApplicationRecord
     )
   end
 
+  def tool_call?
+    kind == "tool_call"
+  end
+
+  def tool_result?
+    kind == "tool_result"
+  end
+
+  # A tool_call node's content is the call itself: { id, name, arguments }.
+  def tool_call
+    return nil unless tool_call?
+
+    JSON.parse(content)
+  end
+
   def parent
     return nil if parent_hash == ROOT
 

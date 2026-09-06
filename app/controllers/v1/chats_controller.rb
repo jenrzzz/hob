@@ -1,9 +1,11 @@
 module V1
   # POST /v1/conversations/:conversation_id/chat
   # { content?, branch: "main", persona? | personas[]?, context?, instruction?,
-  #   role?, preset?, regenerate_at? }
-  # Accept: text/event-stream streams `delta` events and finishes with `done`;
-  # anything else blocks and returns the full turn as JSON.
+  #   role?, preset?, regenerate_at?, tools?, tool_choice?, tool_results?,
+  #   max_iterations? }
+  # Accept: text/event-stream streams `delta` events, then any `tool_call`
+  # events, `usage`, and `done`; anything else blocks and returns the full
+  # turn as JSON with status success|tool_calls.
   class ChatsController < ApplicationController
     include SseStreaming
 
@@ -18,12 +20,14 @@ module V1
         conversation: conversation, branch: branch, persona: persona, personas: personas,
         content: params[:content], context: context_param, instruction: params[:instruction].presence,
         role: params[:role].presence, regenerate_at: params[:regenerate_at].presence,
-        preset: preset
+        preset: preset, tools: array_param(:tools), tool_choice: params[:tool_choice].presence,
+        tool_results: array_param(:tool_results), max_iterations: params[:max_iterations].presence
       )
 
       if streaming_requested?
         stream_events do
           result = turn.call { |delta| sse_write(type: "delta", content: delta) }
+          result.tool_call_nodes.each { |n| sse_write(type: "tool_call", **tool_call_json(n).symbolize_keys) }
           sse_write(type: "usage", **result.response.units.symbolize_keys, cost: result.response.cost&.to_f)
           sse_write(type: "done", **serialize_result(result))
         end
@@ -45,10 +49,11 @@ module V1
 
     def serialize_result(result)
       {
-        status: "success",
+        status: result.status,
         user: node_json(result.user_node),
         assistant: node_json(result.assistant_node),
         assistants: result.assistant_nodes.map { |n| node_json(n) },
+        tool_calls: result.tool_call_nodes.map { |n| tool_call_json(n) },
         snapshot: result.snapshot.digest
       }
     end

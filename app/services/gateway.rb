@@ -26,8 +26,8 @@ module Gateway
   NoProviderError = Class.new(Unavailable)
   UnknownRoleError = Class.new(Invalid)
 
-  Request = Struct.new(:role, :system, :messages, :schema, :params, :operation, :ref, :metadata, :snapshot,
-                       keyword_init: true)
+  Request = Struct.new(:role, :system, :messages, :schema, :tools, :tool_choice, :params, :operation, :ref,
+                       :metadata, :snapshot, keyword_init: true)
 
   class << self
     # The provider transport. Tests inject Gateway::Fake here.
@@ -42,16 +42,24 @@ module Gateway
     # (:retry, reason) if a structured reply had to be re-requested (A4).
     #
     # role:     model role slug
-    # messages: [{ "role" => user|assistant, "content" => String }, ...]
+    # messages: [{ "role" => user|assistant|tool, "content" => String,
+    #              "tool_calls" => [{ id, name, arguments }]?, "tool_call_id" => String? }, ...]
     # schema:   JSON schema Hash; the reply is parsed into Response#parsed
+    # tools:    [{ name, description, input_schema }] the caller will execute (C);
+    #           a reply carrying tool calls is returned unparsed with tool_calls set
+    # tool_choice: auto (nil) | none | required | a tool name
     # params:   request-level provider params, deep-merged over the chain link's
     # operation/ref/metadata/snapshot: ledger fields
-    def complete(role:, messages:, system: nil, schema: nil, params: {}, operation: nil, ref: nil,
-                 metadata: {}, snapshot: nil, &on_event)
+    def complete(role:, messages:, system: nil, schema: nil, tools: nil, tool_choice: nil, params: {},
+                 operation: nil, ref: nil, metadata: {}, snapshot: nil, &on_event)
       messages = normalize_messages(messages)
-      raise Invalid, "messages must end with a user message" unless messages.last&.dig("role") == "user"
+      unless %w[user tool].include?(messages.last&.dig("role"))
+        raise Invalid, "messages must end with a user message or tool results"
+      end
 
+      tool_defs = ToolDef.normalize(tools)
       request = Request.new(role: role.to_s, system: system.presence, messages: messages, schema: schema,
+                            tools: tool_defs, tool_choice: ToolDef.normalize_choice(tool_choice, tool_defs),
                             params: params.to_h.deep_stringify_keys, operation: operation, ref: ref,
                             metadata: metadata.to_h, snapshot: snapshot)
       candidates = ModelRole.find_role!(request.role).candidates
@@ -74,7 +82,9 @@ module Gateway
     # was given and the reply didn't parse; a second failure is a refusal.
     def attempt(request, resolution, &on_event)
       response = call_transport(request, resolution, &on_event)
-      return metered(request, resolution, response) if response.refused? || request.schema.nil?
+      if response.refused? || response.tool_calls? || request.schema.nil?
+        return metered(request, resolution, response)
+      end
 
       begin
         response.parsed = Structured.parse(response.content)
@@ -107,7 +117,8 @@ module Gateway
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       result = transport.call(
         resolution: resolution, system: request.system, messages: request.messages,
-        schema: request.schema, params: RubyLLM::Utils.deep_merge(resolution.params.deep_stringify_keys, request.params)
+        schema: request.schema, tools: request.tools, tool_choice: request.tool_choice,
+        params: RubyLLM::Utils.deep_merge(resolution.params.deep_stringify_keys, request.params)
       ) { |text| on_event&.call(:delta, text) }
       Response.from_transport(result, resolution: resolution, started: started)
     rescue Unauthorized, Unavailable, RateLimited, Invalid => e
@@ -131,11 +142,22 @@ module Gateway
 
     def normalize_messages(messages)
       Array(messages).map do |m|
-        m = m.to_h.stringify_keys
+        m = m.to_h.deep_stringify_keys
         role = m["role"].to_s
-        raise Invalid, "message role must be user or assistant, got #{role.inspect}" unless %w[user assistant].include?(role)
+        case role
+        when "user"
+          { "role" => role, "content" => m["content"].to_s }
+        when "assistant"
+          calls = Array(m["tool_calls"]).map { |tc| tc.to_h.stringify_keys.slice("id", "name", "arguments") }
+          calls.each { |tc| raise Invalid, "tool_calls need id and name" if tc["id"].blank? || tc["name"].blank? }
+          { "role" => role, "content" => m["content"].to_s, "tool_calls" => calls }.tap { |h| h.delete("tool_calls") if calls.empty? }
+        when "tool"
+          raise Invalid, "tool messages need a tool_call_id" if m["tool_call_id"].blank?
 
-        { "role" => role, "content" => m["content"].to_s }
+          { "role" => role, "content" => m["content"].to_s, "tool_call_id" => m["tool_call_id"] }
+        else
+          raise Invalid, "message role must be user, assistant, or tool, got #{role.inspect}"
+        end
       end
     end
   end

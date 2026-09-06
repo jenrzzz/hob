@@ -136,7 +136,8 @@ module Assembly
     end
 
     # Newest-first fill within budget, then flipped chronological. Event nodes
-    # stay in the DAG but out of the prompt.
+    # stay in the DAG but out of the prompt; tool calls and results are in
+    # (the model needs to see what it asked for and what came back).
     def history_stage(budget)
       spent = 0
       kept = []
@@ -154,11 +155,7 @@ module Assembly
       # Speaker tags are the multi-persona ensemble convention; with a single
       # speaker they just teach the model to echo them back.
       tag_speakers = @personas.size > 1 || kept.filter_map(&:speaker).uniq.size > 1
-      messages = kept.reverse.map do |node|
-        content = node.content
-        content = "[#{node.speaker}]\n#{content}" if tag_speakers && node.speaker.present?
-        { "role" => node.role, "content" => content, "hash" => node.content_hash }
-      end
+      messages = Transcript.render(kept.reverse, tag_speakers: tag_speakers)
       { "name" => "history", "count" => messages.size, tokens: spent, messages: messages }
     end
 

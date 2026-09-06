@@ -12,8 +12,19 @@ the Phase 0 foundations (test suite, `Gateway::Fake`) and the Phase 1
 endpoints. One naming change from the text below: the ruby_llm wrapper is
 `Gateway::Transport`, not `Gateway::Provider`, because `Provider` is already
 the config model. Cache token counts live in `usage_events.units` alongside
-the other token counts rather than as a column. Not yet built: C (tools) and
-D (the gem).
+the other token counts rather than as a column.
+
+C and D followed the same day. Tools: a reply that stops at tool calls is
+`status: tool_calls` (a third outcome next to success and refused, since
+"success with a tool_calls key" hid the branch every caller has to take);
+`POST /v1/completions` resumes with `{ id, tool_results }`; `tool_choice`
+and `max_iterations` ride on the request, and past the cap the tools stay
+declared with `tool_choice: none` (Anthropic rejects a transcript holding
+`tool_use` blocks when no tools are declared). ruby_llm's `Chat#complete`
+executes tools in-process, so `Gateway::Transport` calls the provider
+directly and hands the calls back unexecuted. The gem is `hob` 0.1.0 in
+`clients/ruby` (the 0.0.1 name reservation), with `Hob::Fake` and no runtime
+dependencies. Open question 4 (an interview conductor helper) is still open.
 
 ---
 

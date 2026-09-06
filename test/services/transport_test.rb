@@ -98,3 +98,42 @@ class TransportTest < ActiveSupport::TestCase
     assert_raises(Gateway::Invalid) { call }
   end
 end
+
+class TransportToolsTest < TransportTest
+  TOOLS = Gateway::ToolDef.normalize([ { "name" => "lookup", "description" => "Look up", "input_schema" => { "type" => "object", "properties" => { "q" => { "type" => "string" } } } } ])
+
+  test "a tool_use stream yields the call unexecuted, with the text before it and stop reason tool_use" do
+    StubbedPost.sse = sse(
+      { type: "message_start", message: { model: "claude-sonnet-5", usage: { input_tokens: 30 } } },
+      { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Checking." } },
+      { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "toolu_1", name: "lookup", input: {} } },
+      { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: '{"q": "be' } },
+      { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: 'es"}' } },
+      { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { output_tokens: 12 } },
+      { type: "message_stop" }
+    )
+    result = call(tools: TOOLS, tool_choice: "required")
+    assert_equal "Checking.", result.content
+    assert_equal "tool_use", result.stop_reason
+    assert_equal [ { "id" => "toolu_1", "name" => "lookup", "arguments" => { "q" => "bees" } } ], result.tool_calls
+    assert_equal 12, result.output_tokens
+
+    payload = StubbedPost.payloads.last
+    assert_equal [ { name: "lookup", description: "Look up", input_schema: { "type" => "object", "properties" => { "q" => { "type" => "string" } } } } ], payload[:tools]
+    assert_equal({ type: :any }, payload[:tool_choice])
+  end
+
+  test "calls and results in the transcript render as tool_use and tool_result blocks" do
+    messages = [ user_message("bees?"),
+                 { "role" => "assistant", "content" => "", "tool_calls" => [ { "id" => "toolu_1", "name" => "lookup", "arguments" => { "q" => "bees" } } ] },
+                 { "role" => "tool", "tool_call_id" => "toolu_1", "content" => "bees: ok" } ]
+    call(messages: messages, tools: TOOLS, tool_choice: "none")
+    rendered = StubbedPost.payloads.last[:messages]
+    assert_equal %w[user assistant user], rendered.map { |m| m[:role] }
+    assert_equal({ type: "tool_use", id: "toolu_1", name: "lookup", input: { "q" => "bees" } }, rendered[1][:content].first)
+    assert_equal "tool_result", rendered[2][:content].first[:type]
+    assert_equal "toolu_1", rendered[2][:content].first[:tool_use_id]
+    assert_equal({ type: :none }, StubbedPost.payloads.last[:tool_choice])
+  end
+end

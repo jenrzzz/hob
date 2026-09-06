@@ -73,3 +73,26 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_equal %w[chat pipeline], body.map { |c| c["kind"] }.sort.uniq
   end
 end
+
+class ChatsControllerToolsTest < ActionDispatch::IntegrationTest
+  TOOLS = [ { name: "add_to_plan", description: "Add a recipe to the plan", input_schema: { type: "object", properties: { recipe: { type: "string" } } } } ].freeze
+
+  test "a chat turn ends at tool calls and the next turn carries the results" do
+    convo = conversation
+    @fake.call_tool("add_to_plan", { recipe: "soup" }, id: "call_1", content: "Adding it now.")
+    post "/v1/conversations/#{convo.id}/chat", params: { content: "plan soup", tools: TOOLS }, headers: auth, as: :json
+    assert_response :ok
+    assert_equal "tool_calls", body["status"]
+    assert_equal "Adding it now.", body.dig("assistant", "content")
+    assert_equal "add_to_plan", body["tool_calls"].first["name"]
+
+    @fake.reply("Soup is on the plan.")
+    post "/v1/conversations/#{convo.id}/chat", params: { tools: TOOLS, tool_results: [ { id: "call_1", content: "added" } ] },
+         headers: auth("Accept" => "text/event-stream"), as: :json
+    events = sse_events
+    assert_equal "Soup is on the plan.", events.select { |e| e["type"] == "delta" }.map { |e| e["content"] }.join
+    assert_equal "success", events.last["status"]
+    assert_equal [], events.last["tool_calls"]
+    assert_equal %w[user assistant assistant tool], @fake.calls.last.messages.map { |m| m["role"] }
+  end
+end

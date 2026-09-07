@@ -1,0 +1,60 @@
+# Publish clients/ruby to RubyGems.org when a gem-v* tag is pushed.
+#
+#   git tag gem-v0.1.1 && git push origin gem-v0.1.1
+#
+# Auth is RubyGems trusted publishing (OIDC): the gem's "Trusted publishers"
+# page on rubygems.org must list this repo, this workflow filename, and the
+# "release" environment. No API key secret is stored in GitHub.
+name: Release gem
+
+on:
+  push:
+    tags: [ "gem-v*" ]
+
+jobs:
+  release:
+    name: Push hob gem to RubyGems.org
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: clients/ruby
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ruby
+
+      - name: Install dependencies
+        run: bundle install
+
+      - name: Check tag matches Hob::VERSION
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(ruby -r ./lib/hob/version -e 'print Hob::VERSION')
+          if [ "$TAG" != "gem-v$version" ]; then
+            echo "::error::tag $TAG does not match Hob::VERSION $version (expected gem-v$version)"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: bundle exec rake test
+
+      - name: Build gem
+        run: gem build hob.gemspec
+
+      - name: Configure RubyGems credentials
+        uses: rubygems/configure-rubygems-credentials@v2
+
+      - name: Push gem
+        run: gem push hob-*.gem

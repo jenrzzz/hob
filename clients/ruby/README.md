@@ -15,6 +15,11 @@ gem "hob"
 hob = Hob::Client.new(base: ENV["HOB_URL"], key: ENV["HOB_KEY"])
 ```
 
+`HOB_ADDR` (or `ipaddr:`) pins the connection to an address — hob's tailnet
+IP — while `HOB_URL`'s host still goes out as Host and SNI, so the
+certificate check is unchanged and the request never leaves the tailnet.
+hob's `hob:provision` task sets all three on an app.
+
 ## complete
 
 One call, usually structured. The role names a model chain configured in

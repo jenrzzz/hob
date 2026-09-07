@@ -8,9 +8,14 @@ module Hob
   class HTTP
     attr_reader :base
 
-    def initialize(base:, key:, timeout: 120, open_timeout: 10, clearance: nil)
+    # ipaddr: connect to this address instead of resolving base's host; the
+    # host still goes out as the Host header and SNI, so the certificate
+    # check is unchanged. This is how a surface reaches hob over the tailnet
+    # by hob's public name.
+    def initialize(base:, key:, timeout: 120, open_timeout: 10, clearance: nil, ipaddr: nil)
       @base = URI(base.to_s.sub(%r{/+\z}, ""))
       @key = key
+      @ipaddr = ipaddr.to_s.empty? ? nil : ipaddr.to_s
       @timeout = timeout
       @open_timeout = open_timeout
       @clearance = clearance
@@ -132,6 +137,7 @@ module Hob
         req.body = JSON.generate(body)
       end
       http = Net::HTTP.new(@base.host, @base.port)
+      http.ipaddr = @ipaddr if @ipaddr
       http.use_ssl = @base.scheme == "https"
       http.open_timeout = @open_timeout
       http.read_timeout = @timeout

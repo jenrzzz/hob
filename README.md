@@ -20,6 +20,30 @@ Providers resolve API keys from env at request time (`ANTHROPIC_API_KEY`,
 available provider fails with a 422, and new models are config rows in
 `model_roles` — never code changes.
 
+## Onboarding a surface
+
+Every app that talks to hob is a *surface* with its own API key. hob mints
+the key and hands it to the app itself, so the raw token goes from hob's
+database into the app's environment on Coolify and is never shown to anyone.
+From hob's terminal in Coolify:
+
+```sh
+bin/rails "hob:provision[airing,<coolify app uuid>]"            # clearance personal, principal jenner
+bin/rails "hob:provision[kat,<uuid>,intimate]"                   # a higher-clearance surface
+RESTART=0 bin/rails "hob:provision[parboil,<uuid>]"              # set the env, don't restart
+```
+
+The app receives `HOB_URL`, `HOB_ADDR` and `HOB_KEY` and is restarted.
+Re-running rotates the key: the new one is pushed first, then the surface's
+older keys are deleted. hob needs these in its own environment:
+
+| var | value |
+|---|---|
+| `COOLIFY_URL` | the Coolify instance, e.g. `https://cool.example` |
+| `COOLIFY_TOKEN` | an API token with write access to the target apps |
+| `HOB_CLIENT_URL` | the name surfaces call hob by, e.g. `https://hob.amber.place` |
+| `HOB_CLIENT_ADDR` | optional: hob's tailnet address; surfaces pin the connection to it (`Hob::Client` `ipaddr:`) so calls never leave the tailnet while the certificate check stays on the public name |
+
 ## API sketch
 
 ```

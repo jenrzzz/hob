@@ -1,4 +1,5 @@
 require_relative "test_helper"
+require "socket"
 
 class HTTPTest < Minitest::Test
   def test_sse_parser_handles_split_frames_and_multiline_data
@@ -34,6 +35,29 @@ class HTTPTest < Minitest::Test
     assert_instance_of Hob::Unavailable, errors.for_event(Hob::Event.new("type" => "error", "status" => "unavailable", "message" => "x"))
     assert_instance_of Hob::Invalid, errors.for_event(Hob::Event.new("type" => "error", "status" => "invalid"))
     assert_instance_of Hob::Error, errors.for_event(Hob::Event.new("type" => "error", "status" => "error"))
+  end
+
+  # `.invalid` never resolves, so the request only succeeds because ipaddr
+  # steered the connection — and the Host header still names the base.
+  def test_ipaddr_pins_the_connection_but_keeps_the_host
+    server = TCPServer.new("127.0.0.1", 0)
+    port = server.addr[1]
+    served = Thread.new do
+      sock = server.accept
+      lines = []
+      while (line = sock.gets) && line != "\r\n"
+        lines << line
+      end
+      sock.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+      sock.close
+      lines
+    end
+
+    http = Hob::HTTP.new(base: "http://hob.invalid:#{port}", key: "k", ipaddr: "127.0.0.1")
+    assert_equal({}, http.get("/up"))
+    assert_includes served.value, "Host: hob.invalid:#{port}\r\n"
+  ensure
+    server&.close
   end
 
   def test_unreachable_host_is_unavailable

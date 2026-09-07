@@ -11,11 +11,14 @@ module Hob
     attr_reader :http
 
     # clearance: cap this client's realm below the key's default (X-Hob-Clearance).
-    def initialize(base: ENV["HOB_URL"], key: ENV["HOB_KEY"], timeout: 120, clearance: nil, http: nil)
+    # ipaddr:    connect to this address (HOB_ADDR) while keeping base's host
+    #            for Host, SNI and the certificate check — hob's public name
+    #            reached over the tailnet.
+    def initialize(base: ENV["HOB_URL"], key: ENV["HOB_KEY"], ipaddr: ENV["HOB_ADDR"], timeout: 120, clearance: nil, http: nil)
       raise ArgumentError, "Hob::Client needs base: (or HOB_URL)" if http.nil? && (base.nil? || base.empty?)
       raise ArgumentError, "Hob::Client needs key: (or HOB_KEY)" if http.nil? && (key.nil? || key.empty?)
 
-      @http = http || HTTP.new(base: base, key: key, timeout: timeout, clearance: clearance)
+      @http = http || HTTP.new(base: base, key: key, timeout: timeout, clearance: clearance, ipaddr: ipaddr)
     end
 
     # POST /v1/completions → Hob::Completion.

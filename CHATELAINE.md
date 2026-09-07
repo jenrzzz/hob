@@ -120,6 +120,15 @@ hob deploys to the VPS **cadance.jfave.com** so it stays up when home internet d
 - **Mitigations, cheapest first:** full-disk / at-rest encryption on cadance; hob API not exposed publicly beyond TLS + keys (tailnet-only ingress is still an option even on a VPS); secrets in env, not repo.
 - **Escape hatch kept open:** the realm model already tags every sensitive row. If the placement ever feels wrong, `intimate`-realm data can be pinned to owned hardware later (per-realm database was explicitly kept possible in DESIGN.md — ULIDs, no cross-realm FKs). Until kat moves onto hob, cadance holds nothing above `personal` anyway — the decision has a long fuse.
 
+**2026-09-07: surfaces reach hob over the tailnet.** The Coolify proxy on
+cadance already answers on its Tailscale address, so a surface sets
+`HOB_URL` to hob's public name and `HOB_ADDR` to cadance's tailnet IP; the
+client pins the connection to the address and keeps the name for SNI, so the
+call never crosses the public internet and the certificate check is
+unchanged. `hob:provision` (README) mints a surface's key and sets all three
+on its Coolify app. Once every surface is on the tailnet, hob's public
+hostname can go — the "tailnet-only ingress" mitigation above.
+
 Weekend reality: develop on the laptop, deploy to cadance at the end; the iPad reaches either over the tailnet. Confirm Tailscale-on-iPad + SSE works before Saturday night.
 
 ---

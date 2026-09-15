@@ -82,6 +82,161 @@ module Hob
       UsageSummary.new("calls" => @calls.size, "cost" => 0.0, "input_tokens" => 0, "output_tokens" => 0, "by_role" => {}, "by_operation" => {}, "recent" => [])
     end
 
+    # Scripted sentinel: fake.sentinel.allow(result) / deny(reason) / hold(result)
+    # decide what the next request meets; requests are recorded in `calls`.
+    def sentinel
+      @sentinel ||= FakeSentinel.new(self)
+    end
+
+    # An in-memory mission queue with the real client's surface.
+    def missions
+      @missions ||= FakeMissions.new(self)
+    end
+
+    class FakeSentinel
+      attr_reader :requests
+
+      def initialize(fake)
+        @fake = fake
+        @queue = []
+        @requests = {}
+        @capabilities = []
+      end
+
+      def allow(result = {})
+        @queue << { "status" => "completed", "decision" => "allow", "decided_by" => "policy", "result" => result }
+        self
+      end
+
+      def deny(reason = "denied")
+        @queue << { "status" => "denied", "decision" => "deny", "decided_by" => "policy", "rationale" => reason }
+        self
+      end
+
+      # Pending until `decide` (a person) settles it; allow completes with `result`.
+      def hold(result = {})
+        @queue << { "status" => "pending", "decision" => "escalate", "decided_by" => "policy", "rationale" => "a person must confirm",
+                    "held_result" => result }
+        self
+      end
+
+      # What `capabilities` lists.
+      def offer(name, effect: "allow", description: name, kind: "act", realm: "household", input_schema: {})
+        @capabilities << Capability.new("name" => name, "effect" => effect, "description" => description, "kind" => kind,
+                                        "realm" => realm, "venue" => "native", "enabled" => true, "input_schema" => input_schema)
+        self
+      end
+
+      def request(capability:, arguments: {}, reason: nil, mission: nil)
+        @fake.calls << Call.new(kind: :sentinel, args: { capability: capability, arguments: arguments, reason: reason, mission: mission })
+        raise Error, "Hob::Fake: no scripted sentinel decision left" if @queue.empty?
+
+        item = @queue.shift
+        raise item if item.is_a?(Exception)
+
+        data = item.merge("id" => @fake.send(:next_id, "req"), "agent" => "fake-agent", "capability" => capability,
+                          "arguments" => @fake.send(:stringify, arguments), "reason" => reason, "on_mission" => mission)
+        @requests[data["id"]] = data
+        SentinelRequest.new(data.reject { |k, _| k == "held_result" })
+      end
+
+      def fail(error)
+        @queue << error
+        self
+      end
+
+      def show(id, wait: nil)
+        SentinelRequest.new(@requests.fetch(id) { raise NotFound, "no request #{id}" }.reject { |k, _| k == "held_result" })
+      end
+
+      def wait(request, timeout: nil)
+        show(request.respond_to?(:id) ? request.id : request)
+      end
+
+      def list(status: nil, agent: nil)
+        @requests.values.select { |r| status.nil? || r["status"] == status }.map { |r| SentinelRequest.new(r.reject { |k, _| k == "held_result" }) }
+      end
+
+      def decide(id, decision:, rationale: nil)
+        data = @requests.fetch(id) { raise NotFound, "no request #{id}" }
+        raise Invalid, "request #{id} is #{data['status']}, not pending" unless data["status"] == "pending"
+
+        data.merge!("decided_by" => "human", "decision" => decision.to_s, "rationale" => rationale)
+        data.merge!(decision.to_s == "allow" ? { "status" => "completed", "result" => data["held_result"] } : { "status" => "denied" })
+        show(id)
+      end
+
+      def capabilities
+        @capabilities.dup
+      end
+
+      def capability(name)
+        @capabilities.find { |c| c.name == name } || raise(NotFound, "no capability #{name}")
+      end
+    end
+
+    class FakeMissions < Missions
+      def initialize(fake)
+        super(nil)
+        @fake = fake
+        @store = {}
+      end
+
+      def create(assignee:, title:, brief: nil, payload: nil, priority: nil, realm: nil)
+        data = { "id" => @fake.send(:next_id, "mission"), "assignee" => assignee, "created_by" => "fake", "title" => title,
+                 "brief" => brief, "payload" => @fake.send(:stringify, payload || {}), "priority" => priority.to_i,
+                 "realm" => realm || "household", "status" => "queued", "attempts" => 0 }
+        @store[data["id"]] = data
+        Mission.new(data)
+      end
+
+      def list(status: nil, assignee: nil)
+        @store.values.select { |m| (status.nil? || m["status"] == status) && (assignee.nil? || m["assignee"] == assignee) }.map { |m| Mission.new(m) }
+      end
+
+      def show(id, wait: nil)
+        Mission.new(fetch(id))
+      end
+
+      def lease(wait: nil, lease: nil)
+        data = @store.values.select { |m| m["status"] == "queued" }.min_by { |m| [ -m["priority"], m["id"] ] }
+        return nil if data.nil?
+
+        data.merge!("status" => "leased", "attempts" => data["attempts"] + 1, "lease_token" => @fake.send(:next_id, "lease"))
+        Mission.new(data)
+      end
+
+      def heartbeat(mission, lease: nil)
+        Mission.new(held(mission))
+      end
+
+      def complete(mission, result)
+        Mission.new(held(mission).merge!("status" => "completed", "result" => @fake.send(:stringify, result), "lease_token" => nil))
+      end
+
+      def fail(mission, error)
+        Mission.new(held(mission).merge!("status" => "failed", "error" => error.to_s, "lease_token" => nil))
+      end
+
+      def cancel(id)
+        Mission.new(fetch(id).merge!("status" => "cancelled", "lease_token" => nil))
+      end
+
+      private
+
+      def fetch(id)
+        @store.fetch(id) { raise NotFound, "no mission #{id}" }
+      end
+
+      def held(mission)
+        data = fetch(mission.id)
+        raise Invalid, "mission #{mission.id} is #{data['status']}" unless data["status"] == "leased"
+        raise Invalid, "lease_token does not hold mission #{mission.id}" unless data["lease_token"] == mission.lease_token
+
+        data
+      end
+    end
+
     # In-memory conversations with the same surface as Hob::Conversations.
     class FakeConversations
       def initialize(fake)

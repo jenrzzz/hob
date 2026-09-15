@@ -44,6 +44,11 @@ end
   # lumen: 64k-token story generations.
   "narrator" => [
     { "provider" => "anthropic", "model" => "claude-opus-5", "params" => { "max_tokens" => 64_000 } }
+  ],
+  # SENTINEL.md: judges external agents' requests under a rule's guidance.
+  "sentinel-reviewer" => [
+    { "provider" => "anthropic", "model" => "claude-sonnet-5", "params" => { "max_tokens" => 1024 } },
+    { "provider" => "anthropic", "model" => "claude-haiku-4-5-20251001", "params" => { "max_tokens" => 1024 } }
   ]
 }.each do |role, chain|
   ModelRole.find_or_create_by!(role: role) { |mr| mr.chain = chain }
@@ -96,3 +101,6 @@ Persona.find_or_create_by!(key: "hob") do |p|
     CORE
   }
 end
+
+# The sentinel's native capabilities follow the handlers in code.
+Sentinel::Native.sync!

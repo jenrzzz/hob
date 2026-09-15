@@ -1,5 +1,12 @@
 class ApplicationController < ActionController::API
+  # Agent principals (SENTINEL.md) reach only the actions a controller lists
+  # here — the sentinel's own endpoints and the mission queue. Everything
+  # else answers 403, so an external AI's key structurally cannot call the
+  # model-facing API; it has to ask.
+  class_attribute :agent_actions, default: []
+
   before_action :authenticate!
+  before_action :gate_agents!
   around_action :with_clearance
 
   rescue_from ActiveRecord::RecordNotFound do
@@ -40,6 +47,35 @@ class ApplicationController < ActionController::API
     Current.surface = key.surface
     Current.clearance = requested_clearance(key)
     key.update_column(:last_used_at, Time.current)
+  end
+
+  def gate_agents!
+    return unless Current.principal.agent?
+    return if agent_actions == :all || Array(agent_actions).map(&:to_s).include?(action_name)
+
+    render json: { error: "agents act through the sentinel: POST /v1/sentinel/requests" }, status: :forbidden
+  end
+
+  # Deciding requests and managing policies, capabilities, and missions is
+  # for people, not for the agents being gated or the surfaces they act on.
+  def require_trusted!
+    return if Current.principal.trusted?
+
+    render json: { error: "this action needs a person's key" }, status: :forbidden
+  end
+
+  # Hold the request up to `wait` seconds (cap 30) until the block is
+  # truthy, for pollers that would rather wait than spin. Returns the
+  # block's last value.
+  def long_poll(wait)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait.to_i.clamp(0, 30)
+    loop do
+      value = yield
+      return value if value
+      return nil if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+      sleep 1
+    end
   end
 
   # request clearance = min(key default, principal grant, explicit cap).

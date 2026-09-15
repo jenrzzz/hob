@@ -33,6 +33,10 @@ module Hob
       request(Net::HTTP::Patch.new(uri_for(path)), body)
     end
 
+    def delete(path)
+      request(Net::HTTP::Delete.new(uri_for(path)))
+    end
+
     # POST with Accept: text/event-stream; yields each event as it arrives
     # and returns the terminal `done` event. An `error` event raises.
     def stream(path, body)

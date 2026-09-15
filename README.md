@@ -3,7 +3,8 @@
 The household spirit: a personal LLM substrate. One backing service through
 which every LLM interaction in the household flows — providers, conversations,
 personas, memory, tools, compute, voice. See [DESIGN.md](DESIGN.md) for the
-full design and [CHATELAINE.md](CHATELAINE.md) for the chat frontend.
+full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend, and
+[SENTINEL.md](SENTINEL.md) for how outside agents get in.
 
 ## Running
 
@@ -43,6 +44,36 @@ older keys are deleted. hob needs these in its own environment:
 | `COOLIFY_TOKEN` | an API token with write access to the target apps |
 | `HOB_CLIENT_URL` | the name surfaces call hob by, e.g. `https://hob.amber.place` |
 | `HOB_CLIENT_ADDR` | optional: hob's tailnet address; surfaces pin the connection to it (`Hob::Client` `ipaddr:`) so calls never leave the tailnet while the certificate check stays on the public name |
+
+## Outside agents: the sentinel
+
+An external AI (Meta's Muse, say) gets an *agent* key, which reaches only
+the sentinel and the mission queue — never the model-facing API. It asks
+for capabilities; policy allows, denies, has an LLM reviewer judge, or
+holds the request for a person; hob does what was allowed at the agent's
+clearance and writes it all down. Missions are the other direction: work
+the household queues for an agent that can only poll.
+
+```sh
+bin/rails "hob:agent[muse,household]"                    # an agent principal + key, shown once
+bin/rails "hob:sentinel:policy[muse,*,review]" GUIDANCE="Muse plans Tessa's week; nothing private."
+bin/rails "hob:sentinel:policy[muse,hob.complete,allow]" CONSTRAINTS='{"role":["cheap-classifier"]}' LIMITS='{"cost_per_day":2}'
+bin/rails hob:sentinel:pending                            # what a person needs to decide
+bin/rails "hob:sentinel:decide[<id>,allow]"
+```
+
+```
+POST /v1/sentinel/requests             { capability, arguments, reason, mission }
+                                       → { id, status: completed|denied|pending|executing|failed,
+                                           decision, decided_by, rationale, result, error }
+GET  /v1/sentinel/requests/:id?wait=25 long-poll until settled
+POST /v1/sentinel/requests/:id/decide  { decision: allow|deny, rationale }      (a person)
+GET  /v1/sentinel/capabilities         what this agent may ask for, and the effect to expect
+GET/POST/PATCH/DELETE /v1/sentinel/policies · POST /v1/sentinel/capabilities   (a person)
+POST /v1/missions/lease                { wait, lease } → the next mission + lease_token, or { status: empty }
+POST /v1/missions/:id/heartbeat|complete|fail   { lease_token, ... }
+POST /v1/missions                      { assignee, title, brief, payload, priority, realm }  (a person)
+```
 
 ## API sketch
 

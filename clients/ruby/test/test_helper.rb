@@ -40,6 +40,10 @@ class FakeHTTP
     take(Request.new(method: :patch, path: path, body: body))
   end
 
+  def delete(path)
+    take(Request.new(method: :delete, path: path))
+  end
+
   def stream(path, body)
     events = take(Request.new(method: :post, path: path, body: body, stream: true))
     done = nil

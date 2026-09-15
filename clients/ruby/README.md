@@ -87,6 +87,42 @@ hob.usage(ref: "recipe/7").cost
 hob.usage(since: 1.day.ago, surface: "all").by_role
 ```
 
+## sentinel and missions
+
+An outside agent's key reaches only these (see hob's SENTINEL.md). Ask for
+a capability; read the decision; long-poll a pending one.
+
+```ruby
+caps = hob.sentinel.capabilities                       # what this key may ask for, with the effect to expect
+r = hob.sentinel.request(capability: "hob.complete", reason: "summarize Tessa's list",
+                         arguments: { role: "cheap-classifier", messages: [{ role: "user", content: text }] },
+                         mission: mission.id)
+r = hob.sentinel.wait(r) if r.pending?                 # a person is deciding
+r.completed? ? r.result["content"] : r.rationale
+```
+
+Missions are work hob queues for a principal that polls. The worker loop
+leases, yields, completes with the block's value, and fails on an exception:
+
+```ruby
+hob.missions.work(wait: 25) { |mission| Kitchen.run(mission.payload) }
+```
+
+A person's key queues and decides:
+
+```ruby
+hob.missions.create(assignee: "muse", title: "Plan the week", brief: "Groceries and dinners")
+hob.sentinel.list(status: "pending").each { |r| hob.sentinel.decide(r.id, decision: "allow") }
+hob.sentinel.set_policy(agent: "muse", capability: "hob.complete", effect: "review", guidance: "...")
+hob.sentinel.register_capability(name: "mise.add_to_shopping_list", description: "Add an item",
+                                 venue: "webhook", config: { url: url, secret: secret })
+```
+
+A surface receiving a webhook delivery verifies it with
+`Hob::Webhook.verify(secret:, signature: request.headers["X-Hob-Signature"], body: request.raw_post)`.
+`Hob::Fake` scripts the sentinel (`fake.sentinel.allow(result)`, `.deny`,
+`.hold`) and keeps an in-memory mission queue.
+
 ## Errors
 
 `Hob::Refused` (the model declined; `error.completion` carries the id and

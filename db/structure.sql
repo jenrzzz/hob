@@ -112,6 +112,44 @@ ALTER SEQUENCE public.branches_id_seq OWNED BY public.branches.id;
 
 
 --
+-- Name: capabilities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.capabilities (
+    id bigint NOT NULL,
+    name character varying NOT NULL,
+    description text NOT NULL,
+    input_schema jsonb DEFAULT '{"type": "object", "properties": {}}'::jsonb NOT NULL,
+    kind character varying DEFAULT 'act'::character varying NOT NULL,
+    realm character varying NOT NULL,
+    venue character varying NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: capabilities_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.capabilities_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: capabilities_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.capabilities_id_seq OWNED BY public.capabilities.id;
+
+
+--
 -- Name: conversations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -148,6 +186,34 @@ CREATE TABLE public.message_nodes (
 );
 
 ALTER TABLE ONLY public.message_nodes FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: missions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.missions (
+    id character varying NOT NULL,
+    assignee_id bigint NOT NULL,
+    created_by_id bigint,
+    title character varying NOT NULL,
+    brief text,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    priority integer DEFAULT 0 NOT NULL,
+    realm character varying NOT NULL,
+    status character varying DEFAULT 'queued'::character varying NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    lease_token character varying,
+    leased_at timestamp(6) without time zone,
+    lease_expires_at timestamp(6) without time zone,
+    result jsonb,
+    error text,
+    sentinel_request_id character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.missions FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -350,6 +416,73 @@ CREATE TABLE public.schema_migrations (
 
 
 --
+-- Name: sentinel_policies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sentinel_policies (
+    id bigint NOT NULL,
+    principal_id bigint,
+    capability character varying DEFAULT '*'::character varying NOT NULL,
+    effect character varying NOT NULL,
+    constraints jsonb DEFAULT '{}'::jsonb NOT NULL,
+    limits jsonb DEFAULT '{}'::jsonb NOT NULL,
+    guidance text,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: sentinel_policies_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.sentinel_policies_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: sentinel_policies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.sentinel_policies_id_seq OWNED BY public.sentinel_policies.id;
+
+
+--
+-- Name: sentinel_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sentinel_requests (
+    id character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    capability_id bigint NOT NULL,
+    arguments jsonb DEFAULT '{}'::jsonb NOT NULL,
+    reason text,
+    surface character varying NOT NULL,
+    realm character varying NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    decision character varying,
+    decided_by character varying,
+    rationale text,
+    decider_id bigint,
+    review jsonb DEFAULT '{}'::jsonb NOT NULL,
+    result jsonb,
+    error text,
+    mission_id character varying,
+    on_mission_id character varying,
+    decided_at timestamp(6) without time zone,
+    executed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.sentinel_requests FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: usage_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -407,6 +540,13 @@ ALTER TABLE ONLY public.branches ALTER COLUMN id SET DEFAULT nextval('public.bra
 
 
 --
+-- Name: capabilities id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.capabilities ALTER COLUMN id SET DEFAULT nextval('public.capabilities_id_seq'::regclass);
+
+
+--
 -- Name: model_roles id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -432,6 +572,13 @@ ALTER TABLE ONLY public.principals ALTER COLUMN id SET DEFAULT nextval('public.p
 --
 
 ALTER TABLE ONLY public.providers ALTER COLUMN id SET DEFAULT nextval('public.providers_id_seq'::regclass);
+
+
+--
+-- Name: sentinel_policies id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sentinel_policies ALTER COLUMN id SET DEFAULT nextval('public.sentinel_policies_id_seq'::regclass);
 
 
 --
@@ -466,6 +613,14 @@ ALTER TABLE ONLY public.branches
 
 
 --
+-- Name: capabilities capabilities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.capabilities
+    ADD CONSTRAINT capabilities_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: conversations conversations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -479,6 +634,14 @@ ALTER TABLE ONLY public.conversations
 
 ALTER TABLE ONLY public.message_nodes
     ADD CONSTRAINT message_nodes_pkey PRIMARY KEY (content_hash);
+
+
+--
+-- Name: missions missions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.missions
+    ADD CONSTRAINT missions_pkey PRIMARY KEY (id);
 
 
 --
@@ -554,6 +717,22 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: sentinel_policies sentinel_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sentinel_policies
+    ADD CONSTRAINT sentinel_policies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sentinel_requests sentinel_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sentinel_requests
+    ADD CONSTRAINT sentinel_requests_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: usage_events usage_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -583,6 +762,13 @@ CREATE UNIQUE INDEX index_branches_on_conversation_id_and_name ON public.branche
 
 
 --
+-- Name: index_capabilities_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_capabilities_on_name ON public.capabilities USING btree (name);
+
+
+--
 -- Name: index_conversations_on_kind_and_updated_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -601,6 +787,34 @@ CREATE INDEX index_message_nodes_on_conversation_id ON public.message_nodes USIN
 --
 
 CREATE INDEX index_message_nodes_on_parent_hash ON public.message_nodes USING btree (parent_hash);
+
+
+--
+-- Name: index_missions_on_assignee_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_missions_on_assignee_id ON public.missions USING btree (assignee_id);
+
+
+--
+-- Name: index_missions_on_assignee_queue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_missions_on_assignee_queue ON public.missions USING btree (assignee_id, status, priority, created_at);
+
+
+--
+-- Name: index_missions_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_missions_on_created_by_id ON public.missions USING btree (created_by_id);
+
+
+--
+-- Name: index_missions_on_sentinel_request_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_missions_on_sentinel_request_id ON public.missions USING btree (sentinel_request_id);
 
 
 --
@@ -653,6 +867,55 @@ CREATE UNIQUE INDEX index_realms_on_rank ON public.realms USING btree (rank);
 
 
 --
+-- Name: index_sentinel_policies_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sentinel_policies_on_principal_id ON public.sentinel_policies USING btree (principal_id);
+
+
+--
+-- Name: index_sentinel_policies_on_principal_id_and_capability; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sentinel_policies_on_principal_id_and_capability ON public.sentinel_policies USING btree (principal_id, capability);
+
+
+--
+-- Name: index_sentinel_requests_on_capability_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sentinel_requests_on_capability_id ON public.sentinel_requests USING btree (capability_id);
+
+
+--
+-- Name: index_sentinel_requests_on_decider_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sentinel_requests_on_decider_id ON public.sentinel_requests USING btree (decider_id);
+
+
+--
+-- Name: index_sentinel_requests_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sentinel_requests_on_principal_id ON public.sentinel_requests USING btree (principal_id);
+
+
+--
+-- Name: index_sentinel_requests_on_principal_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sentinel_requests_on_principal_id_and_created_at ON public.sentinel_requests USING btree (principal_id, created_at);
+
+
+--
+-- Name: index_sentinel_requests_on_status_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sentinel_requests_on_status_and_created_at ON public.sentinel_requests USING btree (status, created_at);
+
+
+--
 -- Name: index_usage_events_on_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -681,6 +944,22 @@ CREATE INDEX index_usage_events_on_role_and_created_at ON public.usage_events US
 
 
 --
+-- Name: sentinel_policies fk_rails_038859ac35; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sentinel_policies
+    ADD CONSTRAINT fk_rails_038859ac35 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: sentinel_requests fk_rails_57f2dafd85; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sentinel_requests
+    ADD CONSTRAINT fk_rails_57f2dafd85 FOREIGN KEY (decider_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: api_keys fk_rails_5a5e375519; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -689,11 +968,43 @@ ALTER TABLE ONLY public.api_keys
 
 
 --
+-- Name: missions fk_rails_6e053f8b2f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.missions
+    ADD CONSTRAINT fk_rails_6e053f8b2f FOREIGN KEY (assignee_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: sentinel_requests fk_rails_aed65976d5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sentinel_requests
+    ADD CONSTRAINT fk_rails_aed65976d5 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: sentinel_requests fk_rails_edda5c50a5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sentinel_requests
+    ADD CONSTRAINT fk_rails_edda5c50a5 FOREIGN KEY (capability_id) REFERENCES public.capabilities(id);
+
+
+--
 -- Name: usage_events fk_rails_efdc5578b2; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.usage_events
     ADD CONSTRAINT fk_rails_efdc5578b2 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: missions fk_rails_f765c80df4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.missions
+    ADD CONSTRAINT fk_rails_f765c80df4 FOREIGN KEY (created_by_id) REFERENCES public.principals(id);
 
 
 --
@@ -707,6 +1018,12 @@ ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.message_nodes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: missions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.missions ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: prompt_snapshots; Type: ROW SECURITY; Schema: public; Owner: -
@@ -733,6 +1050,15 @@ CREATE POLICY realm_visibility ON public.message_nodes USING ((( SELECT realms.r
 
 
 --
+-- Name: missions realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.missions USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (missions.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
 -- Name: prompt_snapshots realm_visibility; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -742,12 +1068,28 @@ CREATE POLICY realm_visibility ON public.prompt_snapshots USING ((( SELECT realm
 
 
 --
+-- Name: sentinel_requests realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.sentinel_requests USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (sentinel_requests.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: sentinel_requests; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
+
+--
 -- PostgreSQL database dump complete
 --
 
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260915000001'),
 ('20260906000001'),
 ('20260718000002'),
 ('20260718000001');

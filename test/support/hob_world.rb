@@ -35,6 +35,29 @@ module HobWorld
     @token = ApiKey.issue!(principal: @principal, surface: "test", default_clearance: "intimate")
   end
 
+  # An external agent (SENTINEL.md) with a key at the given clearance.
+  # -> [principal, token]
+  def agent(name = "muse", clearance: "household")
+    principal = Principal.find_or_create_by!(name: name) { |p| p.kind = "agent"; p.max_clearance = clearance }
+    [ principal, ApiKey.issue!(principal: principal, surface: name, default_clearance: clearance) ]
+  end
+
+  def native_capabilities!
+    ModelRole.find_or_create_by!(role: "sentinel-reviewer") { |mr| mr.chain = [ { "provider" => "anthropic", "model" => "claude-sonnet-5" } ] }
+    Sentinel::Native.sync!
+  end
+
+  def policy!(agent, capability, effect, **attrs)
+    SentinelPolicy.create!(principal: agent, capability: capability, effect: effect, **attrs)
+  end
+
+  # Runs a block the way a request from `principal` at `realm` would.
+  def as(principal, realm:, surface: principal.name)
+    Clearance.with(realm) do
+      Current.set(principal: principal, surface: surface, clearance: realm) { yield }
+    end
+  end
+
   def clearance!(realm)
     conn = ActiveRecord::Base.connection
     conn.execute("SET app.clearance = #{conn.quote(realm)}")

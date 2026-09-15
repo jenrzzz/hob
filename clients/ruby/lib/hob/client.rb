@@ -78,6 +78,16 @@ module Hob
       @conversations ||= Conversations.new(@http)
     end
 
+    # /v1/sentinel: an external agent asks; a person decides (SENTINEL.md).
+    def sentinel
+      @sentinel ||= Sentinel.new(@http)
+    end
+
+    # /v1/missions: work handed to a principal that polls for it.
+    def missions
+      @missions ||= Missions.new(@http)
+    end
+
     # GET /v1/usage → Hob::UsageSummary. since: a Time or ISO8601 string;
     # surface: "all" for the whole household (default: this key's surface).
     def usage(ref: nil, role: nil, operation: nil, since: nil, surface: nil)

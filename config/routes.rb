@@ -16,5 +16,23 @@ Rails.application.routes.draw do
     resources :snapshots, only: :show
     get "models", to: "models#index"
     get "usage", to: "usage#show"
+
+    # The sentinel (SENTINEL.md): where external agents ask.
+    namespace :sentinel do
+      resources :requests, only: %i[index show create] do
+        post :decide, on: :member
+      end
+      resources :capabilities, only: %i[index show create update destroy], param: :name, constraints: { name: /[^\/]+/ }
+      resources :policies, only: %i[index create update destroy]
+    end
+    resources :missions, only: %i[index show create] do
+      post :lease, on: :collection
+      member do
+        post :heartbeat
+        post :complete
+        post :fail
+        post :cancel
+      end
+    end
   end
 end

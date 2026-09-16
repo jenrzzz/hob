@@ -62,6 +62,9 @@ bin/rails hob:sentinel:pending                            # what a person needs 
 bin/rails "hob:sentinel:decide[<id>,allow]"
 ```
 
+[SENTINEL.md](SENTINEL.md) is the design; [MUSE.md](MUSE.md) is the
+connector brief an outside agent reads to wire itself up.
+
 ```
 POST /v1/sentinel/requests             { capability, arguments, reason, mission }
                                        → { id, status: completed|denied|pending|executing|failed,

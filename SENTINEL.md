@@ -208,6 +208,10 @@ Tessa (through chatelaine, eventually) queues missions for Muse; Muse
 polls, works, asks the sentinel for what it needs along the way, and
 reports. Muse never holds anything but its own agent key.
 
+[MUSE.md](MUSE.md) is this loop written for Muse itself: the endpoints its
+key reaches, the request and mission shapes, the rules of conduct, and the
+schedule to poll on. Hand it to Muse when asking it to build the connector.
+
 ## Setting one up
 
 ```sh

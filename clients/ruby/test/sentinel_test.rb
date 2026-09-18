@@ -69,6 +69,35 @@ class SentinelClientTest < Minitest::Test
     assert_equal "webhook", cap.venue
     assert_equal "household", @http.requests.last.body[:realm]
   end
+  def test_petition_posts_polls_and_a_person_decides
+    @http.respond("id" => "p1", "status" => "granted", "action" => "grant", "capability" => "hob.usage", "effect" => "allow")
+    petition = @hob.sentinel.petition(want: "see my spend", capability: "hob.usage", arguments: { since: "2026-09-01" }, reason: "budget", mission: "m1")
+    assert_equal "/v1/sentinel/petitions", @http.requests.last.path
+    assert_equal({ want: "see my spend", capability: "hob.usage", arguments: { since: "2026-09-01" }, reason: "budget", mission: "m1" }, @http.requests.last.body)
+    assert petition.granted?
+    assert petition.settled?
+    assert_equal "hob.usage", petition.capability
+
+    @http.respond("id" => "p2", "status" => "pending").respond("id" => "p2", "status" => "building", "mission" => "m9")
+    pending = @hob.sentinel.petition(want: "read the calendar")
+    assert pending.pending?
+    refute @http.requests.last.body.key?(:capability)
+    building = @hob.sentinel.wait_petition(pending, timeout: 0)
+    assert_equal "/v1/sentinel/petitions/p2", @http.requests.last.path
+    assert_equal({ wait: 25 }, @http.requests.last.query)
+    assert building.in_progress?
+    refute building.settled?
+
+    @http.respond("id" => "p2", "status" => "granted", "decided_by" => "human", "effect" => "review")
+    decided = @hob.sentinel.decide_petition("p2", decision: "grant", capability: "hob.calendar.read", effect: "review", guidance: "Tessa's only")
+    assert_equal "/v1/sentinel/petitions/p2/decide", @http.requests.last.path
+    assert_equal({ decision: "grant", capability: "hob.calendar.read", effect: "review", guidance: "Tessa's only" }, @http.requests.last.body)
+    assert decided.granted?
+
+    @http.respond([ { "id" => "p3", "status" => "pending" } ])
+    assert_equal [ "p3" ], @hob.sentinel.petitions(status: "pending").map(&:id)
+    assert_equal({ status: "pending", agent: nil }, @http.requests.last.query)
+  end
 end
 
 class MissionsClientTest < Minitest::Test
@@ -193,5 +222,22 @@ class FakeSentinelTest < Minitest::Test
     assert_equal "LOW", @hob.missions.show(low.id).result
     assert_equal 2, @hob.missions.list(status: "completed").size
     assert_equal "cancelled", @hob.missions.cancel(@hob.missions.create(assignee: "muse", title: "x").id).status
+  end
+
+  def test_fake_scripts_petitions
+    fake = Hob::Fake.new
+    fake.sentinel.grant("hob.usage", effect: "allow").hold_petition("hm").build("hob.calendar.read").deny_petition("no")
+    granted = fake.sentinel.petition(want: "spend")
+    assert granted.granted?
+    assert_equal "allow", fake.sentinel.capability("hob.usage").effect, "a grant is offered from then on"
+    held = fake.sentinel.petition(want: "odd")
+    assert held.pending?
+    assert fake.sentinel.decide_petition(held.id, decision: "grant", capability: "hob.conversations.list").granted?
+    assert_equal "hob.conversations.list", fake.sentinel.capability("hob.conversations.list").name
+    assert fake.sentinel.petition(want: "calendar").in_progress?
+    assert fake.sentinel.petition(want: "mail").denied?
+    assert_equal 4, fake.calls.count { |c| c.kind == :petition }
+    assert_raises(Hob::Error) { fake.sentinel.petition(want: "one more") }
+    assert_equal 1, fake.sentinel.petitions(status: "denied").size
   end
 end

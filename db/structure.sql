@@ -281,6 +281,41 @@ CREATE TABLE public.personas (
 
 
 --
+-- Name: petitions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.petitions (
+    id character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    want text NOT NULL,
+    capability_name character varying,
+    arguments jsonb DEFAULT '{}'::jsonb NOT NULL,
+    reason text,
+    surface character varying NOT NULL,
+    realm character varying NOT NULL,
+    on_mission_id character varying,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    action character varying,
+    decided_by character varying,
+    rationale text,
+    decider_id bigint,
+    review jsonb DEFAULT '{}'::jsonb NOT NULL,
+    effect character varying,
+    spec jsonb DEFAULT '{}'::jsonb NOT NULL,
+    sentinel_policy_id bigint,
+    mission_id character varying,
+    pull_request character varying,
+    error text,
+    decided_at timestamp(6) without time zone,
+    settled_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.petitions FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: presets; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -669,6 +704,14 @@ ALTER TABLE ONLY public.personas
 
 
 --
+-- Name: petitions petitions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.petitions
+    ADD CONSTRAINT petitions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: presets presets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -832,6 +875,55 @@ CREATE UNIQUE INDEX index_personas_on_key ON public.personas USING btree (key);
 
 
 --
+-- Name: index_petitions_on_capability_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_petitions_on_capability_name ON public.petitions USING btree (capability_name);
+
+
+--
+-- Name: index_petitions_on_decider_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_petitions_on_decider_id ON public.petitions USING btree (decider_id);
+
+
+--
+-- Name: index_petitions_on_mission_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_petitions_on_mission_id ON public.petitions USING btree (mission_id);
+
+
+--
+-- Name: index_petitions_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_petitions_on_principal_id ON public.petitions USING btree (principal_id);
+
+
+--
+-- Name: index_petitions_on_principal_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_petitions_on_principal_id_and_created_at ON public.petitions USING btree (principal_id, created_at);
+
+
+--
+-- Name: index_petitions_on_sentinel_policy_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_petitions_on_sentinel_policy_id ON public.petitions USING btree (sentinel_policy_id);
+
+
+--
+-- Name: index_petitions_on_status_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_petitions_on_status_and_created_at ON public.petitions USING btree (status, created_at);
+
+
+--
 -- Name: index_presets_on_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -952,11 +1044,27 @@ ALTER TABLE ONLY public.sentinel_policies
 
 
 --
+-- Name: petitions fk_rails_1915a4ce8c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.petitions
+    ADD CONSTRAINT fk_rails_1915a4ce8c FOREIGN KEY (sentinel_policy_id) REFERENCES public.sentinel_policies(id);
+
+
+--
 -- Name: sentinel_requests fk_rails_57f2dafd85; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sentinel_requests
     ADD CONSTRAINT fk_rails_57f2dafd85 FOREIGN KEY (decider_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: petitions fk_rails_598ed31268; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.petitions
+    ADD CONSTRAINT fk_rails_598ed31268 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -981,6 +1089,14 @@ ALTER TABLE ONLY public.missions
 
 ALTER TABLE ONLY public.sentinel_requests
     ADD CONSTRAINT fk_rails_aed65976d5 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: petitions fk_rails_ca627f2e79; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.petitions
+    ADD CONSTRAINT fk_rails_ca627f2e79 FOREIGN KEY (decider_id) REFERENCES public.principals(id);
 
 
 --
@@ -1026,6 +1142,12 @@ ALTER TABLE public.message_nodes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.missions ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: petitions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.petitions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: prompt_snapshots; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -1059,6 +1181,15 @@ CREATE POLICY realm_visibility ON public.missions USING ((( SELECT realms.rank
 
 
 --
+-- Name: petitions realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.petitions USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (petitions.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
 -- Name: prompt_snapshots realm_visibility; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -1089,6 +1220,7 @@ ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260918000001'),
 ('20260915000001'),
 ('20260906000001'),
 ('20260718000002'),

@@ -43,8 +43,21 @@ module HobWorld
   end
 
   def native_capabilities!
-    ModelRole.find_or_create_by!(role: "sentinel-reviewer") { |mr| mr.chain = [ { "provider" => "anthropic", "model" => "claude-sonnet-5" } ] }
+    %w[sentinel-reviewer sentinel-steward].each do |role|
+      ModelRole.find_or_create_by!(role: role) { |mr| mr.chain = [ { "provider" => "anthropic", "model" => "claude-sonnet-5" } ] }
+    end
     Sentinel::Native.sync!
+  end
+
+  # The forge worker principal (SENTINEL.md) that build missions go to.
+  def forge!(name = "forge")
+    principal = Principal.find_or_create_by!(name: name) { |p| p.kind = "worker"; p.max_clearance = "intimate" }
+    [ principal, ApiKey.issue!(principal: principal, surface: name, default_clearance: "intimate") ]
+  end
+
+  # The charter: what the steward may do for `agent` (nil: every agent).
+  def charter!(agent, effect, **attrs)
+    policy!(agent, Sentinel::Steward::CHARTER, effect, **attrs)
   end
 
   def policy!(agent, capability, effect, **attrs)

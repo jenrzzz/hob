@@ -22,6 +22,9 @@ Rails.application.routes.draw do
       resources :requests, only: %i[index show create] do
         post :decide, on: :member
       end
+      resources :petitions, only: %i[index show create] do
+        post :decide, on: :member
+      end
       resources :capabilities, only: %i[index show create update destroy], param: :name, constraints: { name: /[^\/]+/ }
       resources :policies, only: %i[index create update destroy]
     end

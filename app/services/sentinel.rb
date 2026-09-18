@@ -43,4 +43,27 @@ module Sentinel
     Executor.run!(request) if request.decision == "allow"
     request
   end
+
+  # An agent asks for a capability it does not have: a petition, decided by
+  # the steward (SENTINEL.md, "Petitions and the forge"). Always returns the
+  # petition; read `status`.
+  def petition!(agent:, want:, capability: nil, arguments: {}, reason: nil, on_mission: nil)
+    raise Invalid, "only agents petition the sentinel" unless agent.agent?
+    raise Invalid, "want is required: what the agent wants to be able to do" if want.blank?
+    if capability.present? && !capability.to_s.match?(Capability::NAME_FORMAT)
+      raise Invalid, "capability #{capability.inspect} is not a valid name (lowercase dotted words)"
+    end
+
+    petition = Petition.create!(
+      principal: agent, want: want.to_s.strip.truncate(4000), capability_name: capability.presence,
+      arguments: (arguments || {}).to_h.deep_stringify_keys, reason: reason.presence,
+      surface: Current.surface, realm: Current.clearance, on_mission_id: on_mission.presence
+    )
+    Steward.process!(petition)
+  end
+
+  # A person settles a pending (or failed) petition: grant, build, or deny.
+  def decide_petition!(petition, decision:, decider:, **options)
+    Steward.decide!(petition, decision: decision, decider: decider, **options)
+  end
 end

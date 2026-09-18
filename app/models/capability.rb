@@ -21,6 +21,10 @@ class Capability < ApplicationRecord
 
   scope :enabled, -> { where(enabled: true) }
 
+  # A capability that petitions were waiting on has arrived (a merged forge
+  # PR synced at boot, or a surface registering one): grant them.
+  after_create { Petition.fulfil!(self) }
+
   def native?
     venue == "native"
   end

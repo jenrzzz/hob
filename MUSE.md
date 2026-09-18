@@ -31,6 +31,9 @@ GET  /v1/sentinel/capabilities/:name      one capability, with its input schema
 POST /v1/sentinel/requests                ask for a capability
 GET  /v1/sentinel/requests/:id?wait=25    the outcome of an ask (long-poll)
 GET  /v1/sentinel/requests?status=        your own asks
+POST /v1/sentinel/petitions               ask for a capability that is not on offer
+GET  /v1/sentinel/petitions/:id?wait=25   the outcome of a petition (long-poll)
+GET  /v1/sentinel/petitions?status=       your own petitions
 POST /v1/missions/lease                   take the next mission addressed to you
 POST /v1/missions/:id/heartbeat           keep a lease alive
 POST /v1/missions/:id/complete            report a result
@@ -148,6 +151,58 @@ role outside it is a denial by `constraint`. The capabilities list does
 not show constraints, so if a role is refused, use the one named in the
 rationale or do the work yourself.
 
+## When what you need is not on offer
+
+If no capability in the list does what the mission needs, do not improvise
+around it and do not ask for a different capability hoping it does the
+same thing. **Petition** for it: say, in plain words, what you want to be
+able to do. hob's steward decides whether to hand you an existing
+capability you did not have, to have one built, or to ask a person.
+
+```
+POST /v1/sentinel/petitions
+{ "want": "read the household calendar for the coming week, so I can plan around what is already booked",
+  "capability": "hob.calendar.read",
+  "arguments": { "from": "2026-09-21", "to": "2026-09-27" },
+  "reason": "planning Tessa's week; dinners must avoid evenings that are already taken",
+  "mission": "01J8Z3..." }
+
+→ 201
+{ "id": "01J8Z6...", "agent": "muse", "want": "...", "capability": "hob.calendar.read",
+  "status": "building", "action": "build", "decided_by": "steward",
+  "rationale": "Nothing reads the calendar yet; a narrow read is reasonable for planning.",
+  "effect": "allow", "mission": "01J8Z7...", "created_at": "..." }
+```
+
+| field | what to put |
+|---|---|
+| `want` | one or two sentences: the thing you want to be able to do and what it is for. Required. |
+| `capability` | a suggested name, `hob.<area>.<verb>`, if you have one. Optional. |
+| `arguments` | an example of what you would send. Optional, but it helps the steward draft a good spec. |
+| `reason` | as for requests: one honest sentence for the reviewer. |
+| `mission` | the mission you are on. |
+
+Read `status`:
+
+| status | meaning | what you do |
+|---|---|---|
+| `granted` | you may now ask for `capability` | `GET /v1/sentinel/capabilities/<capability>` for the schema, then request it |
+| `pending` | a person is deciding | wait as below, as long as the mission can afford; then finish without it |
+| `building` | hob is writing the capability; a person will review the code | finish the mission without it and say so; check back another day |
+| `proposed` | the code is written and awaiting the person's merge | same as building |
+| `denied` | refused; `rationale` says why | tell the user, do without, and do not petition again for the same thing in other words |
+
+Wait the same way as for requests: `GET /v1/sentinel/petitions/:id?wait=25`
+until `status` is `granted` or `denied`, heartbeating your mission between
+polls. A build takes hours to days. When it lands, the petition becomes
+`granted` on its own, so a later run that finds the same need should first
+check `GET /v1/sentinel/petitions?status=granted` and the capabilities
+list before petitioning again. Petitions are limited per day; a limit
+breach is a denial with `decided_by: limit`.
+
+A petition is not a request: it grants the *right to ask*. Once granted you
+still ask through `POST /v1/sentinel/requests`, and policy still applies.
+
 ## Missions
 
 A mission is work the household queued for you. You do not receive
@@ -218,6 +273,10 @@ leased, `GET /v1/missions?status=leased` lists it, and
 `GET /v1/missions/:id` returns your `lease_token` again as long as the
 lease has not expired.
 
+When you complete a mission you could only partly do because a capability
+is being built, say so in `not_done`, and put the petition id in
+`pending`, so the household can see what is coming.
+
 ## Listening for missions
 
 You cannot be pushed to, so listen by polling. Set up a recurring
@@ -246,7 +305,7 @@ Do not run more than one copy of the loop at a time.
 |---|---|---|
 | `401 { "error": "unauthorized" }` | the key is wrong or rotated | stop; tell the user |
 | `403` | not yours to call | ask through the sentinel instead; do not retry |
-| `404 { "error": "not found" }` | no such request, mission, or capability at your clearance | check the id or name |
+| `404 { "error": "not found" }` | no such request, petition, mission, or capability at your clearance | check the id or name |
 | `422 { "error": "..." }` | a bad body; the message says what | fix and retry once |
 | `503 { "status": "rate_limited" }` with `Retry-After` | slow down | wait that many seconds |
 | `503 { "status": "unavailable" }` | hob or its model is down | back off: 30s, 60s, 120s, then leave it to the next scheduled run |
@@ -292,7 +351,11 @@ POST /v1/missions/lease { "wait": 25 }   → { "status": "empty" }
 Everything above is for Muse. This part is for you.
 
 1. Mint the key and set policy in hob (see SENTINEL.md, *Setting one up*):
-   `bin/rails "hob:agent[muse,household]"` prints the key once.
+   `bin/rails "hob:agent[muse,household]"` prints the key once. Set a
+   charter so Muse can petition for what it lacks instead of you writing
+   a rule per capability: `bin/rails "hob:sentinel:charter[muse,allow]"
+   GUIDANCE="..."`, and run `bin/forge` on the coder box if you want
+   builds to happen without you (SENTINEL.md, *Petitions and the forge*).
 2. Tell Muse: *"Build a custom connector to hob. Here is the brief: <link
    to or paste of this file>. The base URL is … and here is the key."*
    Give the key in whatever way Muse's vault accepts; do not leave it in
@@ -302,7 +365,9 @@ Everything above is for Muse. This part is for you.
    **always**, or the mission loop stalls on a card every few minutes.
    hob's own sentinel is doing the per-request judging.
 4. Ask Muse to set up the listening schedule from *Listening for missions*.
-5. Queue a first mission and watch it move:
+5. Point `HOB_NOTIFY_URL` at an ntfy topic on the hob box so a petition
+   that needs you, or a PR that is ready, reaches your phone.
+6. Queue a first mission and watch it move:
    `hob.missions.create(assignee: "muse", title: "Say hello", brief: "Complete with a one-line summary.")`
    then `GET /v1/missions/<id>?wait=25` with your key, and `bin/rails
    hob:sentinel:pending` for anything held for you.

@@ -49,6 +49,12 @@ end
   "sentinel-reviewer" => [
     { "provider" => "anthropic", "model" => "claude-sonnet-5", "params" => { "max_tokens" => 1024 } },
     { "provider" => "anthropic", "model" => "claude-haiku-4-5-20251001", "params" => { "max_tokens" => 1024 } }
+  ],
+  # SENTINEL.md: decides petitions for capabilities and drafts specs for the
+  # forge; rare, so the strongest model is affordable.
+  "sentinel-steward" => [
+    { "provider" => "anthropic", "model" => "claude-opus-5", "params" => { "max_tokens" => 8192 } },
+    { "provider" => "anthropic", "model" => "claude-sonnet-5", "params" => { "max_tokens" => 8192 } }
   ]
 }.each do |role, chain|
   ModelRole.find_or_create_by!(role: role) { |mr| mr.chain = chain }

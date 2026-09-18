@@ -25,6 +25,11 @@ class Mission < ApplicationRecord
     sentinel_request_id && SentinelRequest.find_by(id: sentinel_request_id)
   end
 
+  # The petition whose build this mission is (SENTINEL.md, the forge).
+  def petition
+    Petition.find_by(mission_id: id)
+  end
+
   # Lease the next queued mission for `principal`, highest priority first,
   # oldest first. Expired leases are requeued on the way in. Returns nil when
   # the queue is empty. SKIP LOCKED keeps two pollers from taking one mission.
@@ -68,15 +73,18 @@ class Mission < ApplicationRecord
   def complete!(result)
     update!(status: "completed", result: result, lease_token: nil, error: nil)
     sentinel_request&.finish!(result)
+    petition&.then { |p| Sentinel::Steward.built!(p, result) }
   end
 
   def fail!(message)
     update!(status: "failed", error: message.to_s.truncate(2000), lease_token: nil)
     sentinel_request&.fail!("mission #{id} failed: #{message}")
+    petition&.then { |p| Sentinel::Steward.build_failed!(p, message) }
   end
 
   def cancel!
     update!(status: "cancelled", lease_token: nil)
     sentinel_request&.fail!("mission #{id} was cancelled")
+    petition&.then { |p| Sentinel::Steward.build_failed!(p, "build mission cancelled") }
   end
 end

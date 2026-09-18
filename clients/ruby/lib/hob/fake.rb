@@ -101,6 +101,31 @@ module Hob
         @queue = []
         @requests = {}
         @capabilities = []
+        @petition_queue = []
+        @petitions = {}
+      end
+
+      # Script the next petition's outcome: granted (and offered from then
+      # on), held for a person, building, or denied.
+      def grant(capability, effect: "review")
+        @petition_queue << { "status" => "granted", "action" => "grant", "decided_by" => "steward", "capability" => capability, "effect" => effect }
+        self
+      end
+
+      def hold_petition(rationale = "a person will look")
+        @petition_queue << { "status" => "pending", "action" => "refer", "decided_by" => "steward", "rationale" => rationale }
+        self
+      end
+
+      def build(capability, effect: "review")
+        @petition_queue << { "status" => "building", "action" => "build", "decided_by" => "steward", "capability" => capability, "effect" => effect,
+                             "mission" => "fake-mission" }
+        self
+      end
+
+      def deny_petition(rationale = "denied")
+        @petition_queue << { "status" => "denied", "action" => "deny", "decided_by" => "steward", "rationale" => rationale }
+        self
       end
 
       def allow(result = {})
@@ -172,6 +197,48 @@ module Hob
 
       def capability(name)
         @capabilities.find { |c| c.name == name } || raise(NotFound, "no capability #{name}")
+      end
+
+      def petition(want:, capability: nil, arguments: nil, reason: nil, mission: nil)
+        @fake.calls << Call.new(kind: :petition, args: { want: want, capability: capability, arguments: arguments, reason: reason, mission: mission })
+        raise Error, "Hob::Fake: no scripted petition outcome left" if @petition_queue.empty?
+
+        item = @petition_queue.shift
+        raise item if item.is_a?(Exception)
+
+        data = item.merge("id" => @fake.send(:next_id, "pet"), "agent" => "fake-agent", "want" => want, "reason" => reason,
+                          "arguments" => arguments && @fake.send(:stringify, arguments), "on_mission" => mission)
+        data["capability"] ||= capability
+        @petitions[data["id"]] = data
+        offer(data["capability"], effect: data["effect"]) if data["status"] == "granted" && data["capability"]
+        Petition.new(data)
+      end
+
+      def show_petition(id, wait: nil)
+        Petition.new(@petitions.fetch(id) { raise NotFound, "no petition #{id}" })
+      end
+
+      def wait_petition(petition, timeout: nil)
+        show_petition(petition.respond_to?(:id) ? petition.id : petition)
+      end
+
+      def petitions(status: nil, agent: nil)
+        @petitions.values.select { |p| status.nil? || p["status"] == status }.map { |p| Petition.new(p) }
+      end
+
+      def decide_petition(id, decision:, capability: nil, effect: nil, constraints: nil, limits: nil, guidance: nil, spec: nil, rationale: nil)
+        data = @petitions.fetch(id) { raise NotFound, "no petition #{id}" }
+        raise Invalid, "petition #{id} is #{data['status']}, not pending or failed" unless %w[pending failed].include?(data["status"])
+
+        data.merge!("decided_by" => "human", "action" => decision.to_s, "rationale" => rationale)
+        case decision.to_s
+        when "grant"
+          data.merge!("status" => "granted", "capability" => capability || data["capability"], "effect" => effect || data["effect"] || "review")
+          offer(data["capability"], effect: data["effect"]) if data["capability"]
+        when "build" then data.merge!("status" => "building", "mission" => "fake-mission")
+        else data["status"] = "denied"
+        end
+        show_petition(id)
       end
     end
 

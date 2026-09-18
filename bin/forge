@@ -1,0 +1,42 @@
+#!/usr/bin/env ruby
+# The forge worker (SENTINEL.md, "Petitions and the forge"): runs on a box
+# with this checkout, Claude Code, git, and gh. Leases build missions from
+# hob, implements each capability in a worktree with a headless Claude Code
+# run, opens a pull request, and reports back.
+#
+#   HOB_URL=https://hob.example HOB_KEY=<forge worker key> bin/forge [--once] [--drain]
+#
+#   --once         handle at most one mission, then exit
+#   --drain        exit when the queue is empty
+#   --workdir DIR  where worktrees go (default: ../hob-forge next to this checkout)
+#   --base BRANCH  the branch to build from and target (default: main)
+#   FORGE_CLAUDE_ARGS  overrides the flags passed to `claude -p`
+#
+# The key comes from `bin/rails "hob:forge:setup[forge]"` on the hob box.
+require "optparse"
+
+root = File.expand_path("..", __dir__)
+$LOAD_PATH.unshift(File.join(root, "clients", "ruby", "lib"), File.join(root, "lib"))
+require "hob"
+require "forge"
+
+options = { workdir: File.expand_path("../hob-forge", root), base: "main", once: false, drain: false, wait: 25 }
+OptionParser.new do |o|
+  o.banner = "usage: HOB_URL= HOB_KEY= bin/forge [options]"
+  o.on("--once") { options[:once] = true }
+  o.on("--drain") { options[:drain] = true }
+  o.on("--workdir DIR") { |d| options[:workdir] = d }
+  o.on("--base BRANCH") { |b| options[:base] = b }
+  o.on("--wait SECONDS", Integer) { |w| options[:wait] = w }
+end.parse!
+
+%w[claude gh git].each do |tool|
+  abort "bin/forge needs #{tool} on PATH" if `which #{tool}`.strip.empty?
+end
+abort "bin/forge needs HOB_URL and HOB_KEY (the key from bin/rails \"hob:forge:setup[forge]\")" if ENV["HOB_URL"].to_s.empty? || ENV["HOB_KEY"].to_s.empty?
+
+hob = Hob::Client.new(timeout: 60)
+worker = Forge::Worker.new(hob: hob, repo: root, workdir: options[:workdir], base: options[:base])
+$stderr.puts "[forge] listening for #{Forge::KIND} missions at #{ENV['HOB_URL']} (repo #{root}, worktrees in #{options[:workdir]})"
+handled = worker.work(wait: options[:wait], once: options[:once], drain: options[:drain])
+$stderr.puts "[forge] handled #{handled} mission(s)"

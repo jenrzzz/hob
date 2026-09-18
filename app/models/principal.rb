@@ -6,6 +6,7 @@ class Principal < ApplicationRecord
   has_many :api_keys, dependent: :destroy
   has_many :sentinel_policies, dependent: :destroy
   has_many :sentinel_requests, dependent: :restrict_with_exception
+  has_many :petitions, dependent: :restrict_with_exception
   has_many :missions, foreign_key: :assignee_id, inverse_of: :assignee, dependent: :restrict_with_exception
 
   validates :kind, inclusion: { in: KINDS }

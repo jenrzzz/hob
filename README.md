@@ -52,15 +52,24 @@ the sentinel and the mission queue — never the model-facing API. It asks
 for capabilities; policy allows, denies, has an LLM reviewer judge, or
 holds the request for a person; hob does what was allowed at the agent's
 clearance and writes it all down. Missions are the other direction: work
-the household queues for an agent that can only poll.
+the household queues for an agent that can only poll. When nothing on
+offer fits, the agent *petitions* for it: the steward grants an existing
+capability it can be trusted with, has the forge (Claude Code on a coder
+box) build a new one as a pull request for you to merge, or pings you.
 
 ```sh
 bin/rails "hob:agent[muse,household]"                    # an agent principal + key, shown once
 bin/rails "hob:sentinel:policy[muse,*,review]" GUIDANCE="Muse plans Tessa's week; nothing private."
 bin/rails "hob:sentinel:policy[muse,hob.complete,allow]" CONSTRAINTS='{"role":["cheap-classifier"]}' LIMITS='{"cost_per_day":2}'
-bin/rails hob:sentinel:pending                            # what a person needs to decide
+bin/rails "hob:sentinel:charter[muse,allow]" GUIDANCE="Grant planning reads; ask me about anything private." LIMITS='{"builds_per_day":2}'
+bin/rails "hob:forge:setup[forge]"                        # the builder's key; then on the coder box: HOB_URL= HOB_KEY= bin/forge
+bin/rails hob:sentinel:pending                            # requests and petitions a person needs to decide
 bin/rails "hob:sentinel:decide[<id>,allow]"
+bin/rails "hob:sentinel:petition[<id>,grant]" EFFECT=review
 ```
+
+`HOB_NOTIFY_URL=https://ntfy.sh/<topic>` makes hob ping you when a
+petition needs a person, a build starts, a PR is ready, or a build fails.
 
 [SENTINEL.md](SENTINEL.md) is the design; [MUSE.md](MUSE.md) is the
 connector brief an outside agent reads to wire itself up.
@@ -72,6 +81,9 @@ POST /v1/sentinel/requests             { capability, arguments, reason, mission 
 GET  /v1/sentinel/requests/:id?wait=25 long-poll until settled
 POST /v1/sentinel/requests/:id/decide  { decision: allow|deny, rationale }      (a person)
 GET  /v1/sentinel/capabilities         what this agent may ask for, and the effect to expect
+POST /v1/sentinel/petitions            { want, capability, arguments, reason, mission }
+                                       → { id, status: granted|pending|building|proposed|denied, capability, effect, rationale }
+POST /v1/sentinel/petitions/:id/decide { decision: grant|build|deny, effect, constraints, guidance }  (a person)
 GET/POST/PATCH/DELETE /v1/sentinel/policies · POST /v1/sentinel/capabilities   (a person)
 POST /v1/missions/lease                { wait, lease } → the next mission + lease_token, or { status: empty }
 POST /v1/missions/:id/heartbeat|complete|fail   { lease_token, ... }

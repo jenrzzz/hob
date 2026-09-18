@@ -101,6 +101,22 @@ r = hob.sentinel.wait(r) if r.pending?                 # a person is deciding
 r.completed? ? r.result["content"] : r.rationale
 ```
 
+When nothing on offer does what the agent needs, it petitions for it (hob's
+SENTINEL.md, "Petitions and the forge"): the steward grants an existing
+capability, has the forge build a new one, or holds it for a person.
+
+```ruby
+p = hob.sentinel.petition(want: "read the household calendar for the coming week",
+                          capability: "hob.calendar.read", arguments: { from: "2026-09-21" },
+                          reason: "planning Tessa's week", mission: mission.id)
+p = hob.sentinel.wait_petition(p, timeout: 60) if p.pending?
+case p.status
+when "granted"            then hob.sentinel.request(capability: p.capability, arguments: { from: "2026-09-21" })
+when "building", "proposed" then # a pull request is on its way; ask again another day
+when "denied"             then p.rationale
+end
+```
+
 Missions are work hob queues for a principal that polls. The worker loop
 leases, yields, completes with the block's value, and fails on an exception:
 
@@ -113,6 +129,7 @@ A person's key queues and decides:
 ```ruby
 hob.missions.create(assignee: "muse", title: "Plan the week", brief: "Groceries and dinners")
 hob.sentinel.list(status: "pending").each { |r| hob.sentinel.decide(r.id, decision: "allow") }
+hob.sentinel.petitions(status: "pending").each { |p| hob.sentinel.decide_petition(p.id, decision: "grant", effect: "review") }
 hob.sentinel.set_policy(agent: "muse", capability: "hob.complete", effect: "review", guidance: "...")
 hob.sentinel.register_capability(name: "mise.add_to_shopping_list", description: "Add an item",
                                  venue: "webhook", config: { url: url, secret: secret })
@@ -121,7 +138,8 @@ hob.sentinel.register_capability(name: "mise.add_to_shopping_list", description:
 A surface receiving a webhook delivery verifies it with
 `Hob::Webhook.verify(secret:, signature: request.headers["X-Hob-Signature"], body: request.raw_post)`.
 `Hob::Fake` scripts the sentinel (`fake.sentinel.allow(result)`, `.deny`,
-`.hold`) and keeps an in-memory mission queue.
+`.hold`), petitions (`.grant(name)`, `.build(name)`, `.hold_petition`,
+`.deny_petition`), and keeps an in-memory mission queue.
 
 ## Errors
 

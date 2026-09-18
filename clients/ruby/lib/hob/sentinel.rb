@@ -37,9 +37,39 @@ module Hob
     attribute :id, :agent, :capability, :effect, :constraints, :limits, :guidance
   end
 
+  # A capability request (hob's SENTINEL.md, "Petitions and the forge").
+  #   status: granted | pending | building | proposed | denied | failed
+  class Petition < Record
+    attribute :id, :agent, :want, :capability, :arguments, :reason, :realm, :status, :action, :decided_by, :rationale,
+              :decider, :effect, :spec, :policy, :mission, :pull_request, :error, :on_mission, :review,
+              :created_at, :decided_at, :settled_at
+
+    def granted?
+      status == "granted"
+    end
+
+    def denied?
+      status == "denied"
+    end
+
+    def pending?
+      status == "pending"
+    end
+
+    # Being built or awaiting a merge: it may be granted later, maybe days later.
+    def in_progress?
+      %w[building proposed].include?(status)
+    end
+
+    def settled?
+      %w[granted denied].include?(status)
+    end
+  end
+
   # /v1/sentinel. With an agent's key: `capabilities`, `request`, `show`,
-  # `wait`, `list`. With a person's key: also `decide`, the policy calls,
-  # and capability registration.
+  # `wait`, `list`, and `petition` for what it cannot yet ask for. With a
+  # person's key: also `decide`, `decide_petition`, the policy calls, and
+  # capability registration.
   class Sentinel
     def initialize(http)
       @http = http
@@ -76,6 +106,41 @@ module Hob
     # POST /v1/sentinel/requests/:id/decide — a person's key.
     def decide(id, decision:, rationale: nil)
       SentinelRequest.new(@http.post("/v1/sentinel/requests/#{id}/decide", { decision: decision, rationale: rationale }.compact))
+    end
+
+    # POST /v1/sentinel/petitions: ask for a capability this key does not
+    # have. `want` is what the agent wants to be able to do, in plain words;
+    # `capability` a suggested name; `arguments` an example. Read `status`.
+    def petition(want:, capability: nil, arguments: nil, reason: nil, mission: nil)
+      Petition.new(@http.post("/v1/sentinel/petitions",
+                              { want: want, capability: capability, arguments: arguments, reason: reason, mission: mission }.compact))
+    end
+
+    def show_petition(id, wait: nil)
+      Petition.new(@http.get("/v1/sentinel/petitions/#{id}", { wait: wait }))
+    end
+
+    # Poll until the petition is granted or denied, or `timeout` seconds pass;
+    # a build can take days, so callers usually give up sooner and move on.
+    def wait_petition(petition, timeout: 300)
+      id = petition.respond_to?(:id) ? petition.id : petition
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+      loop do
+        current = show_petition(id, wait: 25)
+        return current if current.settled? || Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+      end
+    end
+
+    def petitions(status: nil, agent: nil)
+      @http.get("/v1/sentinel/petitions", { status: status, agent: agent }).map { |p| Petition.new(p) }
+    end
+
+    # POST /v1/sentinel/petitions/:id/decide — a person's key.
+    #   decision: grant | build | deny; grant takes capability:, effect:, constraints:, limits:, guidance:
+    def decide_petition(id, decision:, capability: nil, effect: nil, constraints: nil, limits: nil, guidance: nil, spec: nil, rationale: nil)
+      body = { decision: decision, capability: capability, effect: effect, constraints: constraints, limits: limits,
+               guidance: guidance, spec: spec, rationale: rationale }.compact
+      Petition.new(@http.post("/v1/sentinel/petitions/#{id}/decide", body))
     end
 
     def capabilities

@@ -3,6 +3,9 @@
 # If running the rails server then create or migrate existing database
 if [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
   ./bin/rails db:prepare
+  # Native capabilities follow the code (a merged forge PR adds one); the
+  # rows policies refer to are upserted at every boot.
+  ./bin/rails hob:capabilities:sync
 fi
 
 exec "${@}"

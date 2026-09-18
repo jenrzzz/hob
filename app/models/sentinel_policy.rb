@@ -7,10 +7,15 @@
 #
 # principal NULL applies to every agent; `capability` is an exact name or a
 # glob. The most specific matching rule wins (SentinelPolicy.resolve).
+#
+# The rule for the pseudo-capability `sentinel.petition` is the charter for
+# capability requests (Sentinel::Steward): its effect says how far the
+# steward may go on its own, its guidance is the steward's brief, and
+# `limits.per_day` / `limits.builds_per_day` cap petitions and forge builds.
 class SentinelPolicy < ApplicationRecord
   EFFECTS = %w[allow deny review confirm].freeze
   CONSTRAINT_KEYS = %w[in max pattern].freeze
-  LIMIT_KEYS = %w[per_hour per_day cost_per_day].freeze
+  LIMIT_KEYS = %w[per_hour per_day cost_per_day builds_per_day].freeze
 
   belongs_to :principal, optional: true
 

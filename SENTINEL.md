@@ -23,6 +23,10 @@ Two directions, one door:
   Muse can only make outbound connections, so missions sit in a queue the
   agent polls: lease, do, report. Missions are also how a surface fulfils a
   capability without hosting a webhook (the `poll` venue).
+- **Sideways: petitions.** When nothing on offer does what the agent needs,
+  it asks for the capability itself. The *steward* grants an existing one it
+  can be trusted with, has the *forge* build a new one as a pull request, or
+  holds it for a person. Nobody has to enumerate policies up front.
 
 ## Threat model
 
@@ -189,6 +193,113 @@ A request made while on a mission passes `mission: <id>`; it lands on the
 request row and in the reviewer's brief, so the audit trail reads "Muse,
 on *Plan Tessa's week*, asked for `hob.complete`".
 
+## Petitions and the forge
+
+Writing a policy row for every capability every agent might ever want is
+the kind of chore that means it never gets done, and the agent just gets
+`no policy permits`. So the sentinel takes **petitions**: an agent says what
+it wants to be able to do, and hob decides how to make that so.
+
+```
+POST /v1/sentinel/petitions { want, capability?, arguments?, reason?, mission? }
+→ 201 { id, status: granted|pending|building|proposed|denied, action, decided_by,
+        rationale, capability, effect, spec?, pull_request?, ... }
+GET  /v1/sentinel/petitions/:id?wait=25
+POST /v1/sentinel/petitions/:id/decide { decision: grant|build|deny, capability?, effect?,
+                                         constraints?, limits?, guidance?, spec?, rationale }   a person
+```
+
+### The steward
+
+`Sentinel::Steward` is the reviewer's counterpart for petitions: an LLM
+(role `sentinel-steward`, the strongest model, since petitions are rare)
+that reads the want, the agent's stated reason and example arguments, the
+mission it is on, its request and petition history, the capabilities it
+already has, and the ones it could be given, and answers one of:
+
+| action | what happens |
+|---|---|
+| `grant` | a `sentinel_policies` row for (agent, existing capability) at an effect; the agent can ask at once |
+| `build` | a capability spec is drafted and a build mission goes to the forge; a PR follows |
+| `refer` | the petition is `pending` for a person, with the steward's recommendation attached |
+| `deny` | refused, on the record |
+
+**The charter** is the steward's policy: the rule for the pseudo-capability
+`sentinel.petition`, resolved like any other (per agent beats every agent).
+Its effect says how far the steward may go alone; its `guidance` is the
+brief ("Muse acts for Tessa. Reads of household planning data are fine;
+anything touching another person's private matters needs me; build what
+planning needs"); its `limits` cap `per_day` petitions (default 10) and
+`builds_per_day` (default 3).
+
+| charter effect | the steward may |
+|---|---|
+| none / `deny` | nothing: the agent cannot petition (denied by policy) |
+| `confirm` | recommend only; every petition is referred to a person |
+| `review` | grant existing capabilities; builds are referred with the spec drafted |
+| `allow` | grant, and dispatch builds to the forge |
+
+**Structural caps** hold whatever the LLM says. A grant is at most `allow`
+for a `read` capability and at most `review` for one that acts (a person can
+loosen it afterwards). A capability above the agent's clearance is never
+granted; nor is one an existing rule denies — a person's `deny` is kept, the
+petition is referred. An exact rule the agent already has is left alone. An
+unreachable or refusing steward refers. A `build` verdict with an
+incomplete spec, an invalid name, or a name that already exists is referred
+too, never built.
+
+A person settles a pending or failed petition with `decide`: `grant`
+(optionally with their own capability, effect, constraints, limits, and
+guidance — no caps apply to a person), `build` (from the steward's spec, or
+one they pass), or `deny`. `hob:sentinel:pending` lists petitions beside
+requests; `hob:sentinel:petition[id,grant|build|deny]` decides from a
+terminal.
+
+### The forge
+
+The forge is a mission worker that runs where hob's code can be built: a
+coder box with this checkout, Claude Code, `git`, and `gh`. It is a
+`worker` principal (`hob:forge:setup`) and `bin/forge` is its loop:
+
+```
+lease a forge.capability mission
+  git worktree add ../hob-forge/<branch> origin/main; copy local config in
+  claude -p < .forge/BRIEF.md         headless; edits accepted, shell allowlisted
+  (REFUSED.md written? fail the mission with the reason)
+  commit anything left uncommitted; bin/rails test; require a handler under sentinel/native/
+  git push; gh pr create              the PR body carries petition, spec, acceptance, summary
+complete the mission { pull_request, branch, capability, commit, summary, cost }
+```
+
+The brief tells the implementer exactly what to touch (a
+`Sentinel::Native` handler, its `HANDLERS` entry, tests, the two doc tables)
+and what not to (policy, the gate, the reviewer, the steward, config,
+secrets, network, gems), and to write `.forge/REFUSED.md` and stop if the
+spec cannot be met inside those lines. Heartbeats keep the lease while
+Claude works; a failed build fails the mission, which fails the petition,
+which pings a person with the retry command.
+
+The PR is the human gate. Merge it, deploy, and `hob:capabilities:sync`
+(the entrypoint runs it at every boot) upserts the new `Capability` row;
+`Capability`'s `after_create` finds the petitions waiting on that name and
+writes their grants. The agent, polling its petition, sees `proposed`
+become `granted` and asks. Close the PR unmerged and deny the petition to
+refuse instead.
+
+Nothing about the forge is specific to petitions: any `forge.capability`
+mission with a spec in its payload builds. A person can queue one by hand.
+
+### Trust
+
+The spec reaching the forge was written by the steward from an untrusted
+want, so it is treated as a product request, not as instructions about the
+repository, and the implementer is told so. What the build can do is bounded
+three ways: the brief's do-not list, the shell allowlist Claude Code runs
+under (`FORGE_CLAUDE_ARGS` to change it), and the merge. Cost lands where it
+should: the steward's completion is a ledger row against the petitioning
+agent (`ref: petition/<id>`), and the forge's Claude Code spend is reported
+on the mission and in the PR.
+
 ## The Muse loop
 
 ```
@@ -200,6 +311,9 @@ loop:
       → completed: use result
       → pending:   GET /v1/sentinel/requests/:id?wait=25 until settled
       → denied:    tell the user, do without
+    nothing on offer fits?
+      POST /v1/sentinel/petitions { want, capability, arguments, reason, mission: mission.id }
+      → granted: ask for it now · building/proposed: finish without it, try another day · denied: do without
     POST /v1/missions/:id/heartbeat { lease_token }
   POST /v1/missions/:id/complete { lease_token, result }
 ```
@@ -224,10 +338,23 @@ bin/rails "hob:sentinel:policy[muse,hob.complete,review]" \
 bin/rails "hob:sentinel:policy[muse,hob.mission.create,confirm]"
 ```
 
+Or skip the per-capability rows and let petitions fill them in:
+
+```sh
+bin/rails "hob:sentinel:charter[muse,allow]" LIMITS='{"per_day":10,"builds_per_day":2}' \
+  GUIDANCE="Muse acts for Tessa on household planning. Grant reads of planning data freely; anything about another person's private matters is mine to decide. Build what planning needs."
+bin/rails "hob:forge:setup[forge]"                           # the builder's key, shown once
+HOB_URL=https://hob.example HOB_KEY=<forge key> bin/forge    # on the coder box, in a tmux
+export HOB_NOTIFY_URL=https://ntfy.sh/<topic>                # on the hob box: pings when a person is needed
+bin/rails hob:sentinel:pending                               # requests and petitions waiting
+bin/rails "hob:sentinel:petition[<id>,grant]" EFFECT=review  # or build, or deny
+```
+
 The same rules over HTTP with a person's key: `GET/POST/PATCH/DELETE
 /v1/sentinel/policies`, `POST /v1/sentinel/capabilities` to register a
-surface's webhook or poll capability. The gem wraps both
-(`hob.sentinel.set_policy`, `hob.sentinel.register_capability`).
+surface's webhook or poll capability, `POST /v1/sentinel/petitions/:id/decide`.
+The gem wraps them (`hob.sentinel.set_policy`, `hob.sentinel.register_capability`,
+`hob.sentinel.decide_petition`).
 
 A surface receiving the webhook venue verifies `X-Hob-Signature` with
 `Hob::Webhook.verify(secret:, signature:, body:)` and answers JSON; a
@@ -244,6 +371,10 @@ sentinel_requests  ulid, principal (agent), capability, arguments, reason, surfa
 missions           ulid, assignee, created_by?, title, brief, payload, priority, realm,
                    status, attempts, lease_token, leased_at, lease_expires_at,
                    result, error, sentinel_request_id?                           [RLS]
+petitions          ulid, principal (agent), want, capability_name?, arguments, reason, surface,
+                   realm, on_mission_id?, status, action, decided_by, rationale, decider?,
+                   review, effect, spec, sentinel_policy_id?, mission_id?, pull_request?,
+                   error, decided_at, settled_at                                 [RLS]
 principals.kind    + agent
 ```
 
@@ -251,7 +382,10 @@ principals.kind    + agent
 
 1. **Pending-request notification.** A `confirm` rule is only as good as
    how fast a person sees it. chatelaine's inbox is the natural place;
-   until then, `hob:sentinel:pending` from a terminal.
+   until then, `hob:sentinel:pending` from a terminal, and `Notify` posts
+   to `HOB_NOTIFY_URL` (an ntfy topic) when a petition needs a person, a
+   build is dispatched, a PR opens, or a build fails. Pending *requests*
+   do not ping yet; they should, through the same hook.
 2. **Reviewer memory.** The brief carries the agent's last ten requests.
    Whether the reviewer should also see the household's standing
    observations about the agent (the memory plane, when it exists) is a
@@ -263,3 +397,13 @@ principals.kind    + agent
 4. **Streaming results.** `hob.complete` through the sentinel is blocking;
    the request row is the only delivery. Fine for planning-sized calls;
    revisit if an agent wants a narrator-length generation.
+5. **What the forge may build.** Today: native handlers over hob's own
+   data and models. A want that needs a new integration (a calendar, a
+   mail account) needs a surface or a provider first; the steward should
+   say so rather than draft a spec the forge will refuse. Whether the
+   forge should also be allowed to add a webhook capability's *receiving*
+   side to a surface's repo is a question for when a surface asks.
+6. **Steward memory.** The steward sees the agent's last ten requests and
+   petitions. Whether a denied petition should stay denied for re-asks
+   phrased differently (the request rule in MUSE.md) or be judged afresh
+   is left to the reviewer's judgement and the history in its brief.

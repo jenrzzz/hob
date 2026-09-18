@@ -6,7 +6,7 @@ require "net/http"
 # HOB_NOTIFY_TOKEN as a bearer token when set, and always write it to the
 # log. Never raises: a failed ping must not fail the thing it was about.
 module Notify
-  # Tests inject a lambda (url, title, body, headers) here.
+  # Tests inject a lambda (url, title, body, headers) -> HTTP status here.
   mattr_accessor :transport
 
   module_function
@@ -18,8 +18,11 @@ module Notify
     headers = { "Title" => title.to_s, "Content-Type" => "text/plain; charset=utf-8" }
     headers["Tags"] = Array(tags).join(",") if tags.present?
     headers["Authorization"] = "Bearer #{token}" if token.present?
-    (Notify.transport || method(:post)).call(url, title.to_s, body.to_s, headers)
-    true
+    status = (Notify.transport || method(:post)).call(url, title.to_s, body.to_s, headers)
+    return true if status.nil? || status.to_s.start_with?("2")
+
+    Rails.logger.warn("notify failed: #{url} answered HTTP #{status}")
+    false
   rescue StandardError => e
     Rails.logger.warn("notify failed: #{e.class}: #{e.message}")
     false
@@ -30,6 +33,6 @@ module Notify
     req = Net::HTTP::Post.new(uri)
     headers.each { |k, v| req[k] = v }
     req.body = body
-    Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 5, read_timeout: 10) { |http| http.request(req) }
+    Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 5, read_timeout: 10) { |http| http.request(req) }.code
   end
 end

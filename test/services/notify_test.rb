@@ -5,7 +5,7 @@ class NotifyTest < ActiveSupport::TestCase
 
   test "posts a titled text body to HOB_NOTIFY_URL and never raises" do
     sent = []
-    Notify.transport = ->(url, title, body, headers) { sent << [ url, title, body, headers ] }
+    Notify.transport = ->(url, title, body, headers) { sent << [ url, title, body, headers ]; "200" }
     assert_not Notify.person(title: "t", body: "b", url: nil), "no URL: logged only"
     assert Notify.person(title: "hob: hello", body: "there", tags: "bell", url: "https://ntfy.test/hob")
     url, title, body, headers = sent.last
@@ -20,5 +20,9 @@ class NotifyTest < ActiveSupport::TestCase
 
     Notify.transport = ->(*) { raise IOError, "boom" }
     assert_not Notify.person(title: "t", body: "b", url: "https://ntfy.test/hob")
+    Notify.transport = ->(*) { "403" }
+    assert_not Notify.person(title: "t", body: "b", url: "https://ntfy.test/hob"), "a rejected token is a failure"
+    Notify.transport = ->(*) { "200" }
+    assert Notify.person(title: "t", body: "b", url: "https://ntfy.test/hob")
   end
 end

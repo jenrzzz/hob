@@ -383,7 +383,7 @@ principals.kind    + agent
 1. **Pending-request notification.** A `confirm` rule is only as good as
    how fast a person sees it. chatelaine's inbox is the natural place;
    until then, `hob:sentinel:pending` from a terminal, and `Notify` posts
-   to `HOB_NOTIFY_URL` (an ntfy topic) when a petition needs a person, a
+   to `HOB_NOTIFY_URL` (an ntfy topic; `HOB_NOTIFY_TOKEN` if it needs one) when a petition needs a person, a
    build is dispatched, a PR opens, or a build fails. Pending *requests*
    do not ping yet; they should, through the same hook.
 2. **Reviewer memory.** The brief carries the agent's last ten requests.

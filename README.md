@@ -68,7 +68,8 @@ bin/rails "hob:sentinel:decide[<id>,allow]"
 bin/rails "hob:sentinel:petition[<id>,grant]" EFFECT=review
 ```
 
-`HOB_NOTIFY_URL=https://ntfy.sh/<topic>` makes hob ping you when a
+`HOB_NOTIFY_URL=https://ntfy.sh/<topic>` (plus `HOB_NOTIFY_TOKEN` for a
+protected topic) makes hob ping you when a
 petition needs a person, a build starts, a PR is ready, or a build fails.
 
 [SENTINEL.md](SENTINEL.md) is the design; [MUSE.md](MUSE.md) is the

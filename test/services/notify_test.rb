@@ -14,6 +14,9 @@ class NotifyTest < ActiveSupport::TestCase
     assert_equal "there", body
     assert_equal "hob: hello", headers["Title"]
     assert_equal "bell", headers["Tags"]
+    assert_nil headers["Authorization"]
+    assert Notify.person(title: "t", body: "b", url: "https://ntfy.test/hob", token: "tk_x")
+    assert_equal "Bearer tk_x", sent.last[3]["Authorization"]
 
     Notify.transport = ->(*) { raise IOError, "boom" }
     assert_not Notify.person(title: "t", body: "b", url: "https://ntfy.test/hob")

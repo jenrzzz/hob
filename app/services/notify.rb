@@ -2,21 +2,22 @@ require "net/http"
 
 # Something needs a person. hob has no inbox yet (that is chatelaine's job);
 # until then, POST a short message to HOB_NOTIFY_URL — an ntfy topic, or
-# anything that takes a text body with Title and Tags headers — and always
-# write it to the log. Never raises: a failed ping must not fail the thing
-# it was about.
+# anything that takes a text body with Title and Tags headers — with
+# HOB_NOTIFY_TOKEN as a bearer token when set, and always write it to the
+# log. Never raises: a failed ping must not fail the thing it was about.
 module Notify
   # Tests inject a lambda (url, title, body, headers) here.
   mattr_accessor :transport
 
   module_function
 
-  def person(title:, body:, tags: nil, url: ENV["HOB_NOTIFY_URL"])
+  def person(title:, body:, tags: nil, url: ENV["HOB_NOTIFY_URL"], token: ENV["HOB_NOTIFY_TOKEN"])
     Rails.logger.info("notify: #{title} — #{body.to_s.squish.truncate(200)}")
     return false if url.blank?
 
     headers = { "Title" => title.to_s, "Content-Type" => "text/plain; charset=utf-8" }
     headers["Tags"] = Array(tags).join(",") if tags.present?
+    headers["Authorization"] = "Bearer #{token}" if token.present?
     (Notify.transport || method(:post)).call(url, title.to_s, body.to_s, headers)
     true
   rescue StandardError => e

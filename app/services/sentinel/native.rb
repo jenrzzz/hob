@@ -12,7 +12,8 @@ module Sentinel
       "conversations_list" => "Sentinel::Native::ConversationsList",
       "conversation_read" => "Sentinel::Native::ConversationRead",
       "conversation_event" => "Sentinel::Native::ConversationEvent",
-      "mission_create" => "Sentinel::Native::MissionCreate"
+      "mission_create" => "Sentinel::Native::MissionCreate",
+      "agent_message" => "Sentinel::Native::AgentMessage"
     }.freeze
 
     module_function

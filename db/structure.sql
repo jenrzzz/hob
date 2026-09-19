@@ -32,6 +32,22 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: agent_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_messages (
+    id character varying NOT NULL,
+    sender_id bigint NOT NULL,
+    recipient_id bigint NOT NULL,
+    body text NOT NULL,
+    sentinel_request_id character varying NOT NULL,
+    read_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: api_keys; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -672,6 +688,14 @@ ALTER TABLE ONLY public.usage_events ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: agent_messages agent_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_messages
+    ADD CONSTRAINT agent_messages_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: api_keys api_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -837,6 +861,34 @@ ALTER TABLE ONLY public.sentinel_requests
 
 ALTER TABLE ONLY public.usage_events
     ADD CONSTRAINT usage_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: index_agent_messages_on_inbox; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_agent_messages_on_inbox ON public.agent_messages USING btree (recipient_id, read_at, created_at);
+
+
+--
+-- Name: index_agent_messages_on_recipient_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_agent_messages_on_recipient_id ON public.agent_messages USING btree (recipient_id);
+
+
+--
+-- Name: index_agent_messages_on_sender_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_agent_messages_on_sender_id ON public.agent_messages USING btree (sender_id);
+
+
+--
+-- Name: index_agent_messages_on_sentinel_request_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_agent_messages_on_sentinel_request_id ON public.agent_messages USING btree (sentinel_request_id);
 
 
 --
@@ -1162,6 +1214,14 @@ ALTER TABLE ONLY public.devices
 
 
 --
+-- Name: agent_messages fk_rails_92352b2e86; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_messages
+    ADD CONSTRAINT fk_rails_92352b2e86 FOREIGN KEY (sender_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: sentinel_requests fk_rails_aed65976d5; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1175,6 +1235,14 @@ ALTER TABLE ONLY public.sentinel_requests
 
 ALTER TABLE ONLY public.petitions
     ADD CONSTRAINT fk_rails_ca627f2e79 FOREIGN KEY (decider_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: agent_messages fk_rails_e59b64cbcb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_messages
+    ADD CONSTRAINT fk_rails_e59b64cbcb FOREIGN KEY (recipient_id) REFERENCES public.principals(id);
 
 
 --
@@ -1298,6 +1366,7 @@ ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260921000001'),
 ('20260920000002'),
 ('20260920000001'),
 ('20260919000001'),

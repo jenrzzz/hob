@@ -9,6 +9,10 @@ class Principal < ApplicationRecord
   has_many :sentinel_requests, dependent: :restrict_with_exception
   has_many :petitions, dependent: :restrict_with_exception
   has_many :missions, foreign_key: :assignee_id, inverse_of: :assignee, dependent: :restrict_with_exception
+  has_many :sent_agent_messages, class_name: "AgentMessage", foreign_key: :sender_id, inverse_of: :sender,
+                                 dependent: :restrict_with_exception
+  has_many :received_agent_messages, class_name: "AgentMessage", foreign_key: :recipient_id, inverse_of: :recipient,
+                                     dependent: :restrict_with_exception
 
   validates :kind, inclusion: { in: KINDS }
   validates :name, presence: true, uniqueness: true

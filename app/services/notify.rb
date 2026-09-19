@@ -14,8 +14,12 @@ module Notify
 
   module_function
 
-  def person(title:, body:, tags: nil, url: ENV["HOB_NOTIFY_URL"], token: ENV["HOB_NOTIFY_TOKEN"])
-    post_to(url, title: title, body: body, tags: tags, token: token)
+  # A person: the household topic, and every phone running the companion app
+  # (Push). `about:` is the petition or request the phone should open.
+  def person(title:, body:, tags: nil, about: nil, url: ENV["HOB_NOTIFY_URL"], token: ENV["HOB_NOTIFY_TOKEN"])
+    posted = post_to(url, title: title, body: body, tags: tags, token: token, click: Push.deep_link(about))
+    pushed = Push.people(title: title, body: body, about: about)
+    posted || pushed.positive?
   end
 
   # The principal's own channel; false (logged only) when it has none.
@@ -23,12 +27,15 @@ module Notify
     post_to(principal&.channel, title: title, body: body, tags: tags, token: token)
   end
 
-  def post_to(url, title:, body:, tags: nil, token: nil)
+  # `click` is where tapping the message goes (ntfy's Click header): the
+  # companion app's hob://petition/<id>, when the ping is about one.
+  def post_to(url, title:, body:, tags: nil, token: nil, click: nil)
     Rails.logger.info("notify: #{title} — #{body.to_s.squish.truncate(200)}")
     return false if url.blank?
 
     headers = { "Title" => title.to_s, "Content-Type" => "text/plain; charset=utf-8" }
     headers["Tags"] = Array(tags).join(",") if tags.present?
+    headers["Click"] = click if click.present?
     headers["Authorization"] = "Bearer #{token}" if token.present?
     status = (Notify.transport || method(:post)).call(url, title.to_s, body.to_s, headers)
     return true if status.nil? || status.to_s.start_with?("2")

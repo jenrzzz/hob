@@ -45,3 +45,5 @@ end
 
 # Provider abstraction under the gateway plane (same layer mise uses)
 gem "ruby_llm"
+
+gem "apnotic", "~> 1.8"

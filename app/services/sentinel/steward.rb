@@ -137,13 +137,13 @@ module Sentinel
       url = result["pull_request"] || result["pr"] || result["url"]
       petition.propose!(url)
       Notify.person(title: "hob: PR ready for #{petition.capability_name}",
-                    body: "#{petition.principal.name} petitioned: #{petition.want.truncate(160)}\n#{url}", tags: "hammer")
+                    body: "#{petition.principal.name} petitioned: #{petition.want.truncate(160)}\n#{url}", tags: "hammer", about: petition)
     end
 
     def self.build_failed!(petition, message)
       petition.fail!(message)
       Notify.person(title: "hob: build failed for #{petition.capability_name}",
-                    body: "#{message.to_s.truncate(300)}\nbin/rails \"hob:sentinel:petition[#{petition.id},build]\" to retry", tags: "warning")
+                    body: "#{message.to_s.truncate(300)}\nbin/rails \"hob:sentinel:petition[#{petition.id},build]\" to retry", tags: "warning", about: petition)
     end
 
     # --- instance -----------------------------------------------------------
@@ -188,7 +188,7 @@ module Sentinel
       when "refer"
         record(verdict, decided_by: decided_by, decider: decider)
         Notify.person(title: "hob: #{@agent.name} petitions for a capability",
-                      body: "#{@petition.want.truncate(200)}\n#{verdict.rationale}\nbin/rails hob:sentinel:pending", tags: "bell")
+                      body: "#{@petition.want.truncate(200)}\n#{verdict.rationale}\nbin/rails hob:sentinel:pending", tags: "bell", about: @petition)
       else
         record(verdict, decided_by: decided_by, decider: decider)
       end
@@ -393,7 +393,7 @@ module Sentinel
       )
       @petition.build!(mission)
       Notify.person(title: "hob: forging #{verdict.capability} for #{@agent.name}",
-                    body: "#{@petition.want.truncate(200)}\nmission #{mission.id}; a PR will follow", tags: "hammer")
+                    body: "#{@petition.want.truncate(200)}\nmission #{mission.id}; a PR will follow", tags: "hammer", about: @petition)
       @petition
     end
 

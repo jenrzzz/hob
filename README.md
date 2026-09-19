@@ -87,6 +87,20 @@ other's work; `hob:channel` with no arguments lists them.
 [SENTINEL.md](SENTINEL.md) is the design; [MUSE.md](MUSE.md) is the
 connector brief an outside agent reads to wire itself up.
 
+The same pings reach your phone through the companion app in
+[clients/ios](clients/ios/README.md): a petition or request that needs a
+person arrives as a push notification and opens in the app, where you
+comment and grant, build, allow, or deny. The app registers its phone with a
+person's key (`bin/rails "hob:key[jenner,phone]"` mints one); hob sends
+through APNs with the same token-auth key kat uses:
+
+| var | value |
+|---|---|
+| `APNS_KEY` | the `.p8` contents (or `APNS_KEY_PATH`) |
+| `APNS_KEY_ID` | the key id from the developer portal |
+| `APNS_TEAM_ID` | the team id |
+| `APNS_BUNDLE_ID` | `place.amber.hob` (the default) |
+
 ```
 POST /v1/sentinel/requests             { capability, arguments, reason, mission }
                                        → { id, status: completed|denied|pending|executing|failed,

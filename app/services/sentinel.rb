@@ -30,7 +30,15 @@ module Sentinel
     request.decide!(decision: verdict.decision, decided_by: verdict.decided_by, rationale: verdict.rationale,
                     review: verdict.review)
     Executor.run!(request) if request.decision == "allow"
+    ask_person!(request) if request.pending?
     request
+  end
+
+  # A person has to look: the household topic and the companion app (Notify).
+  def ask_person!(request)
+    Notify.person(title: "hob: #{request.principal.name} asks for #{request.capability.name}",
+                  body: [ request.reason.presence, request.rationale.presence, "bin/rails hob:sentinel:pending" ].compact.join("\n"),
+                  tags: "bell", about: request)
   end
 
   # A person settles a pending request.

@@ -17,6 +17,10 @@ Rails.application.routes.draw do
     get "models", to: "models#index"
     resources :prices, only: %i[index show update destroy], param: :model, constraints: { model: /[^\/]+/ }
     get "usage", to: "usage#show"
+    # Phones running the companion app (clients/ios): where people are pinged.
+    resources :devices, only: %i[index create destroy], param: :token do
+      post :ping, on: :member
+    end
 
     # The sentinel (SENTINEL.md): where external agents ask.
     namespace :sentinel do

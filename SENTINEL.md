@@ -161,8 +161,10 @@ Decided inline. `status` is the answer:
 person settles a pending one with `POST /v1/sentinel/requests/:id/decide
 { decision: allow|deny, rationale }`, from the API or
 `hob:sentinel:decide[id,allow]`; `hob:sentinel:pending` lists what's
-waiting. Notifying a person that something is pending is the obvious next
-piece and belongs to chatelaine, not here.
+waiting. A request that goes pending pings a person the same way a
+petition does (`Notify.person`): the household's ntfy topic, and the
+companion app on every person's phone ([clients/ios](clients/ios/README.md)),
+where it opens to be read and decided.
 
 Execution runs `Current` and `app.clearance` as the agent for the duration
 and restores the caller's afterwards (`Clearance.with`). Native and webhook
@@ -349,6 +351,8 @@ export HOB_NOTIFY_URL=https://ntfy.sh/<topic>                # on the hob box: p
 bin/rails "hob:channel[muse,https://ntfy.sh/hob-muse]"       # muse's own channel: its missions are announced there
 bin/rails hob:sentinel:pending                               # requests and petitions waiting
 bin/rails "hob:sentinel:petition[<id>,grant]" EFFECT=review  # or build, or deny
+bin/rails "hob:key[jenner,phone]"                            # a person's key for the companion app (clients/ios)
+export APNS_KEY=... APNS_KEY_ID=... APNS_TEAM_ID=...         # on the hob box: pushes to the phones that registered
 ```
 
 The same rules over HTTP with a person's key: `GET/POST/PATCH/DELETE
@@ -377,6 +381,8 @@ petitions          ulid, principal (agent), want, capability_name?, arguments, r
                    review, effect, spec, sentinel_policy_id?, mission_id?, pull_request?,
                    error, decided_at, settled_at                                 [RLS]
 principals.kind    + agent
+devices            principal (a person), platform, token (APNs, unique), environment sandbox|production,
+                   name, app_version, last_seen_at, last_pushed_at        the companion app's phones
 principals.channel an ntfy topic URL: hears missions queued for it, and the outcome of missions it queued
 ```
 
@@ -386,8 +392,11 @@ principals.channel an ntfy topic URL: hears missions queued for it, and the outc
    how fast a person sees it. chatelaine's inbox is the natural place;
    until then, `hob:sentinel:pending` from a terminal, and `Notify` posts
    to `HOB_NOTIFY_URL` (an ntfy topic; `HOB_NOTIFY_TOKEN` if it needs one) when a petition needs a person, a
-   build is dispatched, a PR opens, or a build fails. Pending *requests*
-   do not ping yet; they should, through the same hook. Missions have
+   build is dispatched, a PR opens, or a build fails, and a pending
+   *request* pings through the same hook. Every ping also reaches the
+   companion app (`clients/ios`) on every person's registered phone
+   (`Push`, over APNs), where the petition or request opens to be decided;
+   that is the inbox until chatelaine has one. Missions have
    their own channels: each principal may carry a `channel` (`hob:channel`),
    and a mission is announced on its assignee's when queued and reported
    on its creator's when it settles, so two agents on one household do not

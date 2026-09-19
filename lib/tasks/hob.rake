@@ -50,6 +50,19 @@ namespace :hob do
     puts principal.channel.present? ? "#{principal.name}: missions announced on #{principal.channel}" : "#{principal.name}: no channel"
   end
 
+  desc "Mint a key for an existing principal, shown once: bin/rails \"hob:key[jenner,phone]\" for the companion app " \
+       "(clients/ios); the clearance defaults to the principal's own"
+  task :key, [ :principal, :surface, :clearance ] => :environment do |_task, args|
+    abort "usage: bin/rails \"hob:key[principal,surface,clearance=principal's]\"" if args[:principal].blank? || args[:surface].blank?
+
+    principal = Principal.find_by!(name: args[:principal])
+    clearance = args[:clearance].presence || principal.max_clearance
+    Realm.rank_of(clearance)
+    token = ApiKey.issue!(principal: principal, surface: args[:surface], default_clearance: clearance)
+    puts "#{principal.name}: key for #{args[:surface]} (shown once): #{token}"
+    puts "clearance #{clearance}; #{principal.trusted? ? 'a person: may decide petitions and register a phone' : "a #{principal.kind}: cannot decide or register a phone"}"
+  end
+
   namespace :sentinel do
     desc "Set a policy rule. bin/rails \"hob:sentinel:policy[muse,hob.complete,review]\"; agent '*' = every agent; " \
          "GUIDANCE='...' CONSTRAINTS='{\"role\":[\"cheap-classifier\"]}' LIMITS='{\"per_day\":50}'"

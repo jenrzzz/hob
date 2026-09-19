@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Build the hob companion app for the iOS Simulator and (optionally) install + launch it.
+#
+#   bin/build            # generate project, build for simulator
+#   bin/build run        # …then boot the simulator, install and launch
+#   SIM="iPhone 17" bin/build run
+#
+# Needs Xcode and xcodegen (brew install xcodegen). No signing identity required.
+# The build targets the generic simulator; SIM only picks which one to run on.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+export PATH="/opt/homebrew/bin:$PATH"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+
+SIM="${SIM:-iPhone 17 Pro}"
+BUNDLE_ID="place.amber.hob"
+DERIVED="build"
+
+xcodegen generate --quiet
+
+xcodebuild \
+  -project Hob.xcodeproj \
+  -scheme Hob \
+  -configuration Debug \
+  -destination "generic/platform=iOS Simulator" \
+  -derivedDataPath "${DERIVED}" \
+  CODE_SIGNING_ALLOWED=NO \
+  build | { command -v xcbeautify >/dev/null && xcbeautify || grep -E "error:|warning:|BUILD" ; }
+
+if [[ "${1:-}" == "run" ]]; then
+  APP="${DERIVED}/Build/Products/Debug-iphonesimulator/Hob.app"
+  xcrun simctl boot "${SIM}" 2>/dev/null || true
+  open -a Simulator
+  xcrun simctl install "${SIM}" "${APP}"
+  shift
+  xcrun simctl launch "${SIM}" "${BUNDLE_ID}" "$@"
+fi

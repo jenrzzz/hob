@@ -4,6 +4,7 @@ class Principal < ApplicationRecord
   KINDS = %w[human persona worker surface agent].freeze
 
   has_many :api_keys, dependent: :destroy
+  has_many :devices, dependent: :destroy
   has_many :sentinel_policies, dependent: :destroy
   has_many :sentinel_requests, dependent: :restrict_with_exception
   has_many :petitions, dependent: :restrict_with_exception

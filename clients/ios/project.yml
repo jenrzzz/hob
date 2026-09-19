@@ -1,0 +1,108 @@
+# XcodeGen spec for the hob companion app. Regenerate the project with:
+#
+#   xcodegen generate      (from this directory; bin/build does it)
+#
+# The generated Hob.xcodeproj is ignored by git; this file is the source of truth.
+name: Hob
+
+options:
+  bundleIdPrefix: place.amber
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "17.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    TARGETED_DEVICE_FAMILY: "1,2"          # iPhone + iPad
+    CODE_SIGN_STYLE: Automatic
+    # Set DEVELOPMENT_TEAM in Xcode (Signing & Capabilities) or pass it on the
+    # xcodebuild command line to install on a phone. Simulator builds don't need it.
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_STRICT_CONCURRENCY: minimal
+
+targets:
+  Hob:
+    type: application
+    platform: iOS
+    sources:
+      - path: Hob
+        excludes:
+          - "Info.plist"
+          - "Hob.entitlements"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: place.amber.hob
+        PRODUCT_NAME: Hob
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: Hob/Info.plist
+    # Push Notifications capability. Xcode's automatic signing adds it to the
+    # App ID; the value is rewritten to `production` for distribution builds.
+    # Needs a paid developer account — free Apple IDs can't sign for push.
+    entitlements:
+      path: Hob/Hob.entitlements
+      properties:
+        aps-environment: development
+    info:
+      path: Hob/Info.plist
+      properties:
+        CFBundleDisplayName: Hob
+        CFBundleName: Hob
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        # hob://petition/<id> and hob://request/<id>: the ntfy message's click
+        # action, and anything else that wants to open an item here.
+        CFBundleURLTypes:
+          - CFBundleURLName: place.amber.hob
+            CFBundleURLSchemes: [hob]
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Production is HTTPS; this only permits plain HTTP to LAN/localhost for
+        # pointing the app at a dev server.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+
+  # A smoke test against a running hob: launches the app with HOB_URL/HOB_KEY
+  # from the test runner's environment (TEST_RUNNER_HOB_URL=… on the
+  # xcodebuild line), opens what is pending, and denies it with a comment.
+  HobUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: HobUITests
+    dependencies:
+      - target: Hob
+    settings:
+      base:
+        TEST_TARGET_NAME: Hob
+
+schemes:
+  Hob:
+    build:
+      targets:
+        Hob: all
+        HobUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - HobUITests
+      # Substituted by xcodegen from its own environment at generate time
+      # (HOB_URL=… HOB_KEY=… xcodegen generate); the project is gitignored.
+      environmentVariables:
+        HOB_URL: "${HOB_URL}"
+        HOB_KEY: "${HOB_KEY}"
+        SHOT_DIR: "${SHOT_DIR}"
+    archive:
+      config: Release

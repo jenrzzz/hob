@@ -168,6 +168,44 @@ ALTER TABLE ONLY public.conversations FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: devices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.devices (
+    id bigint NOT NULL,
+    principal_id bigint NOT NULL,
+    platform character varying DEFAULT 'ios'::character varying NOT NULL,
+    token character varying NOT NULL,
+    environment character varying NOT NULL,
+    name character varying,
+    app_version character varying,
+    last_seen_at timestamp(6) without time zone,
+    last_pushed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: devices_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.devices_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: devices_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.devices_id_seq OWNED BY public.devices.id;
+
+
+--
 -- Name: message_nodes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -585,6 +623,13 @@ ALTER TABLE ONLY public.capabilities ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: devices id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.devices ALTER COLUMN id SET DEFAULT nextval('public.devices_id_seq'::regclass);
+
+
+--
 -- Name: model_roles id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -664,6 +709,14 @@ ALTER TABLE ONLY public.capabilities
 
 ALTER TABLE ONLY public.conversations
     ADD CONSTRAINT conversations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: devices devices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.devices
+    ADD CONSTRAINT devices_pkey PRIMARY KEY (id);
 
 
 --
@@ -819,6 +872,20 @@ CREATE UNIQUE INDEX index_capabilities_on_name ON public.capabilities USING btre
 --
 
 CREATE INDEX index_conversations_on_kind_and_updated_at ON public.conversations USING btree (kind, updated_at);
+
+
+--
+-- Name: index_devices_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_devices_on_principal_id ON public.devices USING btree (principal_id);
+
+
+--
+-- Name: index_devices_on_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_devices_on_token ON public.devices USING btree (token);
 
 
 --
@@ -1087,6 +1154,14 @@ ALTER TABLE ONLY public.missions
 
 
 --
+-- Name: devices fk_rails_8b23b306c0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.devices
+    ADD CONSTRAINT fk_rails_8b23b306c0 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: sentinel_requests fk_rails_aed65976d5; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1223,6 +1298,7 @@ ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260920000002'),
 ('20260920000001'),
 ('20260919000001'),
 ('20260918000001'),

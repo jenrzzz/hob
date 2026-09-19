@@ -16,6 +16,8 @@ class Mission < ApplicationRecord
   validates :realm, presence: true
 
   before_create { self.id ||= ULID.generate }
+  # Tell the assignee on its own channel once the row is visible to a lease.
+  after_create_commit :announce!
 
   scope :queued, -> { where(status: "queued") }
   scope :open, -> { where(status: %w[queued leased]) }
@@ -74,17 +76,37 @@ class Mission < ApplicationRecord
     update!(status: "completed", result: result, lease_token: nil, error: nil)
     sentinel_request&.finish!(result)
     petition&.then { |p| Sentinel::Steward.built!(p, result) }
+    report!((result.is_a?(Hash) && result["summary"].presence) || "done")
   end
 
   def fail!(message)
     update!(status: "failed", error: message.to_s.truncate(2000), lease_token: nil)
     sentinel_request&.fail!("mission #{id} failed: #{message}")
     petition&.then { |p| Sentinel::Steward.build_failed!(p, message) }
+    report!(error)
   end
 
   def cancel!
     update!(status: "cancelled", lease_token: nil)
     sentinel_request&.fail!("mission #{id} was cancelled")
     petition&.then { |p| Sentinel::Steward.build_failed!(p, "build mission cancelled") }
+  end
+
+  private
+
+  # "You have a mission": the nudge MUSE.md tells an agent to lease on.
+  # Each assignee has its own channel, so skipsy does not wake for marley's.
+  def announce!
+    Notify.principal(assignee, title: "hob: mission for #{assignee.name}",
+                     body: [ title, brief.presence, "POST /v1/missions/lease" ].compact.join("\n"), tags: "inbox_tray")
+  end
+
+  # The outcome, back to whoever queued it, on their channel; not when they
+  # queued it for themselves, and not when nobody did.
+  def report!(summary)
+    return if created_by.nil? || created_by_id == assignee_id
+
+    Notify.principal(created_by, title: "hob: #{assignee.name} #{status} #{title.truncate(60)}",
+                     body: summary.to_s.truncate(300), tags: status == "completed" ? "white_check_mark" : "warning")
   end
 end

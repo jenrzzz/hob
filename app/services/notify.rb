@@ -1,10 +1,13 @@
 require "net/http"
 
-# Something needs a person. hob has no inbox yet (that is chatelaine's job);
-# until then, POST a short message to HOB_NOTIFY_URL — an ntfy topic, or
-# anything that takes a text body with Title and Tags headers — with
-# HOB_NOTIFY_TOKEN as a bearer token when set, and always write it to the
-# log. Never raises: a failed ping must not fail the thing it was about.
+# Something needs someone. hob has no inbox yet (that is chatelaine's job);
+# until then, POST a short message to a channel — an ntfy topic, or anything
+# that takes a text body with Title and Tags headers — with HOB_NOTIFY_TOKEN
+# as a bearer token when set, and always write it to the log. A person is
+# reached at HOB_NOTIFY_URL; a principal (an agent, a worker, a person with
+# a phone) at its own `channel`, so that two agents on one household do not
+# hear each other's missions. Never raises: a failed ping must not fail the
+# thing it was about.
 module Notify
   # Tests inject a lambda (url, title, body, headers) -> HTTP status here.
   mattr_accessor :transport
@@ -12,6 +15,15 @@ module Notify
   module_function
 
   def person(title:, body:, tags: nil, url: ENV["HOB_NOTIFY_URL"], token: ENV["HOB_NOTIFY_TOKEN"])
+    post_to(url, title: title, body: body, tags: tags, token: token)
+  end
+
+  # The principal's own channel; false (logged only) when it has none.
+  def principal(principal, title:, body:, tags: nil, token: ENV["HOB_NOTIFY_TOKEN"])
+    post_to(principal&.channel, title: title, body: body, tags: tags, token: token)
+  end
+
+  def post_to(url, title:, body:, tags: nil, token: nil)
     Rails.logger.info("notify: #{title} — #{body.to_s.squish.truncate(200)}")
     return false if url.blank?
 

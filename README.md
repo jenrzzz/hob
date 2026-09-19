@@ -78,6 +78,11 @@ carries `cost: null` rather than zero until its model has a price, and
 `HOB_NOTIFY_URL=https://ntfy.sh/<topic>` (plus `HOB_NOTIFY_TOKEN` for a
 protected topic) makes hob ping you when a
 petition needs a person, a build starts, a PR is ready, or a build fails.
+Each principal can also have a channel of its own, `bin/rails
+"hob:channel[skipsy,https://ntfy.sh/hob-skipsy]"`: a mission queued for it
+is announced there, and a mission it queued reports its outcome there. Two
+agents on one household get two channels, so neither wakes for the
+other's work; `hob:channel` with no arguments lists them.
 
 [SENTINEL.md](SENTINEL.md) is the design; [MUSE.md](MUSE.md) is the
 connector brief an outside agent reads to wire itself up.

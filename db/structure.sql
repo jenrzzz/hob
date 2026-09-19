@@ -361,7 +361,8 @@ CREATE TABLE public.principals (
     name character varying NOT NULL,
     max_clearance character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    channel character varying
 );
 
 
@@ -1222,6 +1223,7 @@ ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260920000001'),
 ('20260919000001'),
 ('20260918000001'),
 ('20260915000001'),

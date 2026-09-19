@@ -3,7 +3,11 @@ require "test_helper"
 class MissionTest < ActiveSupport::TestCase
   setup do
     @muse, _ = agent("muse")
+    @pings = []
+    Notify.transport = ->(url, title, body, _headers) { @pings << [ url, title, body ]; "200" }
   end
+
+  teardown { Notify.transport = nil }
 
   def mission(title, priority: 0, realm: "household", assignee: @muse)
     Mission.create!(assignee: assignee, created_by: @principal, title: title, realm: realm, priority: priority)
@@ -52,5 +56,42 @@ class MissionTest < ActiveSupport::TestCase
     b = mission("b")
     b.cancel!
     assert_equal "cancelled", b.status
+  end
+
+  test "a queued mission is announced on the assignee's channel; its outcome on the creator's" do
+    marley, _ = agent("marley")
+    @muse.update!(channel: "https://ntfy.test/hob-muse")
+    marley.update!(channel: "https://ntfy.test/hob-marley")
+    @principal.update!(channel: "https://ntfy.test/hob-tester")
+
+    m = Mission.create!(assignee: @muse, created_by: @principal, title: "Plan the week", brief: "Mon–Fri", realm: "household")
+    assert_equal 1, @pings.size, "one ping, to the assignee only"
+    url, title, body = @pings.last
+    assert_equal "https://ntfy.test/hob-muse", url
+    assert_equal "hob: mission for muse", title
+    assert_includes body, "Plan the week"
+    assert_includes body, "Mon–Fri"
+    assert_includes body, "POST /v1/missions/lease"
+
+    Mission.create!(assignee: marley, created_by: @principal, title: "Water the plants", realm: "household")
+    assert_equal "https://ntfy.test/hob-marley", @pings.last[0], "marley's mission does not wake muse"
+
+    Mission.lease_next!(@muse).complete!({ "summary" => "Five dinners planned." })
+    url, title, body = @pings.last
+    assert_equal "https://ntfy.test/hob-tester", url, "the outcome goes to whoever queued it"
+    assert_equal "hob: muse completed Plan the week", title
+    assert_equal "Five dinners planned.", body
+
+    Mission.lease_next!(marley).fail!("no watering can")
+    assert_equal [ "https://ntfy.test/hob-tester", "hob: marley failed Water the plants", "no watering can" ], @pings.last
+
+    @pings.clear
+    Mission.create!(assignee: @muse, created_by: @muse, title: "Note to self", realm: "household")
+    Mission.lease_next!(@muse).complete!({})
+    assert_equal 1, @pings.size, "announced once; no report back to oneself"
+
+    Mission.create!(assignee: Principal.create!(name: "silent", kind: "worker", max_clearance: "household"),
+                    created_by: nil, title: "quiet", realm: "household")
+    assert_equal 1, @pings.size, "no channel, no creator: nothing to say"
   end
 end

@@ -12,6 +12,10 @@ class Principal < ApplicationRecord
   validates :kind, inclusion: { in: KINDS }
   validates :name, presence: true, uniqueness: true
   validates :max_clearance, presence: true
+  # Where this principal hears about its missions: an ntfy topic URL (see
+  # Notify). Blank means nobody is told; the principal finds out by polling.
+  validates :channel, format: { with: %r{\Ahttps?://\S+\z}, message: "must be an http(s) URL" }, allow_blank: true
+  normalizes :channel, with: ->(url) { url.to_s.strip.presence }
 
   scope :agents, -> { where(kind: "agent") }
 

@@ -299,6 +299,16 @@ latency is N plus up to 25 seconds. If the household also nudges you by
 message or email ("you have a mission"), run the same procedure at once.
 Do not run more than one copy of the loop at a time.
 
+hob can also announce your missions on a **channel** of your own: an ntfy
+topic the person setting you up names. Every mission queued for you posts
+a message titled `hob: mission for <your name>` there, and nothing else
+does; other agents in the household have channels of their own. If your
+platform can subscribe to an ntfy topic (or be triggered by one), treat a
+message on it as the nudge above and lease at once. The channel is a
+wake-up, not a queue: the mission itself still comes from
+`POST /v1/missions/lease`, and the polling loop stays in place for when
+the channel is missed.
+
 ## Errors
 
 | response | meaning | what you do |
@@ -366,7 +376,11 @@ Everything above is for Muse. This part is for you.
    hob's own sentinel is doing the per-request judging.
 4. Ask Muse to set up the listening schedule from *Listening for missions*.
 5. Point `HOB_NOTIFY_URL` at an ntfy topic on the hob box so a petition
-   that needs you, or a PR that is ready, reaches your phone.
+   that needs you, or a PR that is ready, reaches your phone. Give Muse a
+   channel of its own, `bin/rails "hob:channel[muse,https://ntfy.sh/<topic>]"`,
+   so a mission queued for it is announced there and not on the household
+   topic; with two agents, give each its own. Your own principal can have
+   one too: a mission you queued reports its outcome there.
 6. Queue a first mission and watch it move:
    `hob.missions.create(assignee: "muse", title: "Say hello", brief: "Complete with a one-line summary.")`
    then `GET /v1/missions/<id>?wait=25` with your key, and `bin/rails

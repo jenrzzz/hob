@@ -17,14 +17,15 @@ end
 
 namespace :hob do
   desc "Onboard an external agent (SENTINEL.md): create its principal and mint a key, shown once. " \
-       "bin/rails \"hob:agent[muse,clearance=household,surface=muse]\" (re-running rotates the key)"
+       "bin/rails \"hob:agent[muse,clearance=household,surface=muse]\" CHANNEL=https://ntfy.sh/<topic> (re-running rotates the key)"
   task :agent, [ :name, :clearance, :surface ] => :environment do |_task, args|
-    abort "usage: bin/rails \"hob:agent[name,clearance=household,surface=name]\"" if args[:name].blank?
+    abort "usage: bin/rails \"hob:agent[name,clearance=household,surface=name]\" CHANNEL=" if args[:name].blank?
 
     clearance = args[:clearance].presence || "household"
     Realm.rank_of(clearance)
     agent = Principal.find_or_create_by!(name: args[:name]) { |p| p.kind = "agent"; p.max_clearance = clearance }
     abort "#{agent.name} is a #{agent.kind}, not an agent" unless agent.agent?
+    agent.update!(channel: ENV["CHANNEL"]) if ENV.key?("CHANNEL")
 
     surface = args[:surface].presence || agent.name
     token = ApiKey.issue!(principal: agent, surface: surface, default_clearance: clearance)
@@ -33,6 +34,20 @@ namespace :hob do
     puts "#{agent.name}: agent key (shown once): #{token}"
     puts "clearance #{clearance}, surface #{surface}, rotated #{rotated} old key(s); " \
          "#{rules.zero? ? 'no policies yet — every request will be denied until you add some' : "#{rules} policy rule(s) apply"}"
+    puts agent.channel.present? ? "missions announced on #{agent.channel}" : "no channel: #{agent.name} finds missions by polling only (hob:channel to set one)"
+  end
+
+  desc "Set a principal's channel: the ntfy topic that hears about its missions (queued for an agent; settled for whoever " \
+       "queued them). bin/rails \"hob:channel[skipsy,https://ntfy.sh/hob-skipsy]\"; an empty URL clears it; no arguments lists them"
+  task :channel, [ :principal, :url ] => :environment do |_task, args|
+    if args[:principal].blank?
+      Principal.order(:kind, :name).each { |p| puts "#{p.name.ljust(16)} #{p.kind.ljust(8)} #{p.channel || '-'}" }
+      next
+    end
+
+    principal = Principal.find_by!(name: args[:principal])
+    principal.update!(channel: args[:url])
+    puts principal.channel.present? ? "#{principal.name}: missions announced on #{principal.channel}" : "#{principal.name}: no channel"
   end
 
   namespace :sentinel do

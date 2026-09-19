@@ -346,6 +346,7 @@ bin/rails "hob:sentinel:charter[muse,allow]" LIMITS='{"per_day":10,"builds_per_d
 bin/rails "hob:forge:setup[forge]"                           # the builder's key, shown once
 HOB_URL=https://hob.example HOB_KEY=<forge key> bin/forge    # on the coder box, in a tmux
 export HOB_NOTIFY_URL=https://ntfy.sh/<topic>                # on the hob box: pings when a person is needed
+bin/rails "hob:channel[muse,https://ntfy.sh/hob-muse]"       # muse's own channel: its missions are announced there
 bin/rails hob:sentinel:pending                               # requests and petitions waiting
 bin/rails "hob:sentinel:petition[<id>,grant]" EFFECT=review  # or build, or deny
 ```
@@ -376,6 +377,7 @@ petitions          ulid, principal (agent), want, capability_name?, arguments, r
                    review, effect, spec, sentinel_policy_id?, mission_id?, pull_request?,
                    error, decided_at, settled_at                                 [RLS]
 principals.kind    + agent
+principals.channel an ntfy topic URL: hears missions queued for it, and the outcome of missions it queued
 ```
 
 ## Open questions
@@ -385,7 +387,11 @@ principals.kind    + agent
    until then, `hob:sentinel:pending` from a terminal, and `Notify` posts
    to `HOB_NOTIFY_URL` (an ntfy topic; `HOB_NOTIFY_TOKEN` if it needs one) when a petition needs a person, a
    build is dispatched, a PR opens, or a build fails. Pending *requests*
-   do not ping yet; they should, through the same hook.
+   do not ping yet; they should, through the same hook. Missions have
+   their own channels: each principal may carry a `channel` (`hob:channel`),
+   and a mission is announced on its assignee's when queued and reported
+   on its creator's when it settles, so two agents on one household do not
+   hear each other's work.
 2. **Reviewer memory.** The brief carries the agent's last ten requests.
    Whether the reviewer should also see the household's standing
    observations about the agent (the memory plane, when it exists) is a

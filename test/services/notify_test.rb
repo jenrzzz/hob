@@ -25,4 +25,22 @@ class NotifyTest < ActiveSupport::TestCase
     Notify.transport = ->(*) { "200" }
     assert Notify.person(title: "t", body: "b", url: "https://ntfy.test/hob")
   end
+
+  test "a principal is reached on its own channel, or not at all" do
+    sent = []
+    Notify.transport = ->(url, title, body, headers) { sent << [ url, title, body, headers ]; "200" }
+    quiet = Principal.create!(name: "quiet", kind: "agent", max_clearance: "household")
+    loud = Principal.create!(name: "loud", kind: "agent", max_clearance: "household", channel: " https://ntfy.test/hob-loud ")
+    assert_not Notify.principal(quiet, title: "t", body: "b"), "no channel: logged only"
+    assert_not Notify.principal(nil, title: "t", body: "b")
+    assert sent.empty?
+    assert Notify.principal(loud, title: "hob: mission for loud", body: "b", tags: "inbox_tray", token: "tk_y")
+    url, title, _body, headers = sent.last
+    assert_equal "https://ntfy.test/hob-loud", url, "the channel is normalized"
+    assert_equal "hob: mission for loud", title
+    assert_equal "Bearer tk_y", headers["Authorization"]
+    assert_raises(ActiveRecord::RecordInvalid) { loud.update!(channel: "hob-loud") }
+    loud.update!(channel: "")
+    assert_nil loud.channel
+  end
 end

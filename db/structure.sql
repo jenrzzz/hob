@@ -227,7 +227,9 @@ CREATE TABLE public.model_prices (
     cache_read numeric(10,4) DEFAULT 0.0 NOT NULL,
     cache_write numeric(10,4) DEFAULT 0.0 NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    note character varying,
+    effective_from date
 );
 
 
@@ -1220,6 +1222,7 @@ ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260919000001'),
 ('20260918000001'),
 ('20260915000001'),
 ('20260906000001'),

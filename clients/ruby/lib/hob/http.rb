@@ -33,6 +33,10 @@ module Hob
       request(Net::HTTP::Patch.new(uri_for(path)), body)
     end
 
+    def put(path, body)
+      request(Net::HTTP::Put.new(uri_for(path)), body)
+    end
+
     def delete(path)
       request(Net::HTTP::Delete.new(uri_for(path)))
     end

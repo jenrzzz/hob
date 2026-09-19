@@ -15,6 +15,7 @@ Rails.application.routes.draw do
     resources :presets, param: :key, only: %i[index show create update destroy]
     resources :snapshots, only: :show
     get "models", to: "models#index"
+    resources :prices, only: %i[index show update destroy], param: :model, constraints: { model: /[^\/]+/ }
     get "usage", to: "usage#show"
 
     # The sentinel (SENTINEL.md): where external agents ask.

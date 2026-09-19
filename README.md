@@ -68,6 +68,13 @@ bin/rails "hob:sentinel:decide[<id>,allow]"
 bin/rails "hob:sentinel:petition[<id>,grant]" EFFECT=review
 ```
 
+Model prices are rows, not code: `bin/rails "hob:price[claude-opus-5,5,25]"`
+sets one (USD per million tokens, cache rates defaulting to 0.1x and 1.25x
+of input) and reprices the ledger rows it covers; `bin/rails hob:prices`
+lists them with the models the ledger has seen unpriced. Every ledger row
+carries `cost: null` rather than zero until its model has a price, and
+`GET /v1/usage` reports `priced: false` while any such row is in view.
+
 `HOB_NOTIFY_URL=https://ntfy.sh/<topic>` (plus `HOB_NOTIFY_TOKEN` for a
 protected topic) makes hob ping you when a
 petition needs a person, a build starts, a PR is ready, or a build fails.
@@ -81,6 +88,7 @@ POST /v1/sentinel/requests             { capability, arguments, reason, mission 
                                            decision, decided_by, rationale, result, error }
 GET  /v1/sentinel/requests/:id?wait=25 long-poll until settled
 POST /v1/sentinel/requests/:id/decide  { decision: allow|deny, rationale }      (a person)
+GET  /v1/prices · PUT /v1/prices/:model { input, output, cache_read, cache_write, note }   USD per million; a PUT reprices the ledger (a person)
 GET  /v1/sentinel/capabilities         what this agent may ask for, and the effect to expect
 POST /v1/sentinel/petitions            { want, capability, arguments, reason, mission }
                                        → { id, status: granted|pending|building|proposed|denied, capability, effect, rationale }

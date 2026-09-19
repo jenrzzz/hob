@@ -155,3 +155,27 @@ namespace :hob do
     end
   end
 end
+
+namespace :hob do
+  desc "Set a model's price in USD per million tokens and reprice the ledger. " \
+       "bin/rails \"hob:price[claude-opus-5,5,25]\" CACHE_READ= CACHE_WRITE= NOTE='Anthropic list 2026-06' FROM=2026-06-01 REPRICE=0"
+  task :price, [ :model, :input, :output ] => :environment do |_task, args|
+    abort "usage: bin/rails \"hob:price[model,input_per_million,output_per_million]\"" if args[:output].blank?
+
+    row = ModelPrice.set!(model: args[:model], input: args[:input].to_d, output: args[:output].to_d,
+                          cache_read: ENV["CACHE_READ"].presence&.to_d, cache_write: ENV["CACHE_WRITE"].presence&.to_d,
+                          note: ENV["NOTE"].presence, effective_from: ENV["FROM"].presence, reprice: ENV["REPRICE"] != "0")
+    puts "#{row.model}: in $#{row.input.to_f} out $#{row.output.to_f} cache read $#{row.cache_read.to_f} write $#{row.cache_write.to_f}" \
+         " per million; repriced #{row.repriced} ledger row(s)"
+  end
+
+  desc "List model prices and the models the ledger has seen without one"
+  task prices: :environment do
+    ModelPrice.order(:model).each do |p|
+      puts "#{p.model.ljust(32)} in $#{format('%6.2f', p.input)}  out $#{format('%6.2f', p.output)}  cache $#{format('%.3f', p.cache_read)}/$#{format('%.3f', p.cache_write)}" \
+           "#{p.note && "  (#{p.note}#{p.effective_from && ", from #{p.effective_from}"})"}"
+    end
+    unpriced = ModelPrice.unpriced_models
+    puts unpriced.empty? ? "every model in the ledger is priced" : "unpriced in the ledger: #{unpriced.join(', ')}"
+  end
+end

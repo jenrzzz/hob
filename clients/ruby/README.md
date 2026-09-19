@@ -87,6 +87,17 @@ hob.usage(ref: "recipe/7").cost
 hob.usage(since: 1.day.ago, surface: "all").by_role
 ```
 
+## prices
+
+Model prices (USD per million tokens) drive the ledger's `cost`. Anyone may
+read them; a person's key sets them, and setting one reprices the ledger
+rows it now covers:
+
+```ruby
+hob.prices                                              # { "prices" => [...], "unpriced" => ["claude-new-1"] }
+hob.set_price(model: "claude-opus-5", input: 5, output: 25, note: "Anthropic list 2026-06")  # cache rates default to 0.1x / 1.25x
+```
+
 ## sentinel and missions
 
 An outside agent's key reaches only these (see hob's SENTINEL.md). Ask for

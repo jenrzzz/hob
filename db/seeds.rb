@@ -60,20 +60,18 @@ end
   ModelRole.find_or_create_by!(role: role) { |mr| mr.chain = chain }
 end
 
-# USD per million tokens (parboil's table). Prefix rows match dated ids.
-# Cache multipliers are Anthropic's standard 0.1x read / 1.25x write.
+# USD per million tokens, Anthropic list prices. Prefix rows match dated
+# ids; cache rates default to 0.1x read / 1.25x write of input. Seeds only
+# add missing rows: a live price is set with `hob:price` or PUT /v1/prices,
+# which also reprices the ledger. `hob:prices` lists what is still unpriced.
 {
   "claude-haiku-4-5"  => [ 1.00, 5.00 ],
   "claude-sonnet-4-6" => [ 3.00, 15.00 ],
   "claude-sonnet-5"   => [ 3.00, 15.00 ],
-  "claude-opus-4-8"   => [ 5.00, 25.00 ]
+  "claude-opus-4-8"   => [ 5.00, 25.00 ],
+  "claude-opus-5"     => [ 5.00, 25.00 ]
 }.each do |model, (input, output)|
-  ModelPrice.find_or_create_by!(model: model) do |p|
-    p.input = input
-    p.output = output
-    p.cache_read = (input * 0.1).round(4)
-    p.cache_write = (input * 1.25).round(4)
-  end
+  ModelPrice.set!(model: model, input: input, output: output, note: "seed", reprice: false) unless ModelPrice.exists?(model: model)
 end
 
 jenner = Principal.find_or_create_by!(name: "jenner") do |p|

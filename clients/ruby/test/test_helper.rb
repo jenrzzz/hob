@@ -40,6 +40,10 @@ class FakeHTTP
     take(Request.new(method: :patch, path: path, body: body))
   end
 
+  def put(path, body)
+    take(Request.new(method: :put, path: path, body: body))
+  end
+
   def delete(path)
     take(Request.new(method: :delete, path: path))
   end

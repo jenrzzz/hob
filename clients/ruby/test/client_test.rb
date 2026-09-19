@@ -144,4 +144,19 @@ class ClientTest < Minitest::Test
     assert_raises(ArgumentError) { Hob::Client.new(base: nil, key: "k") }
     assert_raises(ArgumentError) { Hob::Client.new(base: "http://x", key: nil) }
   end
+
+  def test_prices_and_set_price
+    @http.respond("prices" => [ { "model" => "claude-opus-5", "input" => 5.0, "output" => 25.0 } ], "unpriced" => [ "gpt-x" ])
+    listing = @hob.prices
+    assert_equal "/v1/prices", @http.requests.last.path
+    assert_equal 5.0, listing["prices"].first.input
+    assert_equal [ "gpt-x" ], listing["unpriced"]
+
+    @http.respond("model" => "claude-opus-5", "input" => 5.0, "output" => 25.0, "cache_read" => 0.5, "repriced" => 3)
+    row = @hob.set_price(model: "claude-opus-5", input: 5, output: 25, note: "list")
+    assert_equal :put, @http.requests.last.method
+    assert_equal "/v1/prices/claude-opus-5", @http.requests.last.path
+    assert_equal({ input: 5, output: 25, note: "list" }, @http.requests.last.body)
+    assert_equal 3, row.repriced
+  end
 end

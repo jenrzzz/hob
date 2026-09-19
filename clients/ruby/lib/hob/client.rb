@@ -88,6 +88,21 @@ module Hob
       @missions ||= Missions.new(@http)
     end
 
+    # GET /v1/prices → { "prices" => [Hob::ModelPrice], "unpriced" => [model ids] }.
+    def prices
+      data = @http.get("/v1/prices")
+      { "prices" => data["prices"].map { |p| ModelPrice.new(p) }, "unpriced" => data["unpriced"] }
+    end
+
+    # PUT /v1/prices/:model — a person's key. USD per million tokens; cache
+    # rates default to 0.1x / 1.25x of input; the ledger is repriced unless
+    # reprice: false. Returns the row with `repriced`.
+    def set_price(model:, input:, output:, cache_read: nil, cache_write: nil, note: nil, effective_from: nil, reprice: nil)
+      body = { input: input, output: output, cache_read: cache_read, cache_write: cache_write, note: note,
+               effective_from: effective_from, reprice: reprice }.compact
+      ModelPrice.new(@http.put("/v1/prices/#{model}", body))
+    end
+
     # GET /v1/usage → Hob::UsageSummary. since: a Time or ISO8601 string;
     # surface: "all" for the whole household (default: this key's surface).
     def usage(ref: nil, role: nil, operation: nil, since: nil, surface: nil)

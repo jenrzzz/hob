@@ -95,15 +95,15 @@ class StewardTest < ActiveSupport::TestCase
     steward_says("grant", capability: "hob.usage", effect: "allow",
                  constraints: { "surface" => { "enum" => [ "muse" ], "default" => "muse", "description" => "own" },
                                 "since" => { "pattern" => "\\A2026", "type" => "string" }, "ref" => { "maxLength" => 40 },
-                                "role" => [ "cheap-classifier" ], "junk" => { "type" => "string" } }.to_json,
+                                "operation" => [ "muse.spend" ], "junk" => { "type" => "string" } }.to_json,
                  limits: { "per_hour" => 10, "per_day" => 50, "cost_per_day" => -1, "builds_per_day" => 9, "tokens" => 5 }.to_json)
     row = petition("see my spend")
     assert_equal "granted", row.status
     rule = row.sentinel_policy
     assert_equal({ "surface" => { "in" => [ "muse" ] }, "since" => { "pattern" => "\\A2026" }, "ref" => { "max" => 40 },
-                   "role" => { "in" => [ "cheap-classifier" ] } }, rule.constraints)
+                   "operation" => { "in" => [ "muse.spend" ] } }, rule.constraints)
     assert_equal({ "per_hour" => 10, "per_day" => 50 }, rule.limits)
-    ok = { "surface" => "muse", "since" => "2026-09-01" }
+    ok = { "surface" => "muse", "since" => "2026-09-01", "operation" => "muse.spend" }
     assert_equal "completed", as(@muse, realm: "household") { Sentinel.submit!(agent: @muse, capability: "hob.usage", arguments: ok) }.status
     assert_equal "denied", as(@muse, realm: "household") { Sentinel.submit!(agent: @muse, capability: "hob.usage", arguments: ok.merge("surface" => "all")) }.status
   end

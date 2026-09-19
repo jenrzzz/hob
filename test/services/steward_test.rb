@@ -90,6 +90,42 @@ class StewardTest < ActiveSupport::TestCase
     assert_equal "review", row.sentinel_policy.effect
   end
 
+  test "the steward's JSON-schema-flavoured constraints and odd limits are normalized, never a validation error" do
+    charter!(@muse, "allow")
+    steward_says("grant", capability: "hob.usage", effect: "allow",
+                 constraints: { "surface" => { "enum" => [ "muse" ], "default" => "muse", "description" => "own" },
+                                "since" => { "pattern" => "\\A2026", "type" => "string" }, "ref" => { "maxLength" => 40 },
+                                "role" => [ "cheap-classifier" ], "junk" => { "type" => "string" } }.to_json,
+                 limits: { "per_hour" => 10, "per_day" => 50, "cost_per_day" => -1, "builds_per_day" => 9, "tokens" => 5 }.to_json)
+    row = petition("see my spend")
+    assert_equal "granted", row.status
+    rule = row.sentinel_policy
+    assert_equal({ "surface" => { "in" => [ "muse" ] }, "since" => { "pattern" => "\\A2026" }, "ref" => { "max" => 40 },
+                   "role" => { "in" => [ "cheap-classifier" ] } }, rule.constraints)
+    assert_equal({ "per_hour" => 10, "per_day" => 50 }, rule.limits)
+    ok = { "surface" => "muse", "since" => "2026-09-01" }
+    assert_equal "completed", as(@muse, realm: "household") { Sentinel.submit!(agent: @muse, capability: "hob.usage", arguments: ok) }.status
+    assert_equal "denied", as(@muse, realm: "household") { Sentinel.submit!(agent: @muse, capability: "hob.usage", arguments: ok.merge("surface" => "all")) }.status
+  end
+
+  test "an error inside the steward leaves the petition referred with the error, not undecided" do
+    charter!(@muse, "allow")
+    steward_says("grant", capability: "hob.usage", effect: "allow")
+    original = Sentinel::Steward.instance_method(:write_rule!)
+    Sentinel::Steward.define_method(:write_rule!) { |_v| raise ActiveRecord::RecordInvalid, SentinelPolicy.new }
+    begin
+      row = petition("see my spend", capability: "hob.usage")
+    ensure
+      Sentinel::Steward.define_method(:write_rule!, original)
+    end
+    assert_equal "pending", row.status
+    assert_equal "refer", row.action
+    assert_equal "steward", row.decided_by
+    assert_match(/steward error: RecordInvalid/, row.rationale)
+    assert_equal "hob.usage", row.capability_name
+    assert_equal 1, @pings.size
+  end
+
   test "grant is refused for what the agent cannot reach, what a rule denies, and what it already has" do
     charter!(@muse, "allow")
     Capability.find_by!(name: "hob.conversation.read").update!(realm: "intimate")
@@ -257,7 +293,7 @@ class StewardTest < ActiveSupport::TestCase
     assert_equal "human", granted.decided_by
     rule = granted.sentinel_policy
     assert_equal "allow", rule.effect, "a person may exceed the steward's cap"
-    assert_equal({ "role" => [ "cheap-classifier" ] }, rule.constraints)
+    assert_equal({ "role" => { "in" => [ "cheap-classifier" ] } }, rule.constraints, "the array shorthand is normalized")
     assert_equal({ "per_day" => 20 }, rule.limits)
     assert_equal "Errands only.", rule.guidance
 

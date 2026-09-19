@@ -35,8 +35,9 @@ module Sentinel
                           "description" => "grant: the existing capability's exact name. build: the new name, hob.<area>.<verb>. Otherwise empty." },
         "effect" => { "type" => "string", "enum" => %w[allow review confirm],
                       "description" => "The policy effect to grant now, or once built." },
-        "constraints_json" => { "type" => "string", "description" => "JSON object of argument constraints for the rule, or {}." },
-        "limits_json" => { "type" => "string", "description" => "JSON object of per_hour / per_day / cost_per_day limits for the rule, or {}." },
+        "constraints_json" => { "type" => "string",
+                                "description" => "JSON object of argument constraints for the rule, or {}. Shape: { \"<argument>\": { \"in\": [allowed values], \"max\": <number or size>, \"pattern\": \"<regex>\" } }; any of the three keys, nothing else." },
+        "limits_json" => { "type" => "string", "description" => "JSON object with any of per_hour, per_day (requests), cost_per_day (USD) as positive numbers, or {}." },
         "guidance" => { "type" => "string", "description" => "What a reviewer should be told when judging this agent's requests for this capability; empty if none." },
         "spec" => {
           "type" => "object",
@@ -96,9 +97,17 @@ module Sentinel
 
     # --- entry points -------------------------------------------------------
 
-    # Decide a fresh petition: charter, limits, then the LLM, then apply.
+    # Decide a fresh petition: charter, limits, then the LLM, then apply. An
+    # error anywhere still leaves a decision on the row: referred, with the
+    # error as the rationale, so nothing is silently stuck.
     def self.process!(petition)
       new(petition).process!
+    rescue StandardError => e
+      Rails.logger.error("steward failed on petition #{petition.id}: #{e.class}: #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}")
+      steward = new(petition)
+      steward.apply!(Verdict.new(action: "refer", rationale: "steward error: #{e.class.name.demodulize}: #{e.message}".truncate(500),
+                                 capability: petition.capability_name, review: { "error" => e.message.truncate(500) }),
+                     decided_by: "steward")
     end
 
     # A person settles a pending or failed petition.
@@ -231,8 +240,8 @@ module Sentinel
     def bound(verdict, human:)
       verdict = verdict.dup
       verdict.effect = verdict.effect.presence
-      verdict.constraints = json_object(verdict.constraints)
-      verdict.limits = json_object(verdict.limits)
+      verdict.constraints = normalize_constraints(json_object(verdict.constraints))
+      verdict.limits = normalize_limits(json_object(verdict.limits))
       verdict.spec = normalize_spec(verdict.spec, verdict.capability)
 
       case verdict.action
@@ -294,6 +303,40 @@ module Sentinel
       value.is_a?(Hash) ? value.deep_stringify_keys : {}
     rescue JSON::ParserError
       {}
+    end
+
+    # The model tends to write JSON-schema (enum, maxItems, default); hob's
+    # constraint shape is { arg => { in:, max:, pattern: } }. Keep what maps,
+    # drop the rest, so a grant never fails validation on phrasing.
+    CONSTRAINT_ALIASES = { "in" => "in", "enum" => "in", "oneOf" => "in", "allowed" => "in",
+                           "max" => "max", "maximum" => "max", "maxItems" => "max", "maxLength" => "max",
+                           "pattern" => "pattern", "regex" => "pattern" }.freeze
+
+    def normalize_constraints(constraints)
+      constraints.each_with_object({}) do |(arg, rule), out|
+        rule = { "in" => rule } if rule.is_a?(Array)
+        next unless rule.is_a?(Hash)
+
+        clean = rule.each_with_object({}) do |(key, value), h|
+          case CONSTRAINT_ALIASES[key.to_s]
+          when "in" then h["in"] = Array(value).compact if Array(value).compact.any?
+          when "max" then h["max"] = value if value.is_a?(Numeric)
+          when "pattern" then h["pattern"] = value.to_s if value.present? && valid_regexp?(value.to_s)
+          end
+        end
+        out[arg.to_s] = clean if clean.any?
+      end
+    end
+
+    def normalize_limits(limits)
+      limits.slice(*SentinelPolicy::LIMIT_KEYS - [ "builds_per_day" ]).select { |_k, v| v.is_a?(Numeric) && v.positive? }
+    end
+
+    def valid_regexp?(pattern)
+      Regexp.new(pattern)
+      true
+    rescue RegexpError
+      false
     end
 
     # A spec is complete when it has a kind, a realm, a description, and a

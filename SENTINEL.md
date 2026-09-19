@@ -93,6 +93,7 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `hob.conversation.read` | read | one branch's transcript |
 | `hob.conversation.event` | act | append an event node ("Muse booked the table") |
 | `hob.mission.create` | act | hand a mission to another principal |
+| `hob.agent.message` | act | a short note to another agent on this instance, or the caller's inbox; nothing leaves hob, and a person reads the log with `hob:messages` |
 
 Surfaces register their own: mise registers `mise.add_to_shopping_list` as
 a webhook (or as `poll` with its worker as assignee), and the capability
@@ -409,6 +410,12 @@ principals.channel an ntfy topic URL: hears missions queued for it, and the outc
    work through the sentinel. Whether missions should carry a chain of
    custody (who asked whom, on whose mission) beyond `created_by` and
    `on_mission_id` depends on whether a second agent ever shows up.
+   `hob.agent.message` (petition `01M2VP8G1XMP10SPZ29XTV659N`) is the
+   lighter form: a plain-text note to a named agent at the capability's
+   tier, stored in `agent_messages` with the request that sent it, read by
+   polling `inbox`. The recipients a grant allows are its `to` constraint;
+   the body is handed to the reader as another agent's words, not as an
+   instruction, and grants the reader nothing.
 4. **Streaming results.** `hob.complete` through the sentinel is blocking;
    the request row is the only delivery. Fine for planning-sized calls;
    revisit if an agent wants a narrator-length generation.

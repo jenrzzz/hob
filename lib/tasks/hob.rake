@@ -50,6 +50,17 @@ namespace :hob do
     puts principal.channel.present? ? "#{principal.name}: missions announced on #{principal.channel}" : "#{principal.name}: no channel"
   end
 
+  desc "List agent-to-agent messages (hob.agent.message), newest first, for a person to audit: bin/rails \"hob:messages[50]\""
+  task :messages, [ :limit ] => :environment do |_task, args|
+    rows = AgentMessage.newest_first.limit((args[:limit].presence || 50).to_i).includes(:sender, :recipient)
+    puts "no agent messages" if rows.empty?
+    rows.each do |m|
+      puts "#{m.id}  #{m.created_at.utc.iso8601}  #{m.sender.name} → #{m.recipient.name}  " \
+           "#{m.read? ? "read #{m.read_at.utc.iso8601}" : 'unread'}  sentinel/#{m.sentinel_request_id}"
+      puts "  #{m.body}"
+    end
+  end
+
   desc "Mint a key for an existing principal, shown once: bin/rails \"hob:key[jenner,phone]\" for the companion app " \
        "(clients/ios); the clearance defaults to the principal's own"
   task :key, [ :principal, :surface, :clearance ] => :environment do |_task, args|

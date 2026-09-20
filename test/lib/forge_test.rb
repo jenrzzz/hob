@@ -246,6 +246,7 @@ class ForgeTest < ActiveSupport::TestCase
     assert_includes create, "branch=main"
     assert_includes create, "image=ghcr.io/jenrzzz/agent-workspace-hob:latest"
     assert_includes create, "--yes"
+    assert_includes create, "--use-parameter-defaults", "or coder prompts for the template's other parameters on an empty stdin"
 
     upload = @commands[1]
     assert_equal [ "coder", "ssh", "--wait=yes", ws.name, "--" ], upload[0].take(5), "the first ssh waits for the clone"

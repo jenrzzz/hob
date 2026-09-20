@@ -16,7 +16,7 @@ FROM docker.io/library/ruby:$RUBY_VERSION-slim
 
 # The coder CLI, pinned to the sandbox's server version (the CLI warns on a
 # mismatch). Bump it with the server.
-ARG CODER_VERSION=2.34.1
+ARG CODER_VERSION=2.37.2
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y ca-certificates curl && \
     curl -fsSL https://coder.com/install.sh | sh -s -- --method standalone --prefix /usr/local --version "$CODER_VERSION" && \

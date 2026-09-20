@@ -451,9 +451,12 @@ module Forge
 
     # --- steps -----------------------------------------------------------
 
+    # The template has parameters the forge does not set (keys, a headless
+    # task); without --use-parameter-defaults `coder create` prompts for
+    # them and dies on the empty stdin.
     def create
       say "creating workspace #{name} from template #{template} with #{image}"
-      coder! "create", name, "--template", template, "--yes",
+      coder! "create", name, "--template", template, "--yes", "--use-parameter-defaults",
              "--parameter", "repo=#{repo}", "--parameter", "branch=#{base}", "--parameter", "image=#{image}"
     end
 

@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+# The forge loop as a service (SENTINEL.md, "The forge"): `bin/forge --coder`,
+# which leases build missions from hob and builds each one in a fresh Coder
+# workspace on the agent sandbox. Nothing in here builds anything: no Claude
+# Code, gh, Postgres, or gems, just Ruby for the loop and the coder CLI.
+# Coolify builds it from this repo (build pack Dockerfile, location
+# /Dockerfile.forge) on every push to main, so the loop tracks the code.
+#
+#   docker build -f Dockerfile.forge -t hob-forge .
+#   docker run -e HOB_URL= -e HOB_KEY= -e CODER_URL= -e CODER_SESSION_TOKEN= hob-forge
+#
+# No `# check=error=true` here: Coolify passes env vars to the build as ARGs
+# unless they are marked runtime-only, and that lint rejects names like *_TOKEN.
+ARG RUBY_VERSION=4.0.5
+FROM docker.io/library/ruby:$RUBY_VERSION-slim
+
+# The coder CLI, pinned to the sandbox's server version (the CLI warns on a
+# mismatch). Bump it with the server.
+ARG CODER_VERSION=2.34.1
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y ca-certificates curl && \
+    curl -fsSL https://coder.com/install.sh | sh -s -- --method standalone --prefix /usr/local --version "$CODER_VERSION" && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives && \
+    coder version
+
+RUN groupadd --system --gid 1000 forge && \
+    useradd forge --uid 1000 --gid 1000 --create-home --shell /bin/bash
+WORKDIR /forge
+COPY --chown=forge:forge bin/forge bin/forge
+COPY --chown=forge:forge lib/forge.rb lib/forge.rb
+COPY --chown=forge:forge clients/ruby/lib clients/ruby/lib
+USER forge
+ENV HOME=/home/forge
+
+# HOB_URL, HOB_KEY, CODER_URL, CODER_SESSION_TOKEN come from the environment.
+CMD ["bin/forge", "--coder"]

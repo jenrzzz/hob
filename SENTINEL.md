@@ -260,19 +260,36 @@ terminal.
 
 ### The forge
 
-The forge is a mission worker that runs where hob's code can be built: a
-coder box with this checkout, Claude Code, `git`, and `gh`. It is a
-`worker` principal (`hob:forge:setup`) and `bin/forge` is its loop:
+The forge is a mission worker. It is a `worker` principal
+(`hob:forge:setup`) and `bin/forge` is its loop; the build itself needs a
+checkout of this repo, Claude Code, `git`, `gh`, and a Postgres:
 
 ```
 lease a forge.capability mission
   git worktree add ../hob-forge/<branch> origin/main; copy local config in
   claude -p < .forge/BRIEF.md         headless; edits accepted, shell allowlisted
   (REFUSED.md written? fail the mission with the reason)
-  commit anything left uncommitted; bin/rails test; require a handler under sentinel/native/
+  commit anything left uncommitted; bundle, db:prepare, bin/rails test; require a handler under sentinel/native/
   git push; gh pr create              the PR body carries petition, spec, acceptance, summary
 complete the mission { pull_request, branch, capability, commit, summary, cost }
 ```
+
+Where that runs is the point. With `--coder`, the loop builds nowhere near
+itself: for each mission it creates a fresh Coder workspace on the agent
+sandbox (agentbox: gVisor, an egress allowlist, and nothing of ours inside
+but the sandbox's own GitHub and Claude tokens under `/secrets`), copies the
+mission's payload in, runs the very same build there as `forge-env bin/forge
+build`, polls for the report it writes, and deletes the workspace. The box
+running the loop then holds only the forge's hob key and a Coder token, and
+never runs Claude Code, `gh`, or the tests itself, so nothing the
+implementer does can reach that box's secrets. Without `--coder` the build
+runs beside the loop, which is fine for a laptop and nothing else. The
+workspace image (`agent-workspace-hob`, in the infra repo under
+`agentbox/coder/workspace-hob`) carries Ruby, Postgres with pgvector, and
+this repo's gems; `forge-env` starts the database and exports the tokens.
+The loop itself is `Dockerfile.forge`: Ruby, the `coder` CLI, and these
+three files, built by Coolify from this repo on every push so it tracks the
+code, and configured by the four variables alone.
 
 The brief tells the implementer exactly what to touch (a
 `Sentinel::Native` handler, its `HANDLERS` entry, tests, the two doc tables)
@@ -347,7 +364,8 @@ Or skip the per-capability rows and let petitions fill them in:
 bin/rails "hob:sentinel:charter[muse,allow]" LIMITS='{"per_day":10,"builds_per_day":2}' \
   GUIDANCE="Muse acts for Tessa on household planning. Grant reads of planning data freely; anything about another person's private matters is mine to decide. Build what planning needs."
 bin/rails "hob:forge:setup[forge]"                           # the builder's key, shown once
-HOB_URL=https://hob.example HOB_KEY=<forge key> bin/forge    # on the coder box, in a tmux
+HOB_URL=https://hob.example HOB_KEY=<forge key> \
+  CODER_URL=https://agentbox.example CODER_SESSION_TOKEN=<coder tokens create> bin/forge --coder   # or the same four vars on the Dockerfile.forge service
 export HOB_NOTIFY_URL=https://ntfy.sh/<topic>                # on the hob box: pings when a person is needed
 bin/rails "hob:channel[muse,https://ntfy.sh/hob-muse]"       # muse's own channel: its missions are announced there
 bin/rails hob:sentinel:pending                               # requests and petitions waiting

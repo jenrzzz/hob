@@ -1,26 +1,72 @@
 #!/usr/bin/env ruby
-# The forge worker (SENTINEL.md, "Petitions and the forge"): runs on a box
-# with this checkout, Claude Code, git, and gh. Leases build missions from
-# hob, implements each capability in a worktree with a headless Claude Code
+# The forge worker (SENTINEL.md, "Petitions and the forge"): leases build
+# missions from hob, implements each capability with a headless Claude Code
 # run, opens a pull request, and reports back.
 #
 #   HOB_URL=https://hob.example HOB_KEY=<forge worker key> bin/forge [--once] [--drain]
 #
+#   --coder        build each mission in a fresh Coder workspace on the agent
+#                  sandbox instead of on this box (needs the coder CLI with
+#                  CODER_URL and CODER_SESSION_TOKEN; this box then needs no
+#                  claude, gh, or hob checkout beyond this script)
+#   --template T   the Coder template to create workspaces from (default: agent-workspace)
+#   --image IMG    the workspace image (default: ghcr.io/jenrzzz/agent-workspace-hob:latest)
+#   --repo R       the repo the workspace clones and opens PRs on (default: jenrzzz/hob)
+#   --keep         keep a workspace whose build failed, for a look with coder ssh
 #   --once         handle at most one mission, then exit
 #   --drain        exit when the queue is empty
-#   --workdir DIR  where worktrees go (default: ../hob-forge next to this checkout)
+#   --workdir DIR  where worktrees go when building here (default: ../hob-forge next to this checkout)
 #   --base BRANCH  the branch to build from and target (default: main)
 #   FORGE_CLAUDE_ARGS  overrides the flags passed to `claude -p`
 #
+# Inside a workspace the loop runs the other form, one build with no hob:
+#
+#   bin/forge build --payload FILE --result FILE [--workdir DIR] [--base BRANCH]
+#
+# It reads the mission payload (stdin without --payload), builds in this
+# checkout, and writes the report as JSON (stdout without --result).
+#
 # The key comes from `bin/rails "hob:forge:setup[forge]"` on the hob box.
 require "optparse"
+require "json"
 
 root = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(File.join(root, "clients", "ruby", "lib"), File.join(root, "lib"))
 require "hob"
 require "forge"
 
-options = { workdir: File.expand_path("../hob-forge", root), base: "main", once: false, drain: false, wait: 25 }
+def need(*tools)
+  tools.each { |tool| abort "bin/forge needs #{tool} on PATH" if `which #{tool}`.strip.empty? }
+end
+
+if ARGV.first == "build"
+  ARGV.shift
+  options = { workdir: File.expand_path("../hob-forge", root), base: "main" }
+  OptionParser.new do |o|
+    o.banner = "usage: bin/forge build --payload FILE --result FILE [--workdir DIR] [--base BRANCH]"
+    o.on("--payload FILE") { |f| options[:payload] = f }
+    o.on("--result FILE") { |f| options[:result] = f }
+    o.on("--workdir DIR") { |d| options[:workdir] = d }
+    o.on("--base BRANCH") { |b| options[:base] = b }
+  end.parse!
+  need "claude", "gh", "git"
+
+  payload = JSON.parse(options[:payload] ? File.read(options[:payload]) : $stdin.read)
+  report = Forge.report(Forge::Build.new(payload: payload, repo: root, workdir: options[:workdir], base: options[:base]))
+  json = JSON.pretty_generate(report)
+  if options[:result]
+    File.write("#{options[:result]}.tmp", json)
+    File.rename("#{options[:result]}.tmp", options[:result]) # whole or absent, for whoever polls it
+  else
+    puts json
+  end
+  $stderr.puts "[forge] #{report['ok'] ? 'built' : "failed: #{report['error']}"}"
+  exit(report["ok"] ? 0 : 1)
+end
+
+options = { workdir: File.expand_path("../hob-forge", root), base: "main", once: false, drain: false, wait: 25,
+            coder: false, template: "agent-workspace", image: "ghcr.io/jenrzzz/agent-workspace-hob:latest",
+            repo: "jenrzzz/hob", keep: false }
 OptionParser.new do |o|
   o.banner = "usage: HOB_URL= HOB_KEY= bin/forge [options]"
   o.on("--once") { options[:once] = true }
@@ -28,15 +74,30 @@ OptionParser.new do |o|
   o.on("--workdir DIR") { |d| options[:workdir] = d }
   o.on("--base BRANCH") { |b| options[:base] = b }
   o.on("--wait SECONDS", Integer) { |w| options[:wait] = w }
+  o.on("--coder") { options[:coder] = true }
+  o.on("--template NAME") { |t| options[:template] = t }
+  o.on("--image IMAGE") { |i| options[:image] = i }
+  o.on("--repo OWNER/NAME") { |r| options[:repo] = r }
+  o.on("--keep") { options[:keep] = true }
 end.parse!
 
-%w[claude gh git].each do |tool|
-  abort "bin/forge needs #{tool} on PATH" if `which #{tool}`.strip.empty?
-end
 abort "bin/forge needs HOB_URL and HOB_KEY (the key from bin/rails \"hob:forge:setup[forge]\")" if ENV["HOB_URL"].to_s.empty? || ENV["HOB_KEY"].to_s.empty?
+if options[:coder]
+  need "coder"
+  abort "bin/forge --coder needs CODER_URL and CODER_SESSION_TOKEN (coder tokens create, on the sandbox's Coder)" if ENV["CODER_URL"].to_s.empty? || ENV["CODER_SESSION_TOKEN"].to_s.empty?
+else
+  need "claude", "gh", "git"
+end
 
 hob = Hob::Client.new(timeout: 60)
-worker = Forge::Worker.new(hob: hob, repo: root, workdir: options[:workdir], base: options[:base])
-$stderr.puts "[forge] listening for #{Forge::KIND} missions at #{ENV['HOB_URL']} (repo #{root}, worktrees in #{options[:workdir]})"
+build = if options[:coder]
+  lambda do |payload|
+    Forge::Workspace.new(payload: payload, template: options[:template], image: options[:image], repo: options[:repo],
+                         base: options[:base], keep: options[:keep])
+  end
+end
+worker = Forge::Worker.new(hob: hob, repo: root, workdir: options[:workdir], base: options[:base], build: build)
+where = options[:coder] ? "fresh #{options[:template]} workspaces at #{ENV['CODER_URL']} (#{options[:image]}, repo #{options[:repo]})" : "repo #{root}, worktrees in #{options[:workdir]}"
+$stderr.puts "[forge] listening for #{Forge::KIND} missions at #{ENV['HOB_URL']}; building in #{where}"
 handled = worker.work(wait: options[:wait], once: options[:once], drain: options[:drain])
 $stderr.puts "[forge] handled #{handled} mission(s)"

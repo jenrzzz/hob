@@ -1366,9 +1366,9 @@ ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
-('20260921000001'),
 ('20260920000002'),
 ('20260920000001'),
+('20260919185000'),
 ('20260919000001'),
 ('20260918000001'),
 ('20260915000001'),

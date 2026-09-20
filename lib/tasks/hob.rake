@@ -190,7 +190,7 @@ namespace :hob do
       token = ApiKey.issue!(principal: forge, surface: name, default_clearance: "intimate")
       rotated = forge.api_keys.where(surface: name).where.not(token_digest: ApiKey.digest(token)).destroy_all.size
       puts "#{forge.name}: worker key (shown once): #{token}"
-      puts "rotated #{rotated} old key(s). On the coder box: HOB_URL=https://... HOB_KEY=<key> bin/forge"
+      puts "rotated #{rotated} old key(s). For the forge service (Dockerfile.forge): HOB_URL= HOB_KEY=<key> CODER_URL= CODER_SESSION_TOKEN= bin/forge --coder"
     end
   end
 end

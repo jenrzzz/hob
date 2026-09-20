@@ -13,11 +13,19 @@ require "time"
 # capability sync then makes the petition's grant real.
 #
 # Pure Ruby, no Rails: bin/forge runs it with the hob gem from clients/ruby.
+#
+# Two ways to build. `Build` runs Claude Code, the tests, git, and gh right
+# here, on the box running the loop. `Workspace` runs that same build in a
+# fresh Coder workspace on the agent sandbox (agentbox) and only drives the
+# `coder` CLI, so nothing an agent writes ever executes beside the loop's
+# secrets. bin/forge picks one (`--coder`) and runs `Build` inside the
+# workspace as `bin/forge build`.
 module Forge
   class Error < StandardError; end
   class Refused < Error; end
 
   KIND = "forge.capability".freeze
+  NAME = /\A[a-z0-9]+(?:[._-][a-z0-9]+)*\z/
   # Headless Claude Code: edits are accepted, and only the shell commands a
   # build needs are allowed. FORGE_CLAUDE_ARGS replaces the whole list.
   DEFAULT_CLAUDE_ARGS = [
@@ -37,6 +45,29 @@ module Forge
     [ status.exitstatus, out, err ]
   end
 
+  # The checks every build makes before it runs anything. -> the spec's name
+  def self.check!(payload)
+    payload = (payload || {}).to_h
+    raise Error, "not a #{KIND} mission (kind #{payload['kind'].inspect})" unless payload["kind"] == KIND
+
+    name = (payload["spec"] || {}).to_h["name"]
+    raise Error, "the spec has no name" if name.to_s.empty?
+    raise Error, "#{name.inspect} is not a capability name" unless name.match?(NAME)
+
+    name
+  end
+
+  # What `bin/forge build` writes for the loop that started it: the build's
+  # result under "ok" => true, or the error and its kind ("Refused" for a
+  # refusal) so the loop can raise the same thing on its side.
+  def self.report(build)
+    { "ok" => true }.merge(build.call)
+  rescue Error => e
+    { "ok" => false, "kind" => e.class.name.split("::").last, "error" => e.message }
+  rescue StandardError => e
+    { "ok" => false, "kind" => "Error", "error" => "#{e.class}: #{e.message}" }
+  end
+
   # One build. `payload` is the mission's payload (see Sentinel::Steward#dispatch_build!).
   class Build
     attr_reader :payload, :spec, :repo, :workdir, :base, :remote, :log
@@ -51,9 +82,7 @@ module Forge
       @runner = runner || Forge.method(:run)
       @claude_args = claude_args || (ENV["FORGE_CLAUDE_ARGS"] ? Shellwords.split(ENV["FORGE_CLAUDE_ARGS"]) : DEFAULT_CLAUDE_ARGS)
       @log = log
-      raise Error, "not a #{KIND} mission (kind #{@payload['kind'].inspect})" unless @payload["kind"] == KIND
-      raise Error, "the spec has no name" if name.to_s.empty?
-      raise Error, "#{name.inspect} is not a capability name" unless name.match?(/\A[a-z0-9]+(?:[._-][a-z0-9]+)*\z/)
+      Forge.check!(@payload)
     end
 
     def name
@@ -142,6 +171,15 @@ module Forge
     end
 
     def verify
+      say "preparing the test environment"
+      status, = run(%w[bundle check], chdir: dir)
+      unless status.zero?
+        status, out, err = run(%w[bundle install --quiet], chdir: dir)
+        raise Error, "bundle install failed:\n#{tail(err + out)}" unless status.zero?
+      end
+      status, out, err = run(%w[env RAILS_ENV=test bin/rails db:prepare], chdir: dir)
+      raise Error, "could not prepare the test database:\n#{(out + err).lines.last(20).join}" unless status.zero?
+
       say "running the test suite"
       status, out, err = run(%w[bin/rails test], chdir: dir)
       raise Error, "tests failed after the build:\n#{(out + err).lines.last(30).join}" unless status.zero?
@@ -354,6 +392,151 @@ module Forge
 
     def say(message)
       log.puts("[forge #{Time.now.utc.iso8601}] #{name}: #{message}") if log
+    end
+  end
+
+  # One build, in a fresh Coder workspace on the agent sandbox. The loop
+  # that owns this object never runs Claude Code, gh, or the tests itself: it
+  # drives the `coder` CLI (CODER_URL, CODER_SESSION_TOKEN) to create a
+  # workspace from the template with hob checked out, copies the mission's
+  # payload in, starts `forge-env bin/forge build` detached in there, polls
+  # for the result file it writes, and deletes the workspace when done. The
+  # workspace image (agent-workspace-hob) supplies `forge-env`: it exports
+  # the sandbox's own GitHub and Claude tokens and starts Postgres, then runs
+  # its arguments. Heartbeats are the worker's business, as with Build.
+  class Workspace
+    DIR = "/home/node/forge".freeze # payload, result, log, and worktrees inside the workspace
+    LOST = 10                       # consecutive failed polls before the workspace is given up on
+
+    attr_reader :payload, :name, :template, :image, :repo, :base, :log
+
+    def initialize(payload:, template: "agent-workspace", image: "ghcr.io/jenrzzz/agent-workspace-hob:latest",
+                   repo: "jenrzzz/hob", base: "main", runner: nil, log: $stderr, poll: 30, timeout: 3 * 3600,
+                   keep: false, clock: nil)
+      @payload = (payload || {}).to_h
+      @template = template
+      @image = image
+      @repo = repo
+      @base = base
+      @runner = runner || Forge.method(:run)
+      @log = log
+      @poll = poll
+      @timeout = timeout
+      @keep = keep
+      @clock = clock || -> { Time.now }
+      capability = Forge.check!(@payload)
+      suffix = @payload["petition"].to_s.downcase[-6..] || capability.tr("._", "-")[0, 12]
+      @name = "forge-#{suffix}-#{@clock.call.to_i.to_s(36)}".gsub(/[^a-z0-9-]/, "-")
+    end
+
+    # -> the same Hash Build#call returns
+    def call
+      failed = true
+      create
+      upload
+      start
+      report = wait
+      raise Refused, report["error"] if report["kind"] == "Refused"
+      raise Error, report["error"].to_s unless report["ok"]
+
+      failed = false
+      report.reject { |k, _| k == "ok" }
+    ensure
+      if failed && @keep
+        say "keeping workspace #{name} for a look (coder ssh #{name}; coder delete #{name})"
+      else
+        destroy
+      end
+    end
+
+    # --- steps -----------------------------------------------------------
+
+    def create
+      say "creating workspace #{name} from template #{template} with #{image}"
+      coder! "create", name, "--template", template, "--yes",
+             "--parameter", "repo=#{repo}", "--parameter", "branch=#{base}", "--parameter", "image=#{image}"
+    end
+
+    # The first command waits for the startup script, which clones the repo.
+    def upload
+      say "copying the mission payload in"
+      ssh! "mkdir -p #{DIR} && cat > #{DIR}/payload.json", stdin: JSON.generate(payload), wait: true
+    end
+
+    def start
+      say "starting the build"
+      ssh! "cd /workspace && setsid nohup forge-env bin/forge build --payload #{DIR}/payload.json " \
+           "--result #{DIR}/result.json --workdir #{DIR}/worktrees --base #{base} > #{DIR}/build.log 2>&1 < /dev/null &"
+    end
+
+    # Polls until the build has written its report. A poll that cannot reach
+    # the workspace is retried; LOST of them in a row means it is gone.
+    def wait
+      deadline = @clock.call + @timeout
+      misses = 0
+      loop do
+        status, out, err = ssh("cat #{DIR}/result.json 2>/dev/null || echo PENDING")
+        if status.zero? && out.strip != "PENDING"
+          return parse_report(out)
+        elsif status.zero?
+          misses = 0
+        else
+          misses += 1
+          say "cannot reach the workspace (#{misses}/#{LOST}): #{tail(err.to_s.strip.empty? ? out : err, 200)}"
+          raise Error, "lost workspace #{name}: #{tail(err, 500)}" if misses >= LOST
+        end
+        raise Error, "the build in #{name} did not finish within #{@timeout}s" if @clock.call >= deadline
+
+        sleep @poll
+      end
+    end
+
+    def destroy
+      say "deleting workspace #{name}"
+      status, out, err = coder("delete", name, "--yes")
+      say "could not delete #{name}: #{tail(err.to_s.strip.empty? ? out : err, 500)}" unless status.zero?
+    end
+
+    # --- plumbing ----------------------------------------------------------
+
+    def parse_report(out)
+      report = JSON.parse(out)
+      raise Error, "the build's report is not an object: #{tail(out, 300)}" unless report.is_a?(Hash)
+
+      report
+    rescue JSON::ParserError
+      raise Error, "the build's report is not JSON: #{tail(out, 300)}"
+    end
+
+    def coder(*argv, stdin: nil)
+      @runner.call([ "coder", *argv ], chdir: Dir.pwd, stdin: stdin)
+    end
+
+    def coder!(*argv, stdin: nil)
+      status, out, err = coder(*argv, stdin: stdin)
+      raise Error, "coder #{argv.first} failed: #{tail(err.to_s.strip.empty? ? out : err, 1000)}" unless status.zero?
+
+      out
+    end
+
+    def ssh(command, stdin: nil, wait: false)
+      coder("ssh", "--wait=#{wait ? 'yes' : 'no'}", name, "--", command, stdin: stdin)
+    end
+
+    def ssh!(command, stdin: nil, wait: false)
+      status, out, err = ssh(command, stdin: stdin, wait: wait)
+      raise Error, "coder ssh #{name} failed: #{tail(err.to_s.strip.empty? ? out : err, 1000)}" unless status.zero?
+
+      out
+    end
+
+    def tail(text, limit = 2000)
+      text = text.to_s.strip
+      text.length > limit ? text[-limit..] : text
+    end
+
+    def say(message)
+      log.puts("[forge #{Time.now.utc.iso8601}] #{payload.dig('spec', 'name')}: #{message}") if log
     end
   end
 

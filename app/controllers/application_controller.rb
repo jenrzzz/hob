@@ -66,6 +66,14 @@ class ApplicationController < ActionController::API
     render json: { error: "this action needs a person's key" }, status: :forbidden
   end
 
+  # Posting a report to the ward is for its worker, or a person; never an
+  # agent or a surface.
+  def require_worker_or_person!
+    return if Current.principal.trusted? || Current.principal.kind == "worker"
+
+    render json: { error: "this action needs a worker's or a person's key" }, status: :forbidden
+  end
+
   # Hold the request up to `wait` seconds (cap 30) until the block is
   # truthy, for pollers that would rather wait than spin. Returns the
   # block's last value.

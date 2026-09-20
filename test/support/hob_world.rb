@@ -10,6 +10,7 @@ module HobWorld
                          "params" => { "thinking" => { "type" => "adaptive" } } } ],
     "strict-offline" => [ { "provider" => "offline", "model" => "nope", "strict" => true },
                           { "provider" => "anthropic", "model" => "claude-sonnet-5" } ],
+    "ward-triage" => [ { "provider" => "anthropic", "model" => "claude-sonnet-5" } ],
     "lenient-offline" => [ { "provider" => "offline", "model" => "nope" },
                            { "provider" => "anthropic", "model" => "claude-sonnet-5" } ]
   }.freeze

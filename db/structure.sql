@@ -638,6 +638,84 @@ ALTER SEQUENCE public.usage_events_id_seq OWNED BY public.usage_events.id;
 
 
 --
+-- Name: ward_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ward_checks (
+    slug character varying NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    interval_seconds integer DEFAULT 604800 NOT NULL,
+    grace_seconds integer DEFAULT 86400 NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    last_completed_at timestamp(6) without time zone,
+    last_run_id character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: ward_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ward_findings (
+    id character varying NOT NULL,
+    check_slug character varying NOT NULL,
+    fingerprint character varying NOT NULL,
+    level character varying NOT NULL,
+    subject character varying NOT NULL,
+    message text NOT NULL,
+    occurrences integer DEFAULT 1 NOT NULL,
+    first_seen_at timestamp(6) without time zone NOT NULL,
+    last_seen_at timestamp(6) without time zone NOT NULL,
+    first_run_id character varying,
+    last_run_id character varying,
+    resolved_at timestamp(6) without time zone,
+    resolved_run_id character varying,
+    acknowledged_at timestamp(6) without time zone,
+    acknowledged_by_id bigint,
+    ack_note text,
+    ack_until timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: ward_notes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ward_notes (
+    id character varying NOT NULL,
+    subject character varying NOT NULL,
+    body text NOT NULL,
+    author_id bigint,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: ward_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ward_runs (
+    id character varying NOT NULL,
+    check_slug character varying NOT NULL,
+    principal_id bigint,
+    started_at timestamp(6) without time zone,
+    finished_at timestamp(6) without time zone,
+    exit_code integer,
+    complete boolean DEFAULT false NOT NULL,
+    counts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    lines jsonb DEFAULT '[]'::jsonb NOT NULL,
+    diff jsonb DEFAULT '{}'::jsonb NOT NULL,
+    triage jsonb,
+    mission_id character varying,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: api_keys id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -889,6 +967,38 @@ ALTER TABLE ONLY public.todo_backends
 
 ALTER TABLE ONLY public.usage_events
     ADD CONSTRAINT usage_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ward_checks ward_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_checks
+    ADD CONSTRAINT ward_checks_pkey PRIMARY KEY (slug);
+
+
+--
+-- Name: ward_findings ward_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_findings
+    ADD CONSTRAINT ward_findings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ward_notes ward_notes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_notes
+    ADD CONSTRAINT ward_notes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ward_runs ward_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_runs
+    ADD CONSTRAINT ward_runs_pkey PRIMARY KEY (id);
 
 
 --
@@ -1200,6 +1310,55 @@ CREATE INDEX index_usage_events_on_role_and_created_at ON public.usage_events US
 
 
 --
+-- Name: index_ward_findings_on_acknowledged_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_findings_on_acknowledged_by_id ON public.ward_findings USING btree (acknowledged_by_id);
+
+
+--
+-- Name: index_ward_findings_on_check_slug_and_fingerprint; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_ward_findings_on_check_slug_and_fingerprint ON public.ward_findings USING btree (check_slug, fingerprint);
+
+
+--
+-- Name: index_ward_findings_on_check_slug_and_resolved_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_findings_on_check_slug_and_resolved_at ON public.ward_findings USING btree (check_slug, resolved_at);
+
+
+--
+-- Name: index_ward_notes_on_author_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_notes_on_author_id ON public.ward_notes USING btree (author_id);
+
+
+--
+-- Name: index_ward_notes_on_subject_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_notes_on_subject_and_created_at ON public.ward_notes USING btree (subject, created_at);
+
+
+--
+-- Name: index_ward_runs_on_check_slug_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_runs_on_check_slug_and_created_at ON public.ward_runs USING btree (check_slug, created_at);
+
+
+--
+-- Name: index_ward_runs_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_runs_on_principal_id ON public.ward_runs USING btree (principal_id);
+
+
+--
 -- Name: sentinel_policies fk_rails_038859ac35; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1213,6 +1372,14 @@ ALTER TABLE ONLY public.sentinel_policies
 
 ALTER TABLE ONLY public.petitions
     ADD CONSTRAINT fk_rails_1915a4ce8c FOREIGN KEY (sentinel_policy_id) REFERENCES public.sentinel_policies(id);
+
+
+--
+-- Name: ward_findings fk_rails_2b2f7cfe82; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_findings
+    ADD CONSTRAINT fk_rails_2b2f7cfe82 FOREIGN KEY (check_slug) REFERENCES public.ward_checks(slug);
 
 
 --
@@ -1248,6 +1415,22 @@ ALTER TABLE ONLY public.missions
 
 
 --
+-- Name: ward_runs fk_rails_79a2267124; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_runs
+    ADD CONSTRAINT fk_rails_79a2267124 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: ward_notes fk_rails_7e3b5c0498; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_notes
+    ADD CONSTRAINT fk_rails_7e3b5c0498 FOREIGN KEY (author_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: devices fk_rails_8b23b306c0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1264,11 +1447,27 @@ ALTER TABLE ONLY public.agent_messages
 
 
 --
+-- Name: ward_findings fk_rails_9b38963c63; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_findings
+    ADD CONSTRAINT fk_rails_9b38963c63 FOREIGN KEY (acknowledged_by_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: sentinel_requests fk_rails_aed65976d5; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sentinel_requests
     ADD CONSTRAINT fk_rails_aed65976d5 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: ward_runs fk_rails_b03399b877; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_runs
+    ADD CONSTRAINT fk_rails_b03399b877 FOREIGN KEY (check_slug) REFERENCES public.ward_checks(slug);
 
 
 --
@@ -1431,6 +1630,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260920063000'),
 ('20260920000003'),
 ('20260920000002'),
 ('20260920000001'),

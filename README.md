@@ -4,8 +4,9 @@ The household spirit: a personal LLM substrate. One backing service through
 which every LLM interaction in the household flows — providers, conversations,
 personas, memory, tools, compute, voice. See [DESIGN.md](DESIGN.md) for the
 full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
-[SENTINEL.md](SENTINEL.md) for how outside agents get in, and
-[TODOS.md](TODOS.md) for the household's todos.
+[SENTINEL.md](SENTINEL.md) for how outside agents get in,
+[TODOS.md](TODOS.md) for the household's todos, and
+[WARD.md](WARD.md) for the watch it keeps over the household's exposure.
 
 ## Running
 
@@ -151,6 +152,34 @@ tailnet address), `KEY=` (store the key in the row instead of naming an
 env var), and `ENABLED=0` are the other knobs. A backend's key is never
 shown again: responses say `key: "set"` or name the env var.
 [TODOS.md](TODOS.md) is the design.
+
+## Keeping watch: the ward
+
+The ward ([WARD.md](WARD.md)) is where hob keeps the household's security
+posture: infra's `security/audit.py` runs weekly on agentbox and posts its
+report; hob turns the lines into findings that persist across runs (one
+finding per drift, not one alarm per week), resolves what a *complete* run
+no longer reports, notices when the scanner itself has gone quiet, and has
+a model (role `ward-triage`) tell you what changed and what to do, on the
+same ntfy topic and phones as the sentinel. A person acknowledges a
+finding with a note and an expiry; that is the reviewed-decision line of
+`SECURITY.md` with a clock on it.
+
+```sh
+bin/rails "hob:ward:setup[ward]"                    # the worker's key, shown once; registers the exposure check
+bin/rails hob:ward:status                           # checks, open and acknowledged findings, the latest triage
+bin/rails "hob:ward:ack[<id>]" NOTE='reviewed: intentional' UNTIL=2026-12-01
+bin/rails "hob:ward:note[cadance]" BODY='8888 is nordlynx; auth required on it'
+bin/rails hob:ward:sweep                            # hourly, as a Coolify scheduled task on the hob app
+bin/rails "hob:sentinel:policy[butler,ward.status,allow]"   # let an agent ask how the house stands
+```
+
+```
+POST /v1/ward/runs                     { check, exit_code, lines | output, started_at, finished_at, mission }   (the worker)
+GET  /v1/ward/status · GET /v1/ward/findings?state=open|acknowledged|resolved|all · GET /v1/ward/runs
+POST /v1/ward/findings/:id/ack         { note, until }  · POST …/unack
+GET/POST /v1/ward/notes                { subject, body }                                                  (a person)
+```
 
 ## API sketch
 

@@ -101,6 +101,8 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `todo.update` | act | change a todo's attributes, append to its notes, adjust its tags, move it |
 | `todo.complete` | act | mark a todo done; `reopen: true` undoes it |
 | `todo.drop` | act | abandon a todo without deleting it; agents are offered nothing that deletes |
+| `ward.status` | read | the household's security posture as the ward sees it ([WARD.md](WARD.md)): checks, staleness, open and acknowledged findings, the latest triage; `personal` tier |
+| `ward.audit.run` | act | queue a `ward.audit` mission for the ward worker to run a check now; `personal` tier |
 
 Surfaces register their own: mise registers `mise.add_to_shopping_list` as
 a webhook (or as `poll` with its worker as assignee), and the capability

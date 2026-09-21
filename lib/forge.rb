@@ -177,7 +177,9 @@ module Forge
         status, out, err = run(%w[bundle install --quiet], chdir: dir)
         raise Error, "bundle install failed:\n#{tail(err + out)}" unless status.zero?
       end
-      status, out, err = run(%w[env RAILS_ENV=test bin/rails db:prepare], chdir: dir)
+      # Not db:prepare: on a database it has to create, that also runs the seeds, and
+      # the seeded providers shadow the ones the tests set up with test keys.
+      status, out, err = run(%w[env RAILS_ENV=test bin/rails db:test:prepare], chdir: dir)
       raise Error, "could not prepare the test database:\n#{(out + err).lines.last(20).join}" unless status.zero?
 
       say "running the test suite"

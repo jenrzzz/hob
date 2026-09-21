@@ -23,7 +23,8 @@ module Sentinel
       "todo_drop" => "Sentinel::Native::TodoDrop",
       "ward_status" => "Sentinel::Native::WardStatus",
       "ward_audit_run" => "Sentinel::Native::WardAuditRun",
-      "capability_search" => "Sentinel::Native::CapabilitySearch"
+      "capability_search" => "Sentinel::Native::CapabilitySearch",
+      "calendar_push" => "Sentinel::Native::CalendarPush"
     }.freeze
 
     module_function

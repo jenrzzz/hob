@@ -46,7 +46,9 @@ class ForgeTest < ActiveSupport::TestCase
       when /\Abin\/rails test/ then @answers.fetch("test", [ 0, "10 runs, 0 failures\n", "" ])
       when /\Abundle check/ then @answers.fetch("bundle check", [ 0, "", "" ])
       when /\Abundle install/ then @answers.fetch("bundle install", [ 0, "", "" ])
-      when /\Aenv RAILS_ENV=test bin\/rails/ then @answers.fetch("prepare", [ 0, "", "" ])
+      when /\Aenv RAILS_ENV=test bin\/rails/
+        argv.include?("db:migrate") ? @answers.fetch("migrate", [ 0, "", "" ]) : @answers.fetch("prepare", [ 0, "", "" ])
+      when /\Agit diff --quiet/ then @answers.fetch("structure", [ 0, "", "" ])
       when /\Agh pr create/ then @answers.fetch("gh", [ 0, "https://github.com/jenrzzz/hob/pull/9\n", "" ])
       else [ 0, "", "" ]
       end
@@ -152,6 +154,34 @@ class ForgeTest < ActiveSupport::TestCase
     assert_match(/gh pr create failed: permission denied/, assert_raises(Forge::Error) { build.call }.message)
   end
 
+  test "a build that adds a migration migrates the test database and commits the schema dump" do
+    build.call
+    assert_nil @commands.find { |argv, _, _| argv.include?("db:migrate") }, "no migration: no migrate"
+
+    @answers["diff"] = [ 0, "app/services/sentinel/native/calendar_read.rb\ndb/migrate/20260921000001_create_events.rb\ndb/structure.sql\n", "" ]
+    @answers["structure"] = [ 1, "", "" ]
+    @commands.clear
+    build.call
+    names = @commands.map { |argv, _, _| argv.join(" ") }
+    migrate = names.index("env RAILS_ENV=test bin/rails db:migrate")
+    assert migrate, "migrates the test database"
+    assert_operator names.index("env RAILS_ENV=test bin/rails db:test:prepare"), :<, migrate
+    assert_operator migrate, :<, names.index("bin/rails test"), "before the tests"
+    assert_includes names, "git add -- db/structure.sql"
+    commit = @commands.find { |argv, _, _| argv.take(3) == %w[git commit --quiet] && argv.last.start_with?("Dump the schema") }
+    assert commit, "commits the dump"
+    assert_match(/20260921000001_create_events.rb/, commit[0].last)
+    assert_operator @commands.index(commit), :<, @commands.index { |argv, _, _| argv.take(2) == %w[git push] }
+
+    @answers["structure"] = [ 0, "", "" ]
+    @commands.clear
+    build.call
+    assert_nil @commands.find { |argv, _, _| argv.take(3) == %w[git add --] }, "unchanged dump: nothing to commit"
+
+    @answers["migrate"] = [ 1, "", "PG::UndefinedTable: relation does not exist" ]
+    assert_match(/could not migrate the test database:\nPG::UndefinedTable/, assert_raises(Forge::Error) { build.call }.message)
+  end
+
   test "a worktree missing gems installs them; a database that will not prepare fails the build" do
     @answers["bundle check"] = [ 1, "", "missing" ]
     build.call
@@ -159,6 +189,15 @@ class ForgeTest < ActiveSupport::TestCase
 
     @answers["bundle install"] = [ 1, "", "no route to rubygems" ]
     assert_match(/bundle install failed:\nno route to rubygems/, assert_raises(Forge::Error) { build.call }.message)
+
+    # Bundler leads with the error and follows it with the whole Gemfile and lockfile: the
+    # message keeps both ends, so the error survives the mission's own truncation.
+    @answers["bundle install"] = [ 1, "", "Net::HTTPClientException: 403 \"Forbidden\"\n--- ERROR REPORT TEMPLATE ---\n#{"  zeitwerk (2.8.2) sha256=7212a6\n" * 200}--- TEMPLATE END ---" ]
+    message = assert_raises(Forge::Error) { build.call }.message
+    assert_match(/bundle install failed:\nNet::HTTPClientException: 403 "Forbidden"\n/, message)
+    assert_match(/\n\[\.\.\. \d+ characters elided \.\.\.\]\n/, message)
+    assert_match(/--- TEMPLATE END ---\z/, message)
+    assert_operator message.length, :<, 2200
     @answers.delete("bundle install")
     @answers.delete("bundle check")
 
@@ -180,8 +219,10 @@ class ForgeTest < ActiveSupport::TestCase
     hob.missions.create(assignee: "forge", title: "Build capability hob.calendar.read", payload: payload)
     hob.missions.create(assignee: "forge", title: "Build something else", payload: payload("name" => "hob.other.do"))
     built = []
-    factory = lambda do |payload|
+    ids = []
+    factory = lambda do |payload, id|
       built << payload["spec"]["name"]
+      ids << id
       raise Forge::Error, "tests failed" if payload["spec"]["name"] == "hob.other.do"
 
       Struct.new(:result) { def call = result }.new({ "pull_request" => "https://github.com/x/hob/pull/1", "capability" => payload["spec"]["name"] })
@@ -189,6 +230,7 @@ class ForgeTest < ActiveSupport::TestCase
     worker = Forge::Worker.new(hob: hob, repo: @repo, workdir: @workdir, heartbeat: 0, log: nil, build: factory)
     assert_equal 2, worker.work(wait: 0, drain: true)
     assert_equal [ "hob.calendar.read", "hob.other.do" ], built
+    assert_equal hob.missions.list.map(&:id), ids, "the factory gets the mission's id, which names its workspace"
     done, failed = hob.missions.list
     assert_equal "completed", done.status
     assert_equal "https://github.com/x/hob/pull/1", done.result["pull_request"]
@@ -202,16 +244,20 @@ class ForgeTest < ActiveSupport::TestCase
   # A runner that fakes the coder CLI: `create` and `delete` succeed, `ssh`
   # answers the poll with PENDING a few times and then with the report (or,
   # with `dead`, with DEAD from then on, and the build's log when asked).
-  def coder_runner(report, pending: 2, create: [ 0, "", "" ], ssh_failures: 0, dead: false, log: "")
+  def coder_runner(report, pending: 2, create: [ 0, "", "" ], ssh_failures: 0, dead: false, log: "", list: [], started: true)
     polls = 0
     lambda do |argv, chdir:, stdin: nil|
       @commands << [ argv, chdir, stdin ]
       case argv.take(2).join(" ")
+      when "coder list" # names the sandbox has, or a raw [status, out, err]
+        list.all?(String) ? [ 0, list.map { |n| { "name" => n, "status" => "running" } }.to_json, "" ] : list
       when "coder create" then create
       when "coder delete" then [ 0, "", "" ]
       when "coder ssh"
         command = argv.last
-        if command.include?("result.json 2>/dev/null")
+        if command.include?("build.pid -o -e")
+          [ 0, started ? "STARTED\n" : "FRESH\n", "" ]
+        elsif command.include?("result.json 2>/dev/null")
           polls += 1
           next [ 255, "", "dial tcp: connection refused" ] if polls <= ssh_failures
 
@@ -238,12 +284,15 @@ class ForgeTest < ActiveSupport::TestCase
     built = { "ok" => true, "pull_request" => "https://github.com/jenrzzz/hob/pull/9", "branch" => "forge/hob-calendar-read-abcdef",
               "capability" => "hob.calendar.read", "commit" => "abc123", "summary" => "Built it.", "cost" => 0.42 }
     ws = workspace(built)
-    assert_match(/\Aforge-abcdef-[a-z0-9]+\z/, ws.name)
+    assert_equal "forge-abcdef", ws.name, "named for the petition when no mission id is given"
+    assert_equal "forge-01jx9abc", workspace(built, mission: "01JX9ABC").name, "named for the mission's id tail"
 
     result = ws.call
     assert_equal built.except("ok"), result
 
-    create = @commands[0][0]
+    listing = @commands[0][0]
+    assert_equal [ "coder", "list", "--output", "json", "--search", "name:#{ws.name}" ], listing, "first, whether an earlier run left it"
+    create = @commands[1][0]
     assert_equal %w[coder create], create.take(2)
     assert_equal ws.name, create[2]
     assert_includes create, "--template"
@@ -254,12 +303,12 @@ class ForgeTest < ActiveSupport::TestCase
     assert_includes create, "--yes"
     assert_includes create, "--use-parameter-defaults", "or coder prompts for the template's other parameters on an empty stdin"
 
-    upload = @commands[1]
+    upload = @commands[2]
     assert_equal [ "coder", "ssh", "--wait=yes", ws.name, "--" ], upload[0].take(5), "the first ssh waits for the clone"
     assert_match(%r{cat > /home/node/forge/payload.json}, upload[0].last)
     assert_equal payload, JSON.parse(upload[2]), "the payload goes in on stdin"
 
-    start = @commands[2][0]
+    start = @commands[3][0]
     assert_equal "--wait=no", start[2]
     assert_equal "cd /workspace && setsid nohup sh -c 'echo $$ > /home/node/forge/build.pid; exec forge-env bin/forge build " \
                  "--payload /home/node/forge/payload.json --result /home/node/forge/result.json --workdir /home/node/forge/worktrees " \
@@ -269,6 +318,39 @@ class ForgeTest < ActiveSupport::TestCase
     assert_equal 3, polls.size, "two PENDING answers, then the report"
     assert_equal [ "coder", "delete", ws.name, "--yes" ], @commands.last[0]
     assert @commands.all? { |argv, _, _| argv.first == "coder" }, "the loop's box only ever runs coder"
+  end
+
+  test "a workspace an earlier run left behind is adopted: no second build, just the polling and the delete" do
+    built = { "ok" => true, "pull_request" => "https://github.com/jenrzzz/hob/pull/9" }
+    ws = workspace(built, mission: "01M31CZEXF4GWZWA0F8RHP3AKK", runner: coder_runner(built, pending: 1, list: %w[forge-other forge-8rhp3akk]))
+    assert_equal "forge-8rhp3akk", ws.name
+    assert_equal built.except("ok"), ws.call
+    names = @commands.map { |argv, _, _| argv.take(2).join(" ") }
+    assert_nil names.index("coder create"), "the build already ran, or is running, in there"
+    assert_nil @commands.find { |argv, _, _| argv.last.to_s.include?("payload.json") }, "no second payload"
+    assert_nil @commands.find { |argv, _, _| argv.last.to_s.include?("setsid nohup") }, "no second build"
+    assert_equal 2, @commands.count { |argv, _, _| argv.last.to_s.include?("result.json 2>/dev/null") }, "polled to the report"
+    assert_equal [ "coder", "delete", ws.name, "--yes" ], @commands.last[0]
+
+    # Left behind before its build was started: the payload goes in and the build starts, in the same workspace.
+    @commands.clear
+    fresh = workspace(built, mission: "01M31CZEXF4GWZWA0F8RHP3AKK", runner: coder_runner(built, pending: 0, list: %w[forge-8rhp3akk], started: false))
+    assert_equal built.except("ok"), fresh.call
+    names = @commands.map { |argv, _, _| argv.take(2).join(" ") }
+    assert_nil names.index("coder create")
+    assert @commands.find { |argv, _, _| argv.last.to_s.include?("payload.json") }
+    assert @commands.find { |argv, _, _| argv.last.to_s.include?("setsid nohup") }
+
+    # A listing that fails is not "no workspace": nothing is created, and nothing is deleted.
+    @commands.clear
+    error = assert_raises(Forge::Error) { workspace(built, runner: coder_runner(built, list: [ 1, "", "unauthorized" ])).call }
+    assert_match(/coder list failed: unauthorized/, error.message)
+    assert_equal 1, @commands.size, "the listing was the only call"
+
+    @commands.clear
+    error = assert_raises(Forge::Error) { workspace(built, runner: coder_runner(built, list: [ 0, "<html>", "" ])).call }
+    assert_match(/coder list did not print JSON/, error.message)
+    assert_equal 1, @commands.size
   end
 
   test "a failed or refused build raises what the workspace reported, and the workspace is still deleted" do
@@ -300,7 +382,7 @@ class ForgeTest < ActiveSupport::TestCase
 
     @commands.clear
     lost = workspace({}, runner: coder_runner({}, pending: 0, ssh_failures: Forge::Workspace::LOST))
-    assert_match(/lost workspace forge-abcdef-\w+: dial tcp/, assert_raises(Forge::Error) { lost.call }.message)
+    assert_match(/lost workspace forge-abcdef: dial tcp/, assert_raises(Forge::Error) { lost.call }.message)
 
     @commands.clear
     ticks = [ 0, 0, 0, 5000 ].map { |t| Time.at(1_700_000_000 + t) }
@@ -314,7 +396,7 @@ class ForgeTest < ActiveSupport::TestCase
   test "a build whose process is gone with no report fails with the end of its log, not after three hours" do
     gone = coder_runner({}, pending: 1, dead: true, log: "/usr/local/bin/forge-env: line 47: /workspace/bin/forge: No such file or directory\n")
     error = assert_raises(Forge::Error) { workspace({}, runner: gone).call }
-    assert_match(/\Athe build in forge-abcdef-\w+ died without a report:\n.*bin\/forge: No such file or directory\z/, error.message)
+    assert_match(/\Athe build in forge-abcdef died without a report:\n.*bin\/forge: No such file or directory\z/, error.message)
     polls = @commands.select { |argv, _, _| argv.last.include?("result.json 2>/dev/null") }
     assert_equal 1 + Forge::Workspace::DEAD, polls.size, "one PENDING, then DEAD twice: a single DEAD may be a poll racing the start"
     assert_match(/kill -0 "\$\(cat \/home\/node\/forge\/build.pid/, polls.last[0].last, "the poll looks for the build's process")
@@ -324,6 +406,7 @@ class ForgeTest < ActiveSupport::TestCase
     flicker = 0
     once = lambda do |argv, chdir:, stdin: nil|
       @commands << [ argv, chdir, stdin ]
+      next [ 0, "[]", "" ] if argv[1] == "list"
       next [ 0, "", "" ] unless argv[1] == "ssh" && argv.last.include?("result.json 2>/dev/null")
 
       flicker += 1

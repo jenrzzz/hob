@@ -149,8 +149,8 @@ module Forge
       argv = [ "claude", "-p", "--output-format", "json", *@claude_args ]
       status, out, err = run(argv, chdir: dir, stdin: brief)
       outcome = parse_outcome(out)
-      raise Error, "claude exited #{status}: #{tail(outcome['result'] || err || out)}" unless status.zero?
-      raise Error, "claude reported an error: #{tail(outcome['result'])}" if outcome["is_error"]
+      raise Error, "claude exited #{status}: #{excerpt(outcome['result'] || err || out)}" unless status.zero?
+      raise Error, "claude reported an error: #{excerpt(outcome['result'])}" if outcome["is_error"]
 
       say "implementer finished (#{outcome['num_turns']} turns, $#{outcome['total_cost_usd']})"
       outcome
@@ -175,20 +175,41 @@ module Forge
       status, = run(%w[bundle check], chdir: dir)
       unless status.zero?
         status, out, err = run(%w[bundle install --quiet], chdir: dir)
-        raise Error, "bundle install failed:\n#{tail(err + out)}" unless status.zero?
+        raise Error, "bundle install failed:\n#{excerpt(err + out)}" unless status.zero?
       end
       # Not db:prepare: on a database it has to create, that also runs the seeds, and
       # the seeded providers shadow the ones the tests set up with test keys.
       status, out, err = run(%w[env RAILS_ENV=test bin/rails db:test:prepare], chdir: dir)
       raise Error, "could not prepare the test database:\n#{(out + err).lines.last(20).join}" unless status.zero?
 
+      changed = git(%w[diff --name-only], "#{remote}/#{base}...HEAD")[1].lines.map(&:strip)
+      migrate(changed.grep(%r{\Adb/migrate/})) if changed.any? { |f| f.start_with?("db/migrate/") }
+
       say "running the test suite"
       status, out, err = run(%w[bin/rails test], chdir: dir)
       raise Error, "tests failed after the build:\n#{(out + err).lines.last(30).join}" unless status.zero?
 
-      changed = git(%w[diff --name-only], "#{remote}/#{base}...HEAD")[1].lines.map(&:strip)
       handler = changed.find { |f| f.start_with?("app/services/sentinel/native/") }
       raise Error, "no native handler was added under app/services/sentinel/native/ (changed: #{changed.join(', ')})" if handler.nil? && spec["venue"].to_s != "webhook"
+    end
+
+    # db:test:prepare loads structure.sql, so a migration the implementer added
+    # (it may not run db:* itself) would leave the test run refusing to start
+    # on pending migrations. Migrate the test database, which also dumps the
+    # schema, and commit the dump so the pull request carries it.
+    def migrate(migrations)
+      say "migrating the test database for #{migrations.join(', ')}"
+      status, out, err = run(%w[env RAILS_ENV=test bin/rails db:migrate], chdir: dir)
+      raise Error, "could not migrate the test database:\n#{(out + err).lines.last(20).join}" unless status.zero?
+
+      status, = git %w[diff --quiet --], "db/structure.sql"
+      return if status.zero?
+
+      say "committing the schema dump"
+      git! %w[add --], "db/structure.sql"
+      git! %w[commit --quiet -m], "Dump the schema for #{migrations.map { |m| File.basename(m) }.join(', ')}\n\n" \
+                                  "The forge ran the implementer's migration against the test database.\n\n" \
+                                  "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n"
     end
 
     def push
@@ -387,9 +408,15 @@ module Forge
       out
     end
 
-    def tail(text, limit = 2000)
+    # Both ends of a tool's output, so an error that leads it (bundler prints
+    # its error before pages of Gemfile and lockfile; claude's stderr starts
+    # with the exception) survives the mission's own 2000-character error.
+    def excerpt(text, limit = 2000)
       text = text.to_s.strip
-      text.length > limit ? text[-limit..] : text
+      return text if text.length <= limit
+
+      half = limit / 2
+      "#{text[0, half]}\n[... #{text.length - limit} characters elided ...]\n#{text[-half..]}"
     end
 
     def say(message)
@@ -406,6 +433,11 @@ module Forge
   # workspace image (agent-workspace-hob) supplies `forge-env`: it exports
   # the sandbox's own GitHub and Claude tokens and starts Postgres, then runs
   # its arguments. Heartbeats are the worker's business, as with Build.
+  #
+  # The workspace is named for the mission, so a loop that restarts (the
+  # forge redeploys on every push to hob) and leases the mission again finds
+  # the build its predecessor started, still running or already reported,
+  # and picks up polling instead of building twice.
   class Workspace
     DIR = "/home/node/forge".freeze # payload, result, log, and worktrees inside the workspace
     LOST = 10                       # consecutive failed polls before the workspace is given up on
@@ -417,7 +449,7 @@ module Forge
 
     attr_reader :payload, :name, :template, :image, :repo, :base, :log
 
-    def initialize(payload:, template: "agent-workspace", image: "ghcr.io/jenrzzz/agent-workspace-hob:latest",
+    def initialize(payload:, mission: nil, template: "agent-workspace", image: "ghcr.io/jenrzzz/agent-workspace-hob:latest",
                    repo: "jenrzzz/hob", base: "main", runner: nil, log: $stderr, poll: 30, timeout: 3 * 3600,
                    keep: false, clock: nil)
       @payload = (payload || {}).to_h
@@ -432,16 +464,29 @@ module Forge
       @keep = keep
       @clock = clock || -> { Time.now }
       capability = Forge.check!(@payload)
-      suffix = @payload["petition"].to_s.downcase[-6..] || capability.tr("._", "-")[0, 12]
-      @name = "forge-#{suffix}-#{@clock.call.to_i.to_s(36)}".gsub(/[^a-z0-9-]/, "-")
+      # One name per mission, so a second attempt at the same mission finds the
+      # first attempt's workspace; a petition rebuilt later is a new mission.
+      suffix = mission.to_s.downcase[-8..] || @payload["petition"].to_s.downcase[-6..] || capability.tr("._", "-")[0, 12]
+      @name = "forge-#{suffix}".gsub(/[^a-z0-9-]/, "-")
     end
 
     # -> the same Hash Build#call returns
     def call
+      ours = false
       failed = true
-      create
-      upload
-      start
+      if exists?
+        say "adopting workspace #{name}, left by an earlier run"
+        ours = true
+        unless started?
+          upload
+          start
+        end
+      else
+        ours = true
+        create
+        upload
+        start
+      end
       report = wait
       raise Refused, report["error"] if report["kind"] == "Refused"
       raise Error, report["error"].to_s unless report["ok"]
@@ -449,7 +494,9 @@ module Forge
       failed = false
       report.reject { |k, _| k == "ok" }
     ensure
-      if failed && @keep
+      if !ours
+        nil # the listing failed: the workspace, if there is one, is not touched
+      elsif failed && @keep
         say "keeping workspace #{name} for a look (coder ssh #{name}; coder delete #{name})"
       else
         destroy
@@ -457,6 +504,23 @@ module Forge
     end
 
     # --- steps -----------------------------------------------------------
+
+    # Whether an earlier run left this mission's workspace behind. A listing
+    # that fails is an error, not "no": creating over a live workspace would
+    # fail and then delete it.
+    def exists?
+      out = coder! "list", "--output", "json", "--search", "name:#{name}"
+      rows = JSON.parse(out)
+      rows.is_a?(Array) && rows.any? { |row| row.is_a?(Hash) && row["name"] == name }
+    rescue JSON::ParserError
+      raise Error, "coder list did not print JSON: #{tail(out, 300)}"
+    end
+
+    # Whether the build in an adopted workspace was ever started (it writes
+    # its pid first and its report last); if not, it is started afresh.
+    def started?
+      ssh!("test -e #{DIR}/build.pid -o -e #{DIR}/result.json && echo STARTED || echo FRESH", wait: true).strip == "STARTED"
+    end
 
     # The template has parameters the forge does not set (keys, a headless
     # task); without --use-parameter-defaults `coder create` prompts for
@@ -570,7 +634,11 @@ module Forge
   # The loop: lease, build, report, heartbeating while a build runs.
   # `hob` is a Hob::Client (or Hob::Fake); `build` is a factory for tests.
   class Worker
-    def initialize(hob:, repo:, workdir:, base: "main", heartbeat: 120, lease: 1800, log: $stderr, build: nil)
+    # `build` makes one build from (payload, mission id). The lease is short
+    # enough that a loop killed mid-build (a redeploy) hands the mission back
+    # within minutes, and long enough to ride out hob's own deploys between
+    # heartbeats; the next holder adopts the workspace (Workspace#call).
+    def initialize(hob:, repo:, workdir:, base: "main", heartbeat: 120, lease: 600, log: $stderr, build: nil)
       @hob = hob
       @repo = repo
       @workdir = workdir
@@ -578,7 +646,7 @@ module Forge
       @heartbeat = heartbeat
       @lease = lease
       @log = log
-      @build = build || ->(payload) { Build.new(payload: payload, repo: repo, workdir: workdir, base: base, log: log) }
+      @build = build || ->(payload, _id) { Build.new(payload: payload, repo: repo, workdir: workdir, base: base, log: log) }
     end
 
     # Handle missions until `once` or the queue is empty with `drain`.
@@ -613,7 +681,7 @@ module Forge
     def handle(mission)
       say "leased mission #{mission.id}: #{mission.title}"
       beat = heartbeat_thread(mission)
-      result = @build.call(mission.payload).call
+      result = @build.call(mission.payload, mission.id).call
       @hob.missions.complete(mission, result)
       say "completed mission #{mission.id}: #{result['pull_request']}"
       result

@@ -13,6 +13,8 @@
 #   --image IMG    the workspace image (default: ghcr.io/jenrzzz/agent-workspace-hob:latest)
 #   --repo R       the repo the workspace clones and opens PRs on (default: jenrzzz/hob)
 #   --keep         keep a workspace whose build failed, for a look with coder ssh
+#                  (workspaces are named forge-<mission id tail>; a restarted
+#                  loop that leases a mission again adopts its workspace)
 #   --once         handle at most one mission, then exit
 #   --drain        exit when the queue is empty
 #   --workdir DIR  where worktrees go when building here (default: ../hob-forge next to this checkout)
@@ -91,9 +93,9 @@ end
 
 hob = Hob::Client.new(timeout: 60)
 build = if options[:coder]
-  lambda do |payload|
-    Forge::Workspace.new(payload: payload, template: options[:template], image: options[:image], repo: options[:repo],
-                         base: options[:base], keep: options[:keep])
+  lambda do |payload, mission|
+    Forge::Workspace.new(payload: payload, mission: mission, template: options[:template], image: options[:image],
+                         repo: options[:repo], base: options[:base], keep: options[:keep])
   end
 end
 worker = Forge::Worker.new(hob: hob, repo: root, workdir: options[:workdir], base: options[:base], build: build)

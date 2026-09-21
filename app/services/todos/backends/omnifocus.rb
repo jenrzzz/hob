@@ -23,6 +23,7 @@ module Todos
       OPEN_TIMEOUT = 5
       READ_TIMEOUT = 30
       CONFIG_KEYS = %w[url key key_env addr create_tags].freeze
+      ENV_NAME = /\A[A-Z_][A-Z0-9_]*\z/
 
       ACTIONABLE = %w[available next due_soon overdue].freeze
       TASK_STATUS = { "open" => "remaining", "done" => "completed", "dropped" => "dropped", "all" => "all" }.freeze
@@ -41,6 +42,11 @@ module Todos
         errors << "needs a url (http or https): where tally listens" unless config["url"].to_s.match?(%r{\Ahttps?://\S+\z})
         errors << "needs a key or a key_env: tally's bearer key" if config["key"].blank? && config["key_env"].blank?
         errors << "takes a key or a key_env, not both" if config["key"].present? && config["key_env"].present?
+        # A key_env comes back out in every response, so a key put there by
+        # mistake would be published. The value is not echoed in the error.
+        if config["key_env"].present? && !config["key_env"].to_s.match?(ENV_NAME)
+          errors << "key_env names an environment variable (like TALLY_KEY); the key itself goes in key"
+        end
         errors
       end
 
@@ -258,13 +264,16 @@ module Todos
 
       # `addr` pins the address to connect to; the hostname still goes out as
       # Host and SNI, so a certificate is checked against the name (Hob::HTTP
-      # does the same with ipaddr:).
+      # does the same with ipaddr:). Net::HTTP would quietly send a GET a
+      # second time after a read timeout, and a hung Mac would then hold the
+      # request for a minute, past the proxy's patience: no retries.
       def connection(uri)
         Net::HTTP.new(uri.host, uri.port).tap do |http|
           http.ipaddr = backend.addr if backend.addr
           http.use_ssl = uri.scheme == "https"
           http.open_timeout = OPEN_TIMEOUT
           http.read_timeout = READ_TIMEOUT
+          http.max_retries = 0
         end
       end
 

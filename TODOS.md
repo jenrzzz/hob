@@ -154,7 +154,9 @@ is a restart, not a migration. `key` stores the key in the row for when an
 env var is not practical. Either way it goes in and never comes out: API
 responses say `key: "set"` or give the `key_env` name, the model's
 `inspect` masks the whole config, and `config.key` is filtered from
-request logs.
+request logs. Because a `key_env` does come back out, it has to look like
+an env var's name (`TALLY_KEY`): a key put there by mistake is refused,
+and the error does not repeat it.
 
 **`addr`** pins the connection to an address (the mini's tailnet IP) while
 `url` keeps the hostname, exactly as `Hob::Client`'s `ipaddr:` reaches hob:

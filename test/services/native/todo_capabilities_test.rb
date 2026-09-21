@@ -24,8 +24,10 @@ class TodoCapabilitiesTest < ActiveSupport::TestCase
     as(agent, realm: realm) { Sentinel.submit!(agent: agent, capability: capability, arguments: arguments) }
   end
 
-  def completed(capability, arguments = {}, **options)
-    request = submit(capability, arguments, **options)
+  # Arguments written without braces (`completed("todo.get", "id" => 1)`) arrive
+  # as keywords, because this method takes some; fold them back into the arguments.
+  def completed(capability, arguments = {}, agent: @muse, realm: "household", **rest)
+    request = submit(capability, arguments.merge(rest), agent: agent, realm: realm)
     assert_equal "completed", request.status, request.error.to_s
     request.result
   end

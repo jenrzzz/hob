@@ -103,6 +103,7 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `todo.drop` | act | abandon a todo without deleting it; agents are offered nothing that deletes |
 | `ward.status` | read | the household's security posture as the ward sees it ([WARD.md](WARD.md)): checks, staleness, open and acknowledged findings, the latest triage; `personal` tier |
 | `ward.audit.run` | act | queue a `ward.audit` mission for the ward worker to run a check now; `personal` tier |
+| `hob.capability.search` | read | keyword search over the capability catalog — name, description, kind, realm, and whether the caller may petition for each — filtered to the caller's clearance |
 
 Surfaces register their own: mise registers `mise.add_to_shopping_list` as
 a webhook (or as `poll` with its worker as assignee), and the capability

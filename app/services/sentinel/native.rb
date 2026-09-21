@@ -22,7 +22,8 @@ module Sentinel
       "todo_complete" => "Sentinel::Native::TodoComplete",
       "todo_drop" => "Sentinel::Native::TodoDrop",
       "ward_status" => "Sentinel::Native::WardStatus",
-      "ward_audit_run" => "Sentinel::Native::WardAuditRun"
+      "ward_audit_run" => "Sentinel::Native::WardAuditRun",
+      "capability_search" => "Sentinel::Native::CapabilitySearch"
     }.freeze
 
     module_function

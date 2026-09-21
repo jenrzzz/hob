@@ -154,6 +154,7 @@ their result is whatever they answer.
 | `todo.update` | `id`, and any of the create arguments except `backend`, plus `notes_append`, `add_tags`, `remove_tags`; null clears a date | `{ todo, notice }` |
 | `todo.complete` | `id`; `reopen: true` to put a done or dropped todo back to open | `{ todo, notice }`; a repeating todo's next occurrence is `todo.next` |
 | `todo.drop` | `id` | `{ todo, notice }`; the todo is kept, marked dropped. There is no delete |
+| `hob.capability.search` | `query` (required, ≤ 120 chars); optional `limit` (1–25, default 20) | `{ results: [{ name, description, kind, realm, already_held, petitionable }], total_matched, notice }`. Filtered and scored to your clearance. `already_held` means you already have a policy for it; `petitionable` means you may petition for it (clearance covers realm, not already held). No policy internals |
 
 Which roles `hob.complete` may use is a policy constraint; asking for a
 role outside it is a denial by `constraint`. The capabilities list does

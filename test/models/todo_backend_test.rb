@@ -57,6 +57,13 @@ class TodoBackendTest < ActiveSupport::TestCase
     assert build(config: TALLY.merge("addr" => "100.64.0.7", "create_tags" => true)).valid?
   end
 
+  test "a key_env is an environment variable's name, and a key put there is refused without being repeated" do
+    row = build(config: TALLY.merge("key_env" => "tly_not-a-variable-name"))
+    refute row.valid?
+    assert_match(/key_env names an environment variable/, row.errors[:config].to_sentence)
+    refute_match(/tly_not/, row.errors.full_messages.to_sentence)
+  end
+
   test "the key is read from the environment at request time, or from the row" do
     row = build
     assert_equal "tally-secret", row.key

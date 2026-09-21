@@ -23,6 +23,7 @@ module Todos
       OPEN_TIMEOUT = 5
       READ_TIMEOUT = 30
       CONFIG_KEYS = %w[url key key_env addr create_tags].freeze
+      ENV_NAME = /\A[A-Z_][A-Z0-9_]*\z/
 
       ACTIONABLE = %w[available next due_soon overdue].freeze
       TASK_STATUS = { "open" => "remaining", "done" => "completed", "dropped" => "dropped", "all" => "all" }.freeze
@@ -41,6 +42,11 @@ module Todos
         errors << "needs a url (http or https): where tally listens" unless config["url"].to_s.match?(%r{\Ahttps?://\S+\z})
         errors << "needs a key or a key_env: tally's bearer key" if config["key"].blank? && config["key_env"].blank?
         errors << "takes a key or a key_env, not both" if config["key"].present? && config["key_env"].present?
+        # A key_env comes back out in every response, so a key put there by
+        # mistake would be published. The value is not echoed in the error.
+        if config["key_env"].present? && !config["key_env"].to_s.match?(ENV_NAME)
+          errors << "key_env names an environment variable (like TALLY_KEY); the key itself goes in key"
+        end
         errors
       end
 

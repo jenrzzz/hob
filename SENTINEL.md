@@ -94,6 +94,7 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `hob.conversation.event` | act | append an event node ("Muse booked the table") |
 | `hob.mission.create` | act | hand a mission to another principal |
 | `hob.agent.message` | act | a short note to another agent on this instance, or the caller's inbox; nothing leaves hob, and a person reads the log with `hob:messages` |
+| `hob.ping` | read | liveness check: answers pong with the server's UTC time, echoing back an optional short string |
 
 Surfaces register their own: mise registers `mise.add_to_shopping_list` as
 a webhook (or as `poll` with its worker as assignee), and the capability

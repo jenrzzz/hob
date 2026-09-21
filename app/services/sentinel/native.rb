@@ -13,7 +13,8 @@ module Sentinel
       "conversation_read" => "Sentinel::Native::ConversationRead",
       "conversation_event" => "Sentinel::Native::ConversationEvent",
       "mission_create" => "Sentinel::Native::MissionCreate",
-      "agent_message" => "Sentinel::Native::AgentMessage"
+      "agent_message" => "Sentinel::Native::AgentMessage",
+      "ping" => "Sentinel::Native::Ping"
     }.freeze
 
     module_function

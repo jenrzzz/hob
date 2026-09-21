@@ -78,6 +78,7 @@ class CompletionsControllerTest < ActionDispatch::IntegrationTest
     @fake.fail(Gateway::Unauthorized.new("bad key"))
     post "/v1/completions", params: { role: "chat-default", messages: [ { role: "user", content: "x" } ] }, headers: auth, as: :json
     assert_response :bad_gateway
+    assert_equal "unauthorized", body["status"], "so a client can tell this 502 from a backend's or a proxy's"
 
     post "/v1/completions", params: { role: "chat-default", messages: [ { role: "user", content: "x" } ] }, as: :json
     assert_response :unauthorized

@@ -19,7 +19,11 @@ class HTTPTest < Minitest::Test
     assert_instance_of Hob::Unauthorized, errors.for_response(401, { "error" => "unauthorized" })
     assert_instance_of Hob::NotFound, errors.for_response(404, {})
     assert_instance_of Hob::Invalid, errors.for_response(422, { "error" => "realm above clearance" })
-    assert_instance_of Hob::Unauthorized, errors.for_response(502, { "error" => "provider rejected" })
+    assert_instance_of Hob::Unauthorized, errors.for_response(502, { "error" => "provider rejected hob's credentials: bad key", "status" => "unauthorized" })
+    assert_instance_of Hob::Unauthorized, errors.for_response(502, { "error" => "provider rejected hob's credentials: bad key" }), "a hob from before the status"
+    assert_instance_of Hob::Unavailable, errors.for_response(502, { "error" => "<html>Bad Gateway</html>" }), "a proxy answering for a restarting hob"
+    assert_instance_of Hob::Unavailable, errors.for_response(502, { "error" => "tally answered HTTP 418" }), "a todo backend failing"
+    assert_instance_of Hob::Unavailable, errors.for_response(502, {})
     assert_instance_of Hob::Unavailable, errors.for_response(503, { "error" => "down", "status" => "unavailable" })
     limited = errors.for_response(503, { "error" => "429", "status" => "rate_limited" }, retry_after: 30)
     assert_instance_of Hob::RateLimited, limited

@@ -31,8 +31,10 @@ class ApplicationController < ActionController::API
     render json: { error: e.message, status: "unavailable" }, status: :service_unavailable
   end
 
+  # 502 is also what a todo backend's failure, a push that APNs refused, and a
+  # proxy in front of a restarting hob answer; the status says which this is.
   rescue_from Gateway::Unauthorized do |e|
-    render json: { error: "provider rejected hob's credentials: #{e.message}" }, status: :bad_gateway
+    render json: { error: "provider rejected hob's credentials: #{e.message}", status: "unauthorized" }, status: :bad_gateway
   end
 
   private

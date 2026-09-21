@@ -50,3 +50,53 @@ jobs:
       - name: Lint code for consistent style
         run: bin/rubocop -f github
 
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready -U postgres" --health-interval=10s --health-timeout=5s --health-retries=5
+
+    # Rails connects through libpq's variables (config/database.yml names no
+    # host or user) as `hob`, which is NOT a superuser: row-level security is
+    # FORCEd on table owners, but a superuser bypasses it and the RLS tests fail.
+    env:
+      RAILS_ENV: test
+      PGHOST: localhost
+      PGUSER: hob
+      PGPASSWORD: hob
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      # pgvector goes into template1 as the superuser, so every database `hob`
+      # creates inherits it and structure.sql's CREATE EXTENSION is a no-op.
+      - name: Create the non-superuser database role
+        env:
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          psql -d template1 -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS vector" \
+            -c "CREATE ROLE hob LOGIN CREATEDB PASSWORD 'hob'"
+
+      # Not db:prepare: on a fresh database that also runs the seeds, and the
+      # seeded providers shadow the ones the tests set up with test keys.
+      - name: Load the schema
+        run: bin/rails db:test:prepare
+
+      - name: Run tests
+        run: bin/rails test
+

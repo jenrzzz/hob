@@ -57,6 +57,10 @@ Rails.application.routes.draw do
       get "notes", action: :notes
       post "notes", action: :create_note
     end
+    # hob as an MCP server (CLAUDE_CODE.md): a person's assistant's tools.
+    post "mcp", to: "mcp#create"
+    match "mcp", to: "mcp#unsupported", via: %i[get delete]
+
     resources :missions, only: %i[index show create] do
       post :lease, on: :collection
       member do

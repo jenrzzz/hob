@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "hob": {
+      "type": "http",
+      "url": "${user_config.url}/v1/mcp",
+      "headers": {
+        "Authorization": "Bearer ${user_config.key}",
+        "X-Hob-Clearance": "${user_config.clearance}"
+      }
+    }
+  }
+}

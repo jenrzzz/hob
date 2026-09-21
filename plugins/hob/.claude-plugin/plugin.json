@@ -1,0 +1,31 @@
+{
+  "name": "hob",
+  "version": "0.1.0",
+  "description": "The household's todos, the ward, and whatever else hob can do, as tools in Claude Code. The tools are served by hob itself, so they follow what hob can do.",
+  "author": {
+    "name": "Jenner La Fave"
+  },
+  "repository": "https://github.com/jenrzzz/hob",
+  "keywords": ["hob", "todos", "omnifocus", "household"],
+  "userConfig": {
+    "url": {
+      "type": "string",
+      "title": "hob's URL",
+      "description": "Where hob answers, without a trailing slash, e.g. https://hob.example",
+      "required": true
+    },
+    "key": {
+      "type": "string",
+      "title": "A person's hob key",
+      "description": "A key for you on a claude-code surface: bin/rails \"hob:key[<you>,claude-code]\". Kept in the keychain.",
+      "sensitive": true,
+      "required": true
+    },
+    "clearance": {
+      "type": "string",
+      "title": "Clearance cap",
+      "description": "The highest realm Claude Code may see: household, personal, or intimate. It can only lower what the key allows.",
+      "default": "personal"
+    }
+  }
+}

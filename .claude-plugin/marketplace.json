@@ -1,0 +1,14 @@
+{
+  "name": "hob",
+  "description": "hob's own Claude Code plugin, kept beside the service it talks to.",
+  "owner": {
+    "name": "Jenner La Fave"
+  },
+  "plugins": [
+    {
+      "name": "hob",
+      "source": "./plugins/hob",
+      "description": "The household's todos, the ward, and whatever else hob can do, as tools in Claude Code."
+    }
+  ]
+}

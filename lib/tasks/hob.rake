@@ -61,6 +61,37 @@ namespace :hob do
     end
   end
 
+  namespace :calendar do
+    desc "Let an agent push calendar events for a person (hob.calendar.push): bin/rails \"hob:calendar:contributor[jenner,skipsy]\"; " \
+         "REMOVE=1 takes it away again (what the agent already pushed stays until PURGE=1 goes with it)"
+    task :contributor, [ :owner, :agent ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:calendar:contributor[owner,agent]\" REMOVE=1 PURGE=1" if args[:owner].blank? || args[:agent].blank?
+
+      owner = Principal.find_by!(name: args[:owner])
+      agent = Principal.find_by!(name: args[:agent])
+      if ENV["REMOVE"] == "1"
+        removed = CalendarContributor.where(owner: owner, agent: agent).delete_all
+        purged = ENV["PURGE"] == "1" ? CalendarEvent.where(owner: owner, source_agent: agent).delete_all : 0
+        puts "#{agent.name} #{removed.zero? ? 'was not pushing' : 'no longer pushes'} for #{owner.name}; #{purged} event(s) purged, " \
+             "#{CalendarEvent.where(owner: owner, source_agent: agent).count} still in the mirror"
+      else
+        CalendarContributor.find_or_create_by!(owner: owner, agent: agent)
+        puts "#{agent.name} may push calendar events for #{owner.name}"
+      end
+    end
+
+    desc "List who may push calendar events for whom, and how much of the mirror each has filled"
+    task contributors: :environment do
+      rows = CalendarContributor.includes(:owner, :agent).order(:owner_id, :agent_id)
+      puts "no calendar contributors; bin/rails \"hob:calendar:contributor[owner,agent]\"" if rows.empty?
+      rows.each do |row|
+        events = CalendarEvent.where(owner: row.owner, source_agent: row.agent)
+        puts "#{row.agent.name} → #{row.owner.name}: #{events.count} event(s), #{events.where(visibility: 'details').count} with details, " \
+             "last push #{events.maximum(:updated_at)&.utc&.iso8601 || 'never'}"
+      end
+    end
+  end
+
   desc "Mint a key for an existing principal, shown once: bin/rails \"hob:key[jenner,phone]\" for the companion app " \
        "(clients/ios); the clearance defaults to the principal's own"
   task :key, [ :principal, :surface, :clearance ] => :environment do |_task, args|

@@ -200,8 +200,9 @@ class ForgeTest < ActiveSupport::TestCase
   # --- in a Coder workspace ---------------------------------------------------
 
   # A runner that fakes the coder CLI: `create` and `delete` succeed, `ssh`
-  # answers the poll with PENDING a few times and then with the report.
-  def coder_runner(report, pending: 2, create: [ 0, "", "" ], ssh_failures: 0)
+  # answers the poll with PENDING a few times and then with the report (or,
+  # with `dead`, with DEAD from then on, and the build's log when asked).
+  def coder_runner(report, pending: 2, create: [ 0, "", "" ], ssh_failures: 0, dead: false, log: "")
     polls = 0
     lambda do |argv, chdir:, stdin: nil|
       @commands << [ argv, chdir, stdin ]
@@ -214,7 +215,12 @@ class ForgeTest < ActiveSupport::TestCase
           polls += 1
           next [ 255, "", "dial tcp: connection refused" ] if polls <= ssh_failures
 
-          polls - ssh_failures > pending ? [ 0, report.is_a?(String) ? report : report.to_json, "" ] : [ 0, "PENDING\n", "" ]
+          next [ 0, "PENDING\n", "" ] if polls - ssh_failures <= pending
+          next [ 0, "DEAD\n", "" ] if dead
+
+          [ 0, report.is_a?(String) ? report : report.to_json, "" ]
+        elsif command.include?("build.log 2>/dev/null")
+          [ 0, log, "" ]
         else
           [ 0, "", "" ]
         end
@@ -255,7 +261,9 @@ class ForgeTest < ActiveSupport::TestCase
 
     start = @commands[2][0]
     assert_equal "--wait=no", start[2]
-    assert_match(%r{cd /workspace && setsid nohup forge-env bin/forge build --payload /home/node/forge/payload.json --result /home/node/forge/result.json --workdir /home/node/forge/worktrees --base main > /home/node/forge/build.log 2>&1 < /dev/null &}, start.last)
+    assert_equal "cd /workspace && setsid nohup sh -c 'echo $$ > /home/node/forge/build.pid; exec forge-env bin/forge build " \
+                 "--payload /home/node/forge/payload.json --result /home/node/forge/result.json --workdir /home/node/forge/worktrees " \
+                 "--base main' > /home/node/forge/build.log 2>&1 < /dev/null &", start.last, "the shell records its pid, then becomes the build"
 
     polls = @commands.select { |argv, _, _| argv[1] == "ssh" && argv.last.include?("result.json 2>/dev/null") }
     assert_equal 3, polls.size, "two PENDING answers, then the report"
@@ -301,6 +309,36 @@ class ForgeTest < ActiveSupport::TestCase
 
     @commands.clear
     assert_match(/report is not JSON/, assert_raises(Forge::Error) { workspace("<html>", runner: coder_runner("<html>", pending: 0)).call }.message)
+  end
+
+  test "a build whose process is gone with no report fails with the end of its log, not after three hours" do
+    gone = coder_runner({}, pending: 1, dead: true, log: "/usr/local/bin/forge-env: line 47: /workspace/bin/forge: No such file or directory\n")
+    error = assert_raises(Forge::Error) { workspace({}, runner: gone).call }
+    assert_match(/\Athe build in forge-abcdef-\w+ died without a report:\n.*bin\/forge: No such file or directory\z/, error.message)
+    polls = @commands.select { |argv, _, _| argv.last.include?("result.json 2>/dev/null") }
+    assert_equal 1 + Forge::Workspace::DEAD, polls.size, "one PENDING, then DEAD twice: a single DEAD may be a poll racing the start"
+    assert_match(/kill -0 "\$\(cat \/home\/node\/forge\/build.pid/, polls.last[0].last, "the poll looks for the build's process")
+    assert_equal %w[coder delete], @commands.last[0].take(2)
+
+    @commands.clear
+    flicker = 0
+    once = lambda do |argv, chdir:, stdin: nil|
+      @commands << [ argv, chdir, stdin ]
+      next [ 0, "", "" ] unless argv[1] == "ssh" && argv.last.include?("result.json 2>/dev/null")
+
+      flicker += 1
+      case flicker
+      when 1 then [ 0, "DEAD\n", "" ]
+      when 2 then [ 0, "PENDING\n", "" ]
+      when 3 then [ 0, "DEAD\n", "" ]
+      else [ 0, { "ok" => true, "pull_request" => "u" }.to_json, "" ]
+      end
+    end
+    assert_equal({ "pull_request" => "u" }, workspace({}, runner: once).call, "DEAD only counts in a row")
+
+    @commands.clear
+    silent = coder_runner({}, pending: 0, dead: true)
+    assert_match(/died without a report:\n\(build.log is empty\)/, assert_raises(Forge::Error) { workspace({}, runner: silent).call }.message)
   end
 
   test "Forge.report turns a build's outcome or error into what bin/forge build writes" do

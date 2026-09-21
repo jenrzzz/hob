@@ -106,7 +106,7 @@ through APNs with the same token-auth key kat uses:
 
 | var | value |
 |---|---|
-| `APNS_KEY` | the `.p8` contents (or `APNS_KEY_PATH`) |
+| `APNS_KEY` | the `.p8` contents (newlines may be `\n`-escaped, collapsed or quoted; or `APNS_KEY_PATH`) |
 | `APNS_KEY_ID` | the key id from the developer portal |
 | `APNS_TEAM_ID` | the team id |
 | `APNS_BUNDLE_ID` | `place.amber.hob` (the default) |

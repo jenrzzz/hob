@@ -243,6 +243,9 @@ jobs              ulid, queue, payload jsonb, priority, status,
                   leased_by?, lease_expires_at, result jsonb             [RLS]
 workers           id, principal_id, capabilities jsonb, last_seen, live_provider bool
 
+todo_backends     ulid, name, kind(omnifocus), principal_id, realm, config jsonb,
+                  enabled, primary          -- where todos live; the todos stay there (TODOS.md)  [RLS]
+
 audio_cache       key PK (msg_hash+voice+settings), url, bytes, cost
 audit_log         id, principal, action, realm_context, detail jsonb, at
 ```

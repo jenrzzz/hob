@@ -64,6 +64,13 @@ module HobWorld
     SentinelPolicy.create!(principal: agent, capability: capability, effect: effect, **attrs)
   end
 
+  # A todo backend row (TODOS.md). The default kind is the in-memory Fake,
+  # which exists only in the test environment; its todos live in
+  # Todos::Backends::Fake.store(name) until Fake.reset!.
+  def todo_backend(name = "house", realm: "household", kind: "fake", owner: @principal, **attrs)
+    TodoBackend.create!(name: name, kind: kind, realm: realm, principal: owner, **attrs)
+  end
+
   # Runs a block the way a request from `principal` at `realm` would.
   def as(principal, realm:, surface: principal.name)
     Clearance.with(realm) do

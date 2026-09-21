@@ -93,6 +93,12 @@ module Hob
       @missions ||= FakeMissions.new(self)
     end
 
+    # In-memory todos with the real client's surface, in one backend named
+    # "fake": fake.todos.create(title: "Buy milk"), then read them back.
+    def todos
+      @todos ||= FakeTodos.new(self)
+    end
+
     class FakeSentinel
       attr_reader :requests
 
@@ -301,6 +307,170 @@ module Hob
         raise Invalid, "lease_token does not hold mission #{mission.id}" unless data["lease_token"] == mission.lease_token
 
         data
+      end
+    end
+
+    class FakeTodos < Todos
+      BACKEND = "fake".freeze
+      CREATE = %i[title notes flagged due_at start_at planned_at estimate_minutes tags list parent_id backend].freeze
+      UPDATE = (CREATE - %i[backend] + %i[notes_append add_tags remove_tags]).freeze
+      FILTERS = %i[backend status actionable list tag flagged due_before due_after start_before q updated_after sort limit].freeze
+      SORTS = { "due" => "due_at", "start" => "start_at", "created" => "created_at", "updated" => "updated_at", "title" => "title" }.freeze
+
+      def initialize(fake)
+        super(nil)
+        @fake = fake
+        @store = {}
+        @lists = {}
+      end
+
+      # A project to file todos in; returns its list id.
+      def add_list(name, path: nil)
+        id = "#{BACKEND}:#{@fake.send(:next_id, 'list')}"
+        @lists[id] = { "id" => id, "backend" => BACKEND, "name" => name, "kind" => "project", "path" => path, "status" => "active" }
+        id
+      end
+
+      def list(**filters)
+        known!(filters, FILTERS, "filter")
+        status = (filters[:status] || "open").to_s
+        found = @store.values.select do |t|
+          (status == "all" || t["status"] == status) &&
+            (filters[:backend].nil? || filters[:backend].to_s == BACKEND) &&
+            (filters[:actionable].nil? || t["actionable"] == filters[:actionable]) &&
+            (filters[:flagged].nil? || t["flagged"] == filters[:flagged]) &&
+            (filters[:list].nil? || (t["list"] ? t["list"]["id"] : "#{BACKEND}:inbox") == filters[:list]) &&
+            Array(filters[:tag]).all? { |tag| t["tags"].include?(tag) } &&
+            (filters[:due_before].nil? || (t["due_at"] && t["due_at"] < stamp(filters[:due_before]))) &&
+            (filters[:due_after].nil? || (t["due_at"] && t["due_at"] > stamp(filters[:due_after]))) &&
+            (filters[:start_before].nil? || (t["start_at"] && t["start_at"] < stamp(filters[:start_before]))) &&
+            (filters[:updated_after].nil? || t["updated_at"] > stamp(filters[:updated_after])) &&
+            filters[:q].to_s.downcase.split.all? { |word| "#{t['title']} #{t['notes']}".downcase.include?(word) }
+        end
+        TodoListing.new(sorted(found, filters[:sort]).first(filters[:limit] || 100).map { |t| Todo.new(t) }, [])
+      end
+
+      def find(id)
+        Todo.new(fetch(id))
+      end
+
+      def create(**attributes)
+        known!(attributes, CREATE, "attribute")
+        raise Invalid, "title is required" if attributes[:title].to_s.strip.empty?
+        raise NotFound, "no todo backend named #{attributes[:backend].inspect}" unless [ nil, BACKEND ].include?(attributes[:backend]&.to_s)
+
+        now = stamp(Time.now)
+        id = "#{BACKEND}:#{@fake.send(:next_id, 'todo')}"
+        data = { "id" => id, "backend" => BACKEND, "title" => nil, "notes" => "", "status" => "open", "actionable" => true,
+                 "blocked" => false, "flagged" => false, "due_at" => nil, "start_at" => nil, "planned_at" => nil,
+                 "completed_at" => nil, "tags" => [], "list" => nil, "parent_id" => nil, "has_children" => false,
+                 "estimate_minutes" => nil, "repeats" => false, "url" => "fake:///task/#{id}", "created_at" => now, "updated_at" => now }
+        @store[id] = assign(data, attributes)
+        Todo.new(data)
+      end
+
+      def update(id, **attributes)
+        known!(attributes, UPDATE, "attribute")
+        raise Invalid, "nothing to update" if attributes.empty?
+
+        Todo.new(assign(fetch(id), attributes).merge!("updated_at" => stamp(Time.now)))
+      end
+
+      def complete(id)
+        Todo.new(fetch(id).merge!("status" => "done", "actionable" => false, "completed_at" => stamp(Time.now)))
+      end
+
+      def reopen(id)
+        Todo.new(fetch(id).merge!("status" => "open", "actionable" => true, "completed_at" => nil))
+      end
+
+      def drop(id)
+        Todo.new(fetch(id).merge!("status" => "dropped", "actionable" => false))
+      end
+
+      def delete(id)
+        fetch(id)
+        @store.delete_if { |key, t| key == key_of(id) || t["parent_id"] == key_of(id) }
+        true
+      end
+
+      def lists(**filters)
+        known!(filters, %i[backend status q], "filter")
+        inbox = { "id" => "#{BACKEND}:inbox", "backend" => BACKEND, "name" => "Inbox", "kind" => "inbox", "path" => nil, "status" => "active" }
+        all = [ inbox, *@lists.values ].select { |l| l["name"].downcase.include?(filters[:q].to_s.downcase) }
+        TodoListing.new(all.map { |l| TodoList.new(l.merge("open_count" => open_in(l))) }, [])
+      end
+
+      def backends
+        [ TodoBackend.new("name" => BACKEND, "kind" => "fake", "owner" => "fake", "realm" => "household", "enabled" => true,
+                          "primary" => true, "config" => {}) ]
+      end
+
+      private
+
+      def key_of(id)
+        (id.respond_to?(:id) ? id.id : id).to_s
+      end
+
+      def fetch(id)
+        @store.fetch(key_of(id)) { raise NotFound, "no todo #{key_of(id)}" }
+      end
+
+      # The server refuses what it does not know, so the fake does too.
+      def known!(given, allowed, what)
+        unknown = given.keys.map(&:to_sym) - allowed
+        raise Invalid, "unknown #{what} #{unknown.join(', ')} (known: #{allowed.join(', ')})" unless unknown.empty?
+      end
+
+      def assign(data, attributes)
+        attributes = attributes.transform_keys(&:to_s)
+        data.merge!(attributes.slice("title", "flagged", "estimate_minutes"))
+        data["notes"] = attributes["notes"].to_s if attributes.key?("notes")
+        data["notes"] = [ data["notes"], attributes["notes_append"] ].reject { |n| n.to_s.empty? }.join("\n") if attributes["notes_append"]
+        %w[due_at start_at planned_at].each { |name| data[name] = stamp(attributes[name]) if attributes.key?(name) }
+        data["tags"] = Array(attributes["tags"]).map(&:to_s) if attributes.key?("tags")
+        data["tags"] = (data["tags"] | Array(attributes["add_tags"])) - Array(attributes["remove_tags"])
+        if attributes["parent_id"]
+          parent = fetch(attributes["parent_id"])
+          parent["has_children"] = true
+          data.merge!("parent_id" => parent["id"], "list" => parent["list"])
+        elsif attributes.key?("list")
+          data.merge!("parent_id" => nil, "list" => list_for(attributes["list"]))
+        end
+        data
+      end
+
+      # nil or "fake:inbox" is the inbox; otherwise a list id or a name from add_list.
+      def list_for(value)
+        return nil if value.nil? || value == "#{BACKEND}:inbox"
+
+        found = @lists[value] || @lists.values.find { |l| l["name"] == value }
+        raise NotFound, "no list #{value.inspect}" if found.nil?
+
+        found.slice("id", "name")
+      end
+
+      def open_in(list)
+        @store.values.count { |t| t["status"] == "open" && (list["kind"] == "inbox" ? t["list"].nil? : t.dig("list", "id") == list["id"]) }
+      end
+
+      def sorted(todos, sort)
+        return todos if sort.nil?
+
+        key = SORTS.fetch(sort.to_s.delete_prefix("-")) { raise Invalid, "sort must be one of #{SORTS.keys.join(', ')}" }
+        present, absent = todos.partition { |t| t[key] }
+        present = present.sort_by { |t| t[key].to_s.downcase }
+        present.reverse! if sort.to_s.start_with?("-")
+        present + absent
+      end
+
+      # UTC ISO8601 from a Time, a Date, or a string.
+      def stamp(value)
+        return nil if value.nil?
+
+        value = value.to_time if value.respond_to?(:to_time) && !value.is_a?(String)
+        value = Time.parse(value) if value.is_a?(String)
+        value.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
       end
     end
 

@@ -88,6 +88,11 @@ module Hob
       @missions ||= Missions.new(@http)
     end
 
+    # /v1/todos: the household's todos, whatever backend holds them.
+    def todos
+      @todos ||= Todos.new(@http)
+    end
+
     # GET /v1/prices → { "prices" => [Hob::ModelPrice], "unpriced" => [model ids] }.
     def prices
       data = @http.get("/v1/prices")

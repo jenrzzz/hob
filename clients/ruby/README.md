@@ -98,6 +98,30 @@ hob.prices                                              # { "prices" => [...], "
 hob.set_price(model: "claude-opus-5", input: 5, output: 25, note: "Anthropic list 2026-06")  # cache rates default to 0.1x / 1.25x
 ```
 
+## todos
+
+The household's todos through hob's one contract, whatever backend holds
+them (OmniFocus, by way of tally). An id is `"<backend>:<native id>"`;
+what a key can see is its clearance's business.
+
+```ruby
+hob.todos.list(actionable: true, tag: ["Phone"], sort: "due")     # => Hob::TodoListing of Hob::Todo
+hob.todos.list(list: "house-omnifocus:inbox").map(&:title)
+todo = hob.todos.create(title: "Call the plumber", due_at: 2.days.from_now, tags: ["Phone"], list: "House")
+hob.todos.update(todo.id, notes_append: "Tried twice", due_at: nil)   # nil clears; only what is named changes
+hob.todos.complete(todo.id)                                        # reopen(id), drop(id), delete(id)
+hob.todos.lists(backend: "house-omnifocus")                        # projects and the inbox: Hob::TodoList
+hob.todos.backends                                                 # a person's key
+```
+
+Filters: `backend`, `status` (`open` | `done` | `dropped` | `all`),
+`actionable`, `list`, `tag`, `flagged`, `due_before`, `due_after`,
+`start_before`, `q`, `updated_after`, `sort`, `limit`. With no `backend`
+every visible one answers; a listing is `partial?` when one could not, and
+`unavailable` names it. An unknown filter or attribute is `Hob::Invalid`,
+never ignored. `Hob::Fake#todos` keeps todos in memory with the same
+surface (`fake.todos.add_list("Garden")` makes a project to file them in).
+
 ## sentinel and missions
 
 An outside agent's key reaches only these (see hob's SENTINEL.md). Ask for

@@ -3,8 +3,9 @@
 The household spirit: a personal LLM substrate. One backing service through
 which every LLM interaction in the household flows — providers, conversations,
 personas, memory, tools, compute, voice. See [DESIGN.md](DESIGN.md) for the
-full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend, and
-[SENTINEL.md](SENTINEL.md) for how outside agents get in.
+full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
+[SENTINEL.md](SENTINEL.md) for how outside agents get in, and
+[TODOS.md](TODOS.md) for the household's todos.
 
 ## Running
 
@@ -119,6 +120,32 @@ POST /v1/missions/:id/heartbeat|complete|fail   { lease_token, ... }
 POST /v1/missions                      { assignee, title, brief, payload, priority, realm }  (a person)
 ```
 
+## Todos
+
+hob owns one normalized todo contract; where the todos actually live is a
+*backend*, and backends are rows, not code. The first kind is `omnifocus`,
+which talks to [tally](TODOS.md#tally-and-omnifocus), an HTTP wrapper
+around the OmniFocus app on the Mac mini. A backend has a realm, and RLS
+hides it from any request below that clearance, so a household agent
+cannot see a `personal` list. To share one folder of OmniFocus with
+household agents, register a second backend on the same tally with a key
+tally has *scoped* to that folder, at realm `household`.
+
+```sh
+export TALLY_KEY=... TALLY_HOUSEHOLD_KEY=...                # tally's bearer keys, in hob's environment
+bin/rails "hob:todos:backend[jenner-omnifocus,omnifocus,http://mini.tailnet.ts.net:8377,personal]" KEY_ENV=TALLY_KEY PRIMARY=1
+bin/rails "hob:todos:backend[house-omnifocus,omnifocus,http://mini.tailnet.ts.net:8377,household]" KEY_ENV=TALLY_HOUSEHOLD_KEY
+bin/rails hob:todos:backends                                # what is registered, and whether each answers
+bin/rails "hob:todos:check[house-omnifocus]"
+bin/rails "hob:sentinel:policy[muse,todo.*,review]"         # agents reach todos through the sentinel: todo.list, todo.create, ...
+```
+
+`OWNER=` (default jenner), `ADDR=` (pin the connection to the mini's
+tailnet address), `KEY=` (store the key in the row instead of naming an
+env var), and `ENABLED=0` are the other knobs. A backend's key is never
+shown again: responses say `key: "set"` or name the env var.
+[TODOS.md](TODOS.md) is the design.
+
 ## API sketch
 
 ```
@@ -143,6 +170,20 @@ POST /v1/conversations/:id/chat        { content?, branch, persona | personas[],
 POST /v1/conversations/:id/events      { content, branch, meta }   # role: event node
 POST /v1/conversations/:id/branches    { name, at: <node hash> }   # fork = ref
 GET  /v1/usage?ref=&role=&operation=&since=&surface=
+GET  /v1/todos?backend=&status=open|done|dropped|all&actionable=&list=&tag[]=&flagged=
+              &due_before=&due_after=&start_before=&q=&updated_after=&sort=&limit=
+                                       → { todos: [{ id: "<backend>:<id>", backend, title, notes, status,
+                                           actionable, blocked, flagged, due_at, start_at, planned_at,
+                                           completed_at, tags, list, parent_id, has_children,
+                                           estimate_minutes, repeats, url, created_at, updated_at }],
+                                           unavailable: [{ backend, error }] }
+GET  /v1/todos/:id
+POST /v1/todos                         { title, notes, flagged, due_at, start_at, planned_at, estimate_minutes,
+                                         tags, list, parent_id, backend }        unknown attributes are a 422
+PATCH /v1/todos/:id                    the same, plus notes_append, add_tags, remove_tags; null clears a date
+POST /v1/todos/:id/complete|reopen|drop · DELETE /v1/todos/:id
+GET  /v1/todo_lists?backend=&status=&q= → { lists: [{ id, backend, name, kind: project|inbox, path, status, open_count }], unavailable }
+GET/POST/PATCH/DELETE /v1/todo_backends[/:name] · POST /v1/todo_backends/:name/check   (a person)
 GET  /v1/personas · /v1/models · /v1/snapshots/:hash
 ```
 
@@ -166,8 +207,8 @@ cd clients/ruby && rake test           # the Ruby client gem (clients/ruby, `gem
 ```
 
 The Ruby client is the `hob` gem in [clients/ruby](clients/ruby/README.md):
-`Hob::Client#complete` / `#chat` / `#conversations` / `#usage`, with
-`Hob::Fake` for the apps' tests.
+`Hob::Client#complete` / `#chat` / `#conversations` / `#usage` / `#todos`,
+with `Hob::Fake` for the apps' tests.
 
 Auth is `Authorization: Bearer <key>`; `X-Hob-Clearance` can cap a request's
 realm clearance downward (never up). Postgres RLS makes rows above the

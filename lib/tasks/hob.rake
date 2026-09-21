@@ -218,3 +218,70 @@ namespace :hob do
     puts unpriced.empty? ? "every model in the ledger is priced" : "unpriced in the ledger: #{unpriced.join(', ')}"
   end
 end
+
+namespace :hob do
+  namespace :todos do
+    desc "Register (or update) a todo backend (TODOS.md): where somebody's todos live. " \
+         "bin/rails \"hob:todos:backend[jenner-omnifocus,omnifocus,http://mini.tailnet.ts.net:8377,personal]\" KEY_ENV=TALLY_KEY " \
+         "(or KEY=<the key itself>) OWNER=jenner PRIMARY=1 ADDR=100.64.0.7 ENABLED=0"
+    task :backend, [ :name, :kind, :url, :realm ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:todos:backend[name,kind=omnifocus,url,realm=personal]\" KEY_ENV= | KEY=" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = TodoBackend.find_or_initialize_by(name: args[:name])
+        row.kind = args[:kind].presence || row.kind || "omnifocus"
+        row.realm = args[:realm].presence || row.realm || "personal"
+        row.principal = Principal.find_by!(name: ENV["OWNER"]) if ENV["OWNER"].present?
+        row.principal ||= Principal.find_by!(name: "jenner")
+        config = row.config.dup
+        config["url"] = args[:url] if args[:url].present?
+        config = config.except("key", "key_env").merge("key_env" => ENV["KEY_ENV"]) if ENV["KEY_ENV"].present?
+        config = config.except("key", "key_env").merge("key" => ENV["KEY"]) if ENV["KEY"].present?
+        config["addr"] = ENV["ADDR"].presence if ENV.key?("ADDR")
+        row.config = config.compact
+        row.primary = ENV["PRIMARY"] == "1" if ENV.key?("PRIMARY")
+        row.enabled = ENV["ENABLED"] != "0" if ENV.key?("ENABLED")
+        created = row.new_record?
+        row.save!
+        puts "#{row.name}: #{created ? 'registered' : 'updated'}; #{row.kind} at #{row.url}, realm #{row.realm}, owner #{row.principal.name}" \
+             "#{row.primary? ? ', primary' : ''}#{row.enabled? ? '' : ', disabled'}; " \
+             "key #{row.config['key_env'].present? ? "from #{row.config['key_env']}#{row.key.blank? ? ' (not set in this environment)' : ''}" : 'stored in the row'}"
+        puts "check it: bin/rails \"hob:todos:check[#{row.name}]\""
+      end
+    end
+
+    desc "List todo backends and whether each answers"
+    task backends: :environment do
+      Clearance.with("intimate") do
+        rows = TodoBackend.includes(:principal).order(:name)
+        puts "no todo backends; bin/rails \"hob:todos:backend[name,omnifocus,url,realm]\" KEY_ENV=" if rows.empty?
+        rows.each do |row|
+          state = "disabled" unless row.enabled?
+          state ||= begin
+            row.adapter.check && "reachable"
+          rescue Todos::Error => e
+            "unreachable: #{e.message}"
+          end
+          puts "#{row.name.ljust(24)} #{row.kind.ljust(10)} #{row.realm.ljust(10)} #{row.principal.name.ljust(10)} " \
+               "#{row.primary? ? 'primary' : '       '}  #{row.url}  #{state}"
+        end
+      end
+    end
+
+    desc "Ask one todo backend how it is: bin/rails \"hob:todos:check[jenner-omnifocus]\""
+    task :check, [ :name ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:todos:check[name]\"" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = TodoBackend.find_by!(name: args[:name])
+        begin
+          status = row.adapter.check
+          puts "#{row.name}: reachable at #{row.url}"
+          status.except("reachable").each { |name, value| puts "  #{name}: #{value.is_a?(String) ? value : value.to_json}" }
+        rescue Todos::Error => e
+          abort "#{row.name}: #{e.class.name.demodulize.downcase}: #{e.message}"
+        end
+      end
+    end
+  end
+end

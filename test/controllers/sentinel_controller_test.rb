@@ -47,7 +47,7 @@ class SentinelRequestsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "allow", body["effect"]
 
     get "/v1/sentinel/capabilities", headers: auth
-    assert_equal 6, body.size
+    assert_equal Sentinel::Native::HANDLERS.size, body.size, "a person sees every enabled capability"
     assert_equal "any", body.first["effect"]
   end
 

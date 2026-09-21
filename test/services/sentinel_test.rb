@@ -305,7 +305,7 @@ end
 class CapabilityTest < ActiveSupport::TestCase
   test "sync! upserts native rows and keeps household tuning" do
     rows = Sentinel::Native.sync!
-    assert_equal 7, rows.size
+    assert_equal Sentinel::Native::HANDLERS.size, rows.size
     cap = Capability.find_by!(name: "hob.complete")
     assert cap.native?
     assert_equal Sentinel::Native::Complete, cap.handler

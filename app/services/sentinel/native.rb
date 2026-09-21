@@ -13,7 +13,14 @@ module Sentinel
       "conversation_read" => "Sentinel::Native::ConversationRead",
       "conversation_event" => "Sentinel::Native::ConversationEvent",
       "mission_create" => "Sentinel::Native::MissionCreate",
-      "agent_message" => "Sentinel::Native::AgentMessage"
+      "agent_message" => "Sentinel::Native::AgentMessage",
+      "todo_list" => "Sentinel::Native::TodoList",
+      "todo_get" => "Sentinel::Native::TodoGet",
+      "todo_lists" => "Sentinel::Native::TodoLists",
+      "todo_create" => "Sentinel::Native::TodoCreate",
+      "todo_update" => "Sentinel::Native::TodoUpdate",
+      "todo_complete" => "Sentinel::Native::TodoComplete",
+      "todo_drop" => "Sentinel::Native::TodoDrop"
     }.freeze
 
     module_function

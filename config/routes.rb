@@ -22,6 +22,19 @@ Rails.application.routes.draw do
       post :ping, on: :member
     end
 
+    # Todos (TODOS.md). A todo's id is "<backend>:<native id>": colons, maybe dots.
+    resources :todos, only: %i[index show create update destroy], constraints: { id: /[^\/]+/ } do
+      member do
+        post :complete
+        post :reopen
+        post :drop
+      end
+    end
+    resources :todo_lists, only: :index
+    resources :todo_backends, only: %i[index show create update destroy], param: :name, constraints: { name: /[^\/]+/ } do
+      post :check, on: :member
+    end
+
     # The sentinel (SENTINEL.md): where external agents ask.
     namespace :sentinel do
       resources :requests, only: %i[index show create] do

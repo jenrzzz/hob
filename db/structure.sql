@@ -575,6 +575,26 @@ ALTER TABLE ONLY public.sentinel_requests FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: todo_backends; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.todo_backends (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    kind character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    "primary" boolean DEFAULT false NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.todo_backends FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: usage_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -856,6 +876,14 @@ ALTER TABLE ONLY public.sentinel_requests
 
 
 --
+-- Name: todo_backends todo_backends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.todo_backends
+    ADD CONSTRAINT todo_backends_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: usage_events usage_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1130,6 +1158,20 @@ CREATE INDEX index_sentinel_requests_on_status_and_created_at ON public.sentinel
 
 
 --
+-- Name: index_todo_backends_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_todo_backends_on_name ON public.todo_backends USING btree (name);
+
+
+--
+-- Name: index_todo_backends_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_todo_backends_on_principal_id ON public.todo_backends USING btree (principal_id);
+
+
+--
 -- Name: index_usage_events_on_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1227,6 +1269,14 @@ ALTER TABLE ONLY public.agent_messages
 
 ALTER TABLE ONLY public.sentinel_requests
     ADD CONSTRAINT fk_rails_aed65976d5 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: todo_backends fk_rails_c0b35bfef2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.todo_backends
+    ADD CONSTRAINT fk_rails_c0b35bfef2 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -1360,12 +1410,28 @@ CREATE POLICY realm_visibility ON public.sentinel_requests USING ((( SELECT real
 ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: todo_backends realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.todo_backends USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (todo_backends.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: todo_backends; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
+
+--
 -- PostgreSQL database dump complete
 --
 
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260920000003'),
 ('20260920000002'),
 ('20260920000001'),
 ('20260919185000'),

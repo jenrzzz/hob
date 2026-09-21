@@ -94,6 +94,13 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `hob.conversation.event` | act | append an event node ("Muse booked the table") |
 | `hob.mission.create` | act | hand a mission to another principal |
 | `hob.agent.message` | act | a short note to another agent on this instance, or the caller's inbox; nothing leaves hob, and a person reads the log with `hob:messages` |
+| `todo.list` | read | the household's todos ([TODOS.md](TODOS.md)) by filter, merged across the backends visible at the agent's clearance |
+| `todo.get` | read | one todo by id |
+| `todo.lists` | read | the lists (projects, inboxes) todos sit in |
+| `todo.create` | act | a new todo, in a backend the agent can see |
+| `todo.update` | act | change a todo's attributes, append to its notes, adjust its tags, move it |
+| `todo.complete` | act | mark a todo done; `reopen: true` undoes it |
+| `todo.drop` | act | abandon a todo without deleting it; agents are offered nothing that deletes |
 
 Surfaces register their own: mise registers `mise.add_to_shopping_list` as
 a webhook (or as `poll` with its worker as assignee), and the capability
@@ -403,6 +410,7 @@ principals.kind    + agent
 devices            principal (a person), platform, token (APNs, unique), environment sandbox|production,
                    name, app_version, last_seen_at, last_pushed_at        the companion app's phones
 principals.channel an ntfy topic URL: hears missions queued for it, and the outcome of missions it queued
+todo_backends      where todos live, realm-scoped: what the todo.* capabilities reach (TODOS.md)       [RLS]
 ```
 
 ## Open questions

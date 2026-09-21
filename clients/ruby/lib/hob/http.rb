@@ -94,7 +94,15 @@ module Hob
         when 404 then NotFound.new(message, **opts)
         when 400, 403, 422 then Invalid.new(message, **opts)
         when 429 then RateLimited.new(message, retry_after: retry_after, **opts)
-        when 502 then Unauthorized.new(message, **opts)
+        when 502
+          # hob's own 502 for rejected provider credentials says so (older hobs
+          # only in the message). Any other 502 is something upstream failing,
+          # or a proxy answering for a hob that is restarting: worth a retry.
+          if data.is_a?(Hash) && (data["status"] == "unauthorized" || data["error"].to_s.start_with?("provider rejected"))
+            Unauthorized.new(message, **opts)
+          else
+            Unavailable.new(message, **opts)
+          end
         when 503
           if data.is_a?(Hash) && data["status"] == "rate_limited"
             RateLimited.new(message, retry_after: retry_after, **opts)

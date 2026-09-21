@@ -286,7 +286,10 @@ itself: for each mission it creates a fresh Coder workspace on the agent
 sandbox (agentbox: gVisor, an egress allowlist, and nothing of ours inside
 but the sandbox's own GitHub and Claude tokens under `/secrets`), copies the
 mission's payload in, runs the very same build there as `forge-env bin/forge
-build`, polls for the report it writes, and deletes the workspace. The box
+build`, polls for the report it writes, and deletes the workspace. A build
+whose process is gone with no report (it never started, or was killed) fails
+the mission at once with the end of its log, rather than when the three-hour
+wait runs out. The box
 running the loop then holds only the forge's hob key and a Coder token, and
 never runs Claude Code, `gh`, or the tests itself, so nothing the
 implementer does can reach that box's secrets. Without `--coder` the build

@@ -11,9 +11,9 @@ module Hob
   end
 
   class Invalid < Error; end        # 422: bad role, schema, prompt shape, tool definitions
-  class Unauthorized < Error; end   # 401: bad hob key; 502: the provider rejected hob's credentials
+  class Unauthorized < Error; end   # 401: bad hob key; 502 with status unauthorized: the provider rejected hob's credentials
   class NotFound < Error; end       # 404
-  class Unavailable < Error; end    # 503 / network: no provider, upstream down
+  class Unavailable < Error; end    # 503 / any other 5xx / network: no provider, upstream down, hob restarting behind its proxy
 
   # 503 with status rate_limited (upstream 429); retry_after in seconds when known.
   class RateLimited < Error

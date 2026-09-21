@@ -409,6 +409,11 @@ module Forge
   class Workspace
     DIR = "/home/node/forge".freeze # payload, result, log, and worktrees inside the workspace
     LOST = 10                       # consecutive failed polls before the workspace is given up on
+    DEAD = 2                        # polls in a row with no report and no build process before it is called dead
+    # The report if there is one; PENDING while the build's process lives; the
+    # report again, in case it landed between those two; otherwise DEAD.
+    POLL = "cat #{DIR}/result.json 2>/dev/null || { kill -0 \"$(cat #{DIR}/build.pid 2>/dev/null)\" 2>/dev/null && echo PENDING; } " \
+           "|| cat #{DIR}/result.json 2>/dev/null || echo DEAD".freeze
 
     attr_reader :payload, :name, :template, :image, :repo, :base, :log
 
@@ -468,23 +473,35 @@ module Forge
       ssh! "mkdir -p #{DIR} && cat > #{DIR}/payload.json", stdin: JSON.generate(payload), wait: true
     end
 
+    # The shell writes down its own pid and then becomes the build (exec), so
+    # `wait` can tell a build that died without a report from one still running.
     def start
       say "starting the build"
-      ssh! "cd /workspace && setsid nohup forge-env bin/forge build --payload #{DIR}/payload.json " \
-           "--result #{DIR}/result.json --workdir #{DIR}/worktrees --base #{base} > #{DIR}/build.log 2>&1 < /dev/null &"
+      build = "exec forge-env bin/forge build --payload #{DIR}/payload.json --result #{DIR}/result.json " \
+              "--workdir #{DIR}/worktrees --base #{base}"
+      ssh! "cd /workspace && setsid nohup sh -c 'echo $$ > #{DIR}/build.pid; #{build}' > #{DIR}/build.log 2>&1 < /dev/null &"
     end
 
     # Polls until the build has written its report. A poll that cannot reach
-    # the workspace is retried; LOST of them in a row means it is gone.
+    # the workspace is retried; LOST of them in a row means it is gone. A
+    # build whose process is gone with no report (it never started, or was
+    # killed) will never write one: DEAD polls in a row, so that a poll racing
+    # the start is not mistaken for one, and it fails with the end of its log.
     def wait
       deadline = @clock.call + @timeout
       misses = 0
+      dead = 0
       loop do
-        status, out, err = ssh("cat #{DIR}/result.json 2>/dev/null || echo PENDING")
-        if status.zero? && out.strip != "PENDING"
+        status, out, err = ssh(POLL)
+        if status.zero? && out.strip == "DEAD"
+          misses = 0
+          dead += 1
+          raise Error, "the build in #{name} died without a report:\n#{build_log}" if dead >= DEAD
+        elsif status.zero? && out.strip != "PENDING"
           return parse_report(out)
         elsif status.zero?
           misses = 0
+          dead = 0
         else
           misses += 1
           say "cannot reach the workspace (#{misses}/#{LOST}): #{tail(err.to_s.strip.empty? ? out : err, 200)}"
@@ -503,6 +520,11 @@ module Forge
     end
 
     # --- plumbing ----------------------------------------------------------
+
+    def build_log
+      log = ssh("tail -n 20 #{DIR}/build.log 2>/dev/null")[1].to_s.strip
+      log.empty? ? "(build.log is empty)" : tail(log)
+    end
 
     def parse_report(out)
       report = JSON.parse(out)

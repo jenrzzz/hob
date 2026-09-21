@@ -264,13 +264,16 @@ module Todos
 
       # `addr` pins the address to connect to; the hostname still goes out as
       # Host and SNI, so a certificate is checked against the name (Hob::HTTP
-      # does the same with ipaddr:).
+      # does the same with ipaddr:). Net::HTTP would quietly send a GET a
+      # second time after a read timeout, and a hung Mac would then hold the
+      # request for a minute, past the proxy's patience: no retries.
       def connection(uri)
         Net::HTTP.new(uri.host, uri.port).tap do |http|
           http.ipaddr = backend.addr if backend.addr
           http.use_ssl = uri.scheme == "https"
           http.open_timeout = OPEN_TIMEOUT
           http.read_timeout = READ_TIMEOUT
+          http.max_retries = 0
         end
       end
 

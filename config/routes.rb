@@ -46,6 +46,17 @@ Rails.application.routes.draw do
       resources :capabilities, only: %i[index show create update destroy], param: :name, constraints: { name: /[^\/]+/ }
       resources :policies, only: %i[index create update destroy]
     end
+    # The ward (WARD.md): checks post reports; people read findings.
+    namespace :ward do
+      post "runs", action: :create_run
+      get "runs", action: :runs
+      get "status", action: :status
+      get "findings", action: :findings
+      post "findings/:id/ack", action: :ack
+      post "findings/:id/unack", action: :unack
+      get "notes", action: :notes
+      post "notes", action: :create_note
+    end
     resources :missions, only: %i[index show create] do
       post :lease, on: :collection
       member do

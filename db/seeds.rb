@@ -55,6 +55,12 @@ end
   "sentinel-steward" => [
     { "provider" => "anthropic", "model" => "claude-opus-5", "params" => { "max_tokens" => 8192 } },
     { "provider" => "anthropic", "model" => "claude-sonnet-5", "params" => { "max_tokens" => 8192 } }
+  ],
+  # WARD.md: reads what changed in a security check's report and tells a
+  # person what matters; a few calls a week.
+  "ward-triage" => [
+    { "provider" => "anthropic", "model" => "claude-sonnet-5", "params" => { "max_tokens" => 2048 } },
+    { "provider" => "anthropic", "model" => "claude-haiku-4-5-20251001", "params" => { "max_tokens" => 2048 } }
   ]
 }.each do |role, chain|
   ModelRole.find_or_create_by!(role: role) { |mr| mr.chain = chain }
@@ -108,3 +114,8 @@ end
 
 # The sentinel's native capabilities follow the handlers in code.
 Sentinel::Native.sync!
+
+# WARD.md: the first check is infra's security audit, expected weekly.
+WardCheck.find_or_create_by!(slug: "exposure") do |c|
+  c.description = "infra security/audit.py: Coolify inventory, routes, Authelia gates, full TCP exposure"
+end

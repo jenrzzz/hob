@@ -20,7 +20,9 @@ module Sentinel
       "todo_create" => "Sentinel::Native::TodoCreate",
       "todo_update" => "Sentinel::Native::TodoUpdate",
       "todo_complete" => "Sentinel::Native::TodoComplete",
-      "todo_drop" => "Sentinel::Native::TodoDrop"
+      "todo_drop" => "Sentinel::Native::TodoDrop",
+      "ward_status" => "Sentinel::Native::WardStatus",
+      "ward_audit_run" => "Sentinel::Native::WardAuditRun"
     }.freeze
 
     module_function

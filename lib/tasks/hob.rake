@@ -285,3 +285,134 @@ namespace :hob do
     end
   end
 end
+
+# The ward (WARD.md): the household's security watch.
+namespace :hob do
+  namespace :ward do
+    desc "Set up the ward worker: the principal that posts reports and leases ward.audit missions, and its key, shown once. " \
+         "bin/rails \"hob:ward:setup[ward]\" (re-running rotates the key)"
+    task :setup, [ :name ] => :environment do |_task, args|
+      name = args[:name].presence || ENV.fetch("HOB_WARD_PRINCIPAL", "ward")
+      ward = Principal.find_or_create_by!(name: name) { |p| p.kind = "worker"; p.max_clearance = "personal" }
+      abort "#{ward.name} is a #{ward.kind}, not a worker" unless ward.kind == "worker"
+
+      token = ApiKey.issue!(principal: ward, surface: name, default_clearance: "personal")
+      rotated = ward.api_keys.where(surface: name).where.not(token_digest: ApiKey.digest(token)).destroy_all.size
+      check = WardCheck.find_or_create_by!(slug: "exposure") do |c|
+        c.description = "infra security/audit.py: Coolify inventory, routes, Authelia gates, full TCP exposure"
+      end
+      puts "#{ward.name}: worker key (shown once): #{token}"
+      puts "rotated #{rotated} old key(s). Checks: #{WardCheck.order(:slug).pluck(:slug).join(', ')} (exposure every #{check.interval_seconds / 86_400}d)"
+      puts "On the runner: HOB_URL=https://... HOB_KEY=<key> COOLIFY_BASE_URL= COOLIFY_API_TOKEN=<read-only> python3 security/ward.py work --every #{check.interval_seconds}"
+    end
+
+    desc "Register or retune a check. bin/rails \"hob:ward:check[exposure,7,1]\" (slug, interval days, grace days) DESCRIPTION= ENABLED=0|1"
+    task :check, [ :slug, :interval_days, :grace_days ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:ward:check[slug,interval_days,grace_days]\"" if args[:slug].blank?
+
+      check = WardCheck.find_or_initialize_by(slug: args[:slug])
+      check.interval_seconds = (args[:interval_days].to_f * 86_400).to_i if args[:interval_days].present?
+      check.grace_seconds = (args[:grace_days].to_f * 86_400).to_i if args[:grace_days].present?
+      check.description = ENV["DESCRIPTION"] if ENV.key?("DESCRIPTION")
+      check.enabled = ENV["ENABLED"] != "0" if ENV.key?("ENABLED")
+      check.save!
+      puts "#{check.slug}: every #{check.interval_seconds}s, grace #{check.grace_seconds}s, #{check.enabled? ? 'enabled' : 'disabled'}"
+    end
+
+    desc "The ward's picture: checks, staleness, open and acknowledged findings, the latest triage"
+    task status: :environment do
+      Clearance.with("intimate") do
+        status = Ward.status
+        status["checks"].each do |c|
+          last = c["last_run"]
+          puts "#{c['slug'].ljust(12)} #{c['stale'] ? 'STALE  ' : 'ok     '} last complete #{c['last_completed_at'] || 'never'}; " \
+               "#{last ? "last run #{last['at']} exit #{last['exit_code'].inspect} (#{last['summary']})" : 'no runs'}; " \
+               "open #{c['open']}, acknowledged #{c['acknowledged']}"
+        end
+        puts "checks: none registered (bin/rails \"hob:ward:check[exposure,7,1]\")" if status["checks"].empty?
+        puts "\nopen:"
+        puts "  (none)" if status["open"].empty?
+        status["open"].each { |f| puts "  #{f['id']}  [#{f['level'].upcase}] #{f['message']}  (#{f['occurrences']}×, since #{f['first_seen_at']})" }
+        puts "\nacknowledged:"
+        puts "  (none)" if status["acknowledged"].empty?
+        status["acknowledged"].each { |f| puts "  #{f['id']}  [#{f['level'].upcase}] #{f['message']}  — #{f['acknowledged_by']}: #{f['ack_note']}#{f['ack_until'] && " until #{f['ack_until']}"}" }
+        if (t = status["triage"])
+          puts "\nlatest triage (#{t['at']}, run #{t['run']}): #{t['severity']} — #{t['headline']}"
+          puts "  #{t['summary']}" if t["summary"]
+          Array(t["next_steps"]).each_with_index { |s, i| puts "  #{i + 1}. #{s}" }
+          puts "  error: #{t['error']}" if t["error"]
+        end
+      end
+    end
+
+    desc "List findings by state. bin/rails \"hob:ward:findings[open|acknowledged|resolved|all]\" CHECK="
+    task :findings, [ :state ] => :environment do |_task, args|
+      Clearance.with("intimate") do
+        Ward::Sweep.call
+        rows = WardFinding.in_state(args[:state].presence || "open").by_severity
+        rows = rows.where(check_slug: ENV["CHECK"]) if ENV["CHECK"].present?
+        puts "no findings" if rows.empty?
+        rows.each do |f|
+          puts "#{f.id}  #{f.state.ljust(12)} [#{f.level.upcase}] #{f.check_slug}: #{f.message}"
+          puts "  first #{f.first_seen_at.utc.iso8601}, last #{f.last_seen_at.utc.iso8601}, #{f.occurrences}×#{f.resolved_at && ", resolved #{f.resolved_at.utc.iso8601}"}"
+          puts "  acknowledged by #{f.acknowledged_by&.name}: #{f.ack_note}#{f.ack_until && " until #{f.ack_until.utc.iso8601}"}" if f.acknowledged_at
+        end
+      end
+    end
+
+    desc "Acknowledge a finding as a person. bin/rails \"hob:ward:ack[<id>,jenner]\" NOTE='reviewed: intentional' UNTIL=2026-12-01"
+    task :ack, [ :id, :principal ] => :environment do |_task, args|
+      Clearance.with("intimate") do
+        person = Principal.find_by!(name: args[:principal].presence || ENV.fetch("HOB_PERSON", "jenner"))
+        abort "#{person.name} is not a person" unless person.trusted?
+        finding = WardFinding.find(args[:id])
+        finding.acknowledge!(by: person, note: ENV["NOTE"], until_at: ENV["UNTIL"].presence && Time.zone.parse(ENV["UNTIL"]))
+        puts "#{finding.id} acknowledged by #{person.name}#{finding.ack_until && " until #{finding.ack_until.utc.iso8601}"}: #{finding.message}"
+      end
+    end
+
+    desc "Withdraw an acknowledgement. bin/rails \"hob:ward:unack[<id>]\""
+    task :unack, [ :id ] => :environment do |_task, args|
+      finding = WardFinding.find(args[:id])
+      finding.unacknowledge!
+      puts "#{finding.id} is open again: #{finding.message}"
+    end
+
+    desc "Attach a note to a subject (a host, a resource, a check). bin/rails \"hob:ward:note[vaultwarden,jenner]\" BODY='...'"
+    task :note, [ :subject, :principal ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:ward:note[subject,person]\" BODY='...'" if args[:subject].blank? || ENV["BODY"].blank?
+
+      person = Principal.find_by!(name: args[:principal].presence || ENV.fetch("HOB_PERSON", "jenner"))
+      note = WardNote.create!(subject: args[:subject], body: ENV["BODY"], author: person)
+      puts "#{note.id} on #{note.subject}: #{note.body}"
+    end
+
+    desc "List notes. bin/rails \"hob:ward:notes[subject]\""
+    task :notes, [ :subject ] => :environment do |_task, args|
+      rows = WardNote.recent
+      rows = rows.about(args[:subject]) if args[:subject].present?
+      puts "no notes" if rows.empty?
+      rows.each { |n| puts "#{n.created_at.utc.to_date}  #{n.subject}  (#{n.author&.name}): #{n.body}" }
+    end
+
+    desc "List runs. bin/rails \"hob:ward:runs[exposure,20]\""
+    task :runs, [ :check, :limit ] => :environment do |_task, args|
+      rows = WardRun.recent.limit((args[:limit].presence || 20).to_i)
+      rows = rows.where(check_slug: args[:check]) if args[:check].present?
+      puts "no runs" if rows.empty?
+      rows.each do |r|
+        puts "#{r.id}  #{r.created_at.utc.iso8601}  #{r.mechanical_summary}#{r.triage_headline && "  → #{r.triage['severity']}: #{r.triage_headline}"}"
+      end
+    end
+
+    desc "The ward's clock: raise stale checks, expire acknowledgements, triage what changed. Run hourly (a Coolify scheduled task)."
+    task sweep: :environment do
+      Clearance.with("intimate") do
+        Current.set(surface: Ward::SURFACE) do
+          run = Ward::Sweep.call
+          puts run ? "sweep: #{run.mechanical_summary}" : "sweep: nothing changed"
+        end
+      end
+    end
+  end
+end

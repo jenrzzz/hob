@@ -12,15 +12,18 @@ module Ward
     TAGS = { "urgent" => "rotating_light", "attention" => "warning", "info" => "shield", "quiet" => "shield" }.freeze
     OPEN_LIMIT = 10
 
+    # No maxLength / maxItems here: structured outputs reject both with a 400
+    # ("property 'maxItems' is not supported"). The limits live in the
+    # descriptions and are enforced in #normalize.
     SCHEMA = {
       "type" => "object",
       "properties" => {
         "severity" => { "type" => "string", "enum" => SEVERITIES,
                         "description" => "urgent: act today; attention: this week; info: worth knowing; quiet: routine, nothing to do" },
-        "headline" => { "type" => "string", "maxLength" => 80, "description" => "One line for a phone notification" },
+        "headline" => { "type" => "string", "description" => "One line for a phone notification, at most 80 characters" },
         "summary" => { "type" => "string", "description" => "A short paragraph: what changed and why it matters, in plain words" },
-        "next_steps" => { "type" => "array", "items" => { "type" => "string" }, "maxItems" => 5,
-                          "description" => "Concrete things a person should do, most important first; empty when nothing" }
+        "next_steps" => { "type" => "array", "items" => { "type" => "string" },
+                          "description" => "At most 5 concrete things a person should do, most important first; empty when nothing" }
       },
       "required" => %w[severity headline summary next_steps],
       "additionalProperties" => false

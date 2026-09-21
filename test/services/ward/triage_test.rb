@@ -64,6 +64,12 @@ class WardTriageTest < ActiveSupport::TestCase
     assert_equal "The proxy's admin port answers publicly.\n\n1. Bind 8888 to the tailnet\n2. Re-run the audit", body
   end
 
+  test "the schema uses only keywords structured outputs accept" do
+    rejected = %w[maxItems minItems maxLength minLength minimum maximum multipleOf pattern]
+    keys = ->(node) { node.is_a?(Hash) ? node.keys + node.values.flat_map(&keys) : Array(node).grep(Hash).flat_map(&keys) }
+    assert_empty keys.call(Ward::Triage::SCHEMA) & rejected
+  end
+
   test "a refusal or an outage still pings, with the mechanical summary" do
     run = ingest("FAIL a: b\nFAIL c: d\nWARN e: f\n")
     @fake.refuse

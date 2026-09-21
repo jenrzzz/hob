@@ -70,6 +70,10 @@ threat from two sides.
 A principal with `kind: agent`. `hob:agent[muse,household]` creates one,
 mints a key at that clearance, and prints it once — an external agent isn't
 on Coolify, so there is nothing to hand it to. Re-running rotates the key.
+Re-running with a clearance (`hob:agent[muse,personal]`) also moves the
+agent's own grant to it, up or down: a key's clearance is the lower of its
+default and its principal's grant, so a key minted above the grant would be
+worth no more than the old one. With no clearance, the agent keeps its own.
 
 ### Capabilities
 

@@ -61,41 +61,53 @@ module Sentinel
 
       MAX_EVENTS = 200
       MAX_SPAN = 30.days
+      MAX_TEXT = 200 # title, location, and the calendar label
+      MAX_UID = 1024
       STATUSES = %w[confirmed tentative cancelled].freeze
+      # A time with no offset would be read as UTC and land hours off on a
+      # calendar whose whole job is answering "free at 3pm?", so it is refused.
+      DATE_TIME = /T.*(Z|[+-]\d\d:?\d\d)\z/i
 
+      # Everything about the push itself (owner, contributor, visibility, the
+      # window) is settled before the first write, and the writes share one
+      # transaction: a push either lands whole or leaves the mirror as it was.
       def call
         owner = owner!(require_argument(:owner))
         contributor!(owner)
-        calendar = arguments["calendar"].presence&.to_s || ""
+        calendar = calendar!
         visibility = visibility!
+        events = events!
+        window = window!
 
-        stored = updated = 0
+        stored = updated = removed = 0
         rejected = []
         pushed_uids = []
 
-        events!.each do |raw|
-          uid = raw.is_a?(Hash) ? raw["uid"].to_s : ""
-          pushed_uids << uid if uid.present?
+        CalendarEvent.transaction do
+          events.each do |raw|
+            uid = raw.is_a?(Hash) && raw["uid"].is_a?(String) ? raw["uid"] : ""
+            problem = event_problem(raw, visibility)
+            problem ||= "duplicate uid in this batch" if pushed_uids.include?(uid)
+            pushed_uids << uid if uid.present?
+            if problem
+              rejected << { "uid" => uid.presence || "(missing)", "reason" => problem }
+              next
+            end
 
-          problem = event_problem(raw)
-          if problem
-            rejected << { "uid" => uid.presence || "(missing)", "reason" => problem }
-            next
+            record = CalendarEvent.find_or_initialize_by(source_agent: request.principal, owner: owner, calendar: calendar, uid: uid)
+            was_new = record.new_record?
+            record.assign_attributes(
+              start_at: parse_time(raw["start"]), end_at: parse_time(raw["end"]),
+              all_day: raw.fetch("all_day", false), busy: raw.fetch("busy", true), status: raw["status"],
+              visibility: visibility, title: visibility == "details" ? raw["title"].presence : nil,
+              location: visibility == "details" ? raw["location"].presence : nil
+            )
+            record.save!
+            was_new ? stored += 1 : updated += 1
           end
 
-          record = CalendarEvent.find_or_initialize_by(source_agent: request.principal, owner: owner, calendar: calendar, uid: uid)
-          was_new = record.new_record?
-          record.assign_attributes(
-            start_at: Time.zone.parse(raw["start"]), end_at: Time.zone.parse(raw["end"]),
-            all_day: raw.fetch("all_day", false), busy: raw.fetch("busy", true), status: raw["status"],
-            visibility: visibility, title: visibility == "details" ? raw["title"] : nil,
-            location: visibility == "details" ? raw["location"] : nil
-          )
-          record.save!
-          was_new ? stored += 1 : updated += 1
+          removed = remove_missing(owner, calendar, window, pushed_uids) if window
         end
-
-        removed = arguments["replace_window"].present? ? replace_window!(owner, calendar, pushed_uids) : 0
 
         result = { "owner" => owner.name, "calendar" => calendar, "visibility" => visibility,
                    "stored" => stored, "updated" => updated, "removed" => removed, "rejected" => rejected }
@@ -118,6 +130,14 @@ module Sentinel
         raise Error, "#{request.principal.name} is not a registered contributor for #{owner.name}'s calendar"
       end
 
+      def calendar!
+        value = arguments["calendar"]
+        return "" if value.nil?
+        raise Error, "calendar must be a label of at most #{MAX_TEXT} characters" unless value.is_a?(String) && value.length <= MAX_TEXT
+
+        value.strip
+      end
+
       def visibility!
         value = arguments["visibility"].presence || "free_busy"
         unless CalendarEvent::VISIBILITIES.include?(value)
@@ -135,42 +155,66 @@ module Sentinel
         events
       end
 
+      # nil when no window was asked for; otherwise the range of start times
+      # it covers, open at whichever end was left out. A bound that is given
+      # but unreadable refuses the whole push: guessing at it would delete
+      # events the agent never meant to touch.
+      def window!
+        raw = arguments["replace_window"]
+        return nil if raw.nil?
+        raise Error, "replace_window must be an object" unless raw.is_a?(Hash)
+
+        from, to = %w[start end].map do |bound|
+          next nil if raw[bound].nil?
+
+          parse_time(raw[bound]) || raise(Error, "replace_window.#{bound} must be an ISO8601 date-time with a UTC offset, got #{raw[bound].inspect}")
+        end
+        raise Error, "replace_window needs a start or an end" if from.nil? && to.nil?
+        raise Error, "replace_window ends before it starts" if from && to && to < from
+
+        from..to
+      end
+
       # nil when the event is fine to store; otherwise the rejection reason.
-      def event_problem(raw)
+      # Title and location are only looked at when they would be stored.
+      def event_problem(raw, visibility)
         return "must be an object" unless raw.is_a?(Hash)
         return "missing uid" if raw["uid"].blank?
+        return "uid must be a string of at most #{MAX_UID} characters" unless raw["uid"].is_a?(String) && raw["uid"].length <= MAX_UID
 
         start_time = parse_time(raw["start"])
         end_time = parse_time(raw["end"])
-        return "start and end must be date-times" if start_time.nil? || end_time.nil?
+        return "start and end must be ISO8601 date-times with a UTC offset" if start_time.nil? || end_time.nil?
         return "end before start" if end_time < start_time
         return "spans more than #{MAX_SPAN.in_days.to_i} days" if (end_time - start_time) > MAX_SPAN
-        return "status must be one of #{STATUSES.join(', ')}" if raw["status"].present? && !STATUSES.include?(raw["status"])
+        return "status must be one of #{STATUSES.join(', ')}" unless raw["status"].nil? || STATUSES.include?(raw["status"])
 
+        %w[all_day busy].each do |flag|
+          return "#{flag} must be true or false" unless !raw.key?(flag) || [ true, false ].include?(raw[flag])
+        end
+        return nil unless visibility == "details"
+
+        %w[title location].each do |text|
+          next if raw[text].nil?
+          return "#{text} must be text of at most #{MAX_TEXT} characters" unless raw[text].is_a?(String) && raw[text].length <= MAX_TEXT
+        end
         nil
       end
 
       def parse_time(value)
-        value.is_a?(String) ? Time.zone.parse(value) : nil
+        value.is_a?(String) && value.match?(DATE_TIME) ? Time.zone.iso8601(value) : nil
       rescue ArgumentError
         nil
       end
 
       # Deletes this agent's previously stored events for owner+calendar
-      # that started inside the window and were not resubmitted just now
+      # that start inside the window and were not resubmitted just now
       # (whether they were accepted or rejected this time: a malformed
       # resubmission should not wipe out the good copy already on file).
-      def replace_window!(owner, calendar, pushed_uids)
-        window = arguments["replace_window"]
-        raise Error, "replace_window must be an object" unless window.is_a?(Hash)
-
-        from = parse_time(window["start"]) || Time.zone.at(0)
-        to = parse_time(window["end"]) || 100.years.from_now
-        scope = CalendarEvent.where(source_agent: request.principal, owner: owner, calendar: calendar, start_at: from..to)
+      def remove_missing(owner, calendar, window, pushed_uids)
+        scope = CalendarEvent.where(source_agent: request.principal, owner: owner, calendar: calendar, start_at: window)
         scope = scope.where.not(uid: pushed_uids) if pushed_uids.any?
-        count = scope.count
         scope.delete_all
-        count
       end
     end
   end

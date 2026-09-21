@@ -94,6 +94,7 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `hob.conversation.event` | act | append an event node ("Muse booked the table") |
 | `hob.mission.create` | act | hand a mission to another principal |
 | `hob.agent.message` | act | a short note to another agent on this instance, or the caller's inbox; nothing leaves hob, and a person reads the log with `hob:messages` |
+| `hob.calendar.push` | act | a batch of normalized calendar events for one person's calendar, into hob's mirror; free/busy unless the push says `details`; only from an agent a person registered for that owner (`hob:calendar:contributor`) |
 | `todo.list` | read | the household's todos ([TODOS.md](TODOS.md)) by filter, merged across the backends visible at the agent's clearance |
 | `todo.get` | read | one todo by id |
 | `todo.lists` | read | the lists (projects, inboxes) todos sit in |
@@ -424,6 +425,9 @@ devices            principal (a person), platform, token (APNs, unique), environ
                    name, app_version, last_seen_at, last_pushed_at        the companion app's phones
 principals.channel an ntfy topic URL: hears missions queued for it, and the outcome of missions it queued
 todo_backends      where todos live, realm-scoped: what the todo.* capabilities reach (TODOS.md)       [RLS]
+calendar_contributors  owner (a person), agent: who may push events for whom; a person adds the row
+calendar_events    ulid, source_agent, owner, calendar, uid (unique together), start_at, end_at, all_day,
+                   busy, status, visibility free_busy|details, title?, location? (details only)
 ```
 
 ## Open questions

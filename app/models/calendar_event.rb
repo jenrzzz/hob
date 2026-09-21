@@ -16,10 +16,17 @@ class CalendarEvent < ApplicationRecord
   validates :start_at, presence: true
   validates :end_at, presence: true
   validates :visibility, inclusion: { in: VISIBILITIES }
+  validates :title, :location, length: { maximum: 200 }
+  validates :title, :location, absence: true, if: -> { visibility == "free_busy" }
+  validate :ends_after_it_starts
   validate :owner_is_a_person
   validate :source_agent_is_an_agent
 
   private
+
+  def ends_after_it_starts
+    errors.add(:end_at, "is before start") if start_at && end_at && end_at < start_at
+  end
 
   def owner_is_a_person
     errors.add(:owner, "must be a household member") if owner && !owner.trusted?

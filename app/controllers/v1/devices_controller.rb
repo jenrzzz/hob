@@ -38,6 +38,8 @@ module V1
     rescue Push::Unregistered => e
       device.destroy
       render json: { sent: false, error: "Apple says this token is dead (#{e.message}); register again" }, status: :gone
+    rescue Push::NotConfigured => e
+      render json: { sent: false, error: e.message }, status: :service_unavailable
     rescue Push::Error => e
       render json: { sent: false, error: e.message }, status: :bad_gateway
     end

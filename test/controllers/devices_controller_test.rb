@@ -56,6 +56,14 @@ class DevicesControllerTest < ActionDispatch::IntegrationTest
     assert_response :service_unavailable
     assert_match(/APNS_KEY/, body["error"])
 
+    ENV["APNS_KEY"] = "-----BEGIN PRIVATE KEY-----\nnot a key\n-----END PRIVATE KEY-----"
+    ENV["APNS_KEY_ID"] = "KEY1234567"
+    ENV["APNS_TEAM_ID"] = "TEAM123456"
+    post "/v1/devices/#{'cd' * 32}/ping", headers: auth
+    assert_response :service_unavailable
+    assert_match(/APNS_KEY is not a PEM private key/, body["error"])
+    %w[APNS_KEY APNS_KEY_ID APNS_TEAM_ID].each { |k| ENV.delete(k) }
+
     post "/v1/devices", params: { token: "not hex", environment: "sandbox" }, headers: auth, as: :json
     assert_response :unprocessable_entity
     post "/v1/devices", params: { token: "ef" * 32, environment: "staging" }, headers: auth, as: :json

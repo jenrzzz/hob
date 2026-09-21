@@ -65,8 +65,37 @@ class PushTest < ActiveSupport::TestCase
     ENV["APNS_KEY_ID"] = "KEY1234567"
     ENV["APNS_TEAM_ID"] = "TEAM123456"
     assert Push.configured?
-    assert_equal "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----", Push.key
+    assert_equal "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n", Push.key
     assert_equal "place.amber.hob", Push.bundle_id
+  ensure
+    %w[APNS_KEY APNS_KEY_ID APNS_TEAM_ID].each { |k| ENV.delete(k) }
+  end
+
+  test "a .p8 survives whatever a secret store did to its newlines, and a bad one says so" do
+    pem = OpenSSL::PKey::EC.generate("prime256v1").private_to_pem
+    ENV["APNS_KEY_ID"] = "KEY1234567"
+    ENV["APNS_TEAM_ID"] = "TEAM123456"
+    Push.transport = nil
+    {
+      "intact" => pem, "escaped" => pem.gsub("\n", "\\n"), "joined" => pem.delete("\n"), "spaced" => pem.tr("\n", " "),
+      "quoted" => %Q("#{pem.tr("\n", " ")}"), "crlf" => pem.gsub("\n", "\r\n"), "indented" => pem.gsub(/^/, "  ")
+    }.each do |shape, text|
+      ENV["APNS_KEY"] = text
+      assert_equal pem, Push.key, shape
+      assert Push.signing_key.private?, shape
+    end
+
+    ENV["APNS_KEY"] = "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----"
+    error = assert_raises(Push::NotConfigured) { Push.signing_key }
+    assert_match(/APNS_KEY is not a PEM private key/, error.message)
+    error = assert_raises(Push::NotConfigured) { Push.deliver!(phone, title: "t", body: "b") }
+    assert_match(/APNS_KEY is not a PEM private key/, error.message, "the real transport checks the key before dialing Apple")
+
+    ENV["APNS_KEY"] = "/etc/hob/AuthKey.p8"
+    assert_raises(Push::NotConfigured) { Push.signing_key }
+    ENV["APNS_KEY"] = OpenSSL::PKey::RSA.new(1024).private_to_pem
+    assert_match(/not an EC private key/, assert_raises(Push::NotConfigured) { Push.signing_key }.message)
+    assert_equal 0, Push.people(title: "t", body: "b"), "a broadcast never raises"
   ensure
     %w[APNS_KEY APNS_KEY_ID APNS_TEAM_ID].each { |k| ENV.delete(k) }
   end

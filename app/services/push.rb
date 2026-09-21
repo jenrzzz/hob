@@ -5,8 +5,9 @@ require "stringio"
 # that opens the petition or request in the app. Token-based auth, the same
 # shape kat uses, so one .p8 key serves every app on the team:
 #
-#   APNS_KEY        the .p8 contents (PEM; "\n" escapes are unescaped so the
-#                   key survives a single-line secret store), or
+#   APNS_KEY        the .p8 contents (PEM; "\n" escapes are unescaped and a
+#                   body whose newlines a single-line secret store collapsed
+#                   or quoted is re-wrapped, so the key survives a paste), or
 #   APNS_KEY_PATH   a path to the .p8 file
 #   APNS_KEY_ID     the 10-character key id from the developer portal
 #   APNS_TEAM_ID    the 10-character team id
@@ -48,8 +49,37 @@ module Push
     if (path = ENV["APNS_KEY_PATH"]).present?
       File.read(path) if File.exist?(path)
     elsif (pem = ENV["APNS_KEY"]).present?
-      pem.gsub("\\n", "\n")
+      normalize_pem(pem)
     end
+  end
+
+  # A .p8 pasted into an env var rarely arrives intact: "\n" escapes, the
+  # lines joined with spaces or nothing, or the whole thing quoted. OpenSSL
+  # rejects all of those ("invalid curve name": it fell back to reading the
+  # text as a curve), so rebuild the PEM from the markers and the base64
+  # between them. Text without markers is returned as is.
+  def normalize_pem(text)
+    pem = text.to_s.strip.gsub("\\n", "\n")
+    pem = pem[1..-2] if pem.length > 1 && %w[" '].include?(pem[0]) && pem.end_with?(pem[0])
+    match = pem.match(/-----BEGIN ([A-Z ]+)-----(.*?)-----END \1-----/m) or return pem
+    body = match[2].gsub(/\s+/, "")
+    "-----BEGIN #{match[1]}-----\n#{body.scan(/.{1,64}/).join("\n")}\n-----END #{match[1]}-----\n"
+  end
+
+  # The key parsed, or NotConfigured saying why it will not sign: a
+  # malformed APNS_KEY should read as a configuration problem, not as an
+  # OpenSSL error from inside the APNs client.
+  def signing_key
+    pem = key
+    raise NotConfigured, "APNS_KEY is empty" if pem.blank?
+
+    parsed = OpenSSL::PKey.read(pem)
+    unless parsed.is_a?(OpenSSL::PKey::EC) && parsed.private?
+      raise NotConfigured, "APNS_KEY is not an EC private key (got #{parsed.class.name.demodulize}); Apple's .p8 is one"
+    end
+    parsed
+  rescue OpenSSL::PKey::PKeyError => e
+    raise NotConfigured, "APNS_KEY is not a PEM private key (#{e.message.strip}); paste the whole .p8, newlines escaped as \\n or intact"
   end
 
   # Every phone every person has registered. Returns how many accepted.
@@ -77,6 +107,7 @@ module Push
   def deliver!(device, title:, body:, about: nil)
     raise NotConfigured, "APNS_KEY, APNS_KEY_ID and APNS_TEAM_ID are not set on hob" unless available?
 
+    signing_key if transport.nil?
     note = notification(title: title, body: body, about: about)
     status, reason = (transport || method(:apns)).call(device, note)
     raise Error, "no response from APNs" if status.nil?

@@ -5,8 +5,9 @@ which every LLM interaction in the household flows — providers, conversations,
 personas, memory, tools, compute, voice. See [DESIGN.md](DESIGN.md) for the
 full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 [SENTINEL.md](SENTINEL.md) for how outside agents get in,
-[TODOS.md](TODOS.md) for the household's todos, and
-[WARD.md](WARD.md) for the watch it keeps over the household's exposure.
+[TODOS.md](TODOS.md) for the household's todos,
+[WARD.md](WARD.md) for the watch it keeps over the household's exposure, and
+[CLAUDE_CODE.md](CLAUDE_CODE.md) for how a person's own assistant gets in.
 
 ## Running
 
@@ -180,6 +181,27 @@ GET  /v1/ward/status · GET /v1/ward/findings?state=open|acknowledged|resolved|a
 POST /v1/ward/findings/:id/ack         { note, until }  · POST …/unack
 GET/POST /v1/ward/notes                { subject, body }                                                  (a person)
 ```
+
+## Claude Code
+
+hob is an MCP server for a person's own assistant: `POST /v1/mcp` serves the
+native capabilities visible at the connection's clearance as tools, plus the
+few things only a person may do (`todo_delete`, `ward_findings`, `ward_ack`).
+A person's key only, run directly as that person; `X-Hob-Clearance` caps it,
+and here a cap that names no realm is refused. This repository is its own
+plugin marketplace:
+
+```sh
+bin/rails "hob:key[jenner,claude-code]"     # a person's key for the plugin, shown once
+```
+
+```
+/plugin marketplace add jenrzzz/hob
+/plugin install hob@hob                     # asks for hob's URL, the key, and a clearance cap (personal)
+```
+
+The plugin (`plugins/hob`) carries no tool list, only skills: `hob:todos`,
+`hob:capture`, and `hob:ward`. See [CLAUDE_CODE.md](CLAUDE_CODE.md).
 
 ## API sketch
 

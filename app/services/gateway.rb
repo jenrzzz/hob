@@ -118,7 +118,7 @@ module Gateway
       result = transport.call(
         resolution: resolution, system: request.system, messages: request.messages,
         schema: request.schema, tools: request.tools, tool_choice: request.tool_choice,
-        params: RubyLLM::Utils.deep_merge(resolution.params.deep_stringify_keys, request.params)
+        params: resolution.params.deep_stringify_keys.deep_merge(request.params)
       ) { |text| on_event&.call(:delta, text) }
       Response.from_transport(result, resolution: resolution, started: started)
     rescue Unauthorized, Unavailable, RateLimited, Invalid => e

@@ -229,6 +229,20 @@ ruby_llm: it translates chain-link params into `with_params`, reads
 is not needed. If ruby_llm later reads `stop_reason` and drops the
 registry gate on thinking, the wrapper shrinks further.
 
+*(2026-09-20, ruby_llm 2.0.0.rc1, taken for CVE-2026-67991, which has no
+fixed 1.x release.)* It did shrink. `with_params` is `with_provider_options`
+(same merge, so thinking, `max_tokens`, and `output_config` still ride in as
+raw params); one completion with its tool calls unexecuted is the public
+`Chat#generate`, so the wrapper no longer reaches into the chat for its
+provider; identity encoding on Anthropic streams is upstream; token counts
+live on `message.tokens` (`cache_read`, `cache_write`). 2.0 reads the stop
+reason (`Message#finish_reason`) but normalizes it (`end_turn` → `:stop`,
+`refusal` → `:content_filter`), and hob's callers and ledger are promised the
+provider's own word, so the raw chunk hook stays, now on `build_chunk` of the
+two protocol classes. One trap: the `openai` provider defaults to the
+Responses API, so an `openai_compat` link must ask for `protocol:
+:chat_completions`.
+
 **A3. Always stream from the provider.** Buffer when the caller wants a
 blocking response. Removes the timeout class of bug from lumen and mise
 without every surface needing a job.

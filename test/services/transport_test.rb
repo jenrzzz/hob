@@ -7,10 +7,11 @@ require "test_helper"
 class TransportTest < ActiveSupport::TestCase
   module StubbedPost
     class << self
-      attr_accessor :sse, :payloads, :error
+      attr_accessor :sse, :payloads, :urls, :error
     end
 
-    def post(_url, payload)
+    def post(url, payload, **)
+      StubbedPost.urls << url
       StubbedPost.payloads << payload
       raise StubbedPost.error if StubbedPost.error
 
@@ -25,8 +26,9 @@ class TransportTest < ActiveSupport::TestCase
   end
 
   setup do
-    RubyLLM::Connection.prepend(StubbedPost) unless RubyLLM::Connection.ancestors.include?(StubbedPost)
+    RubyLLM::Transport::Connection.prepend(StubbedPost) unless RubyLLM::Transport::Connection.ancestors.include?(StubbedPost)
     StubbedPost.payloads = []
+    StubbedPost.urls = []
     StubbedPost.error = nil
     StubbedPost.sse = sse(
       { type: "message_start", message: { model: "claude-sonnet-5", usage: { input_tokens: 25, cache_read_input_tokens: 5 } } },
@@ -85,6 +87,20 @@ class TransportTest < ActiveSupport::TestCase
     result = call
     assert_equal "refusal", result.stop_reason
     assert_nil result.content
+  end
+
+  test "an openai_compat provider is spoken to in chat completions, and its own finish_reason comes back" do
+    StubbedPost.sse = [
+      { id: "c1", model: "gpt-test", choices: [ { index: 0, delta: { role: "assistant", content: "Hi." } } ] },
+      { id: "c1", model: "gpt-test", choices: [ { index: 0, delta: {}, finish_reason: "stop" } ] }
+    ].map { |e| "data: #{JSON.generate(e)}\n\n" }.join + "data: [DONE]\n\n"
+    backup = ModelRole::Resolution.new(provider: Provider.find_by!(slug: "backup"), model: "gpt-test", params: {}, strict: false)
+
+    result = call(resolution: backup, params: {})
+    assert_equal "chat/completions", StubbedPost.urls.last, "not OpenAI's Responses API, which a compat server does not have"
+    assert_equal "Hi.", result.content
+    assert_equal "stop", result.stop_reason
+    assert_equal "gpt-test", StubbedPost.payloads.last[:model]
   end
 
   test "ruby_llm errors map onto the gateway hierarchy" do

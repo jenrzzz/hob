@@ -128,6 +128,61 @@ ALTER SEQUENCE public.branches_id_seq OWNED BY public.branches.id;
 
 
 --
+-- Name: calendar_contributors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calendar_contributors (
+    id bigint NOT NULL,
+    owner_id bigint NOT NULL,
+    agent_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: calendar_contributors_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.calendar_contributors_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: calendar_contributors_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.calendar_contributors_id_seq OWNED BY public.calendar_contributors.id;
+
+
+--
+-- Name: calendar_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calendar_events (
+    id character varying NOT NULL,
+    source_agent_id bigint NOT NULL,
+    owner_id bigint NOT NULL,
+    calendar character varying DEFAULT ''::character varying NOT NULL,
+    uid character varying NOT NULL,
+    start_at timestamp(6) without time zone NOT NULL,
+    end_at timestamp(6) without time zone NOT NULL,
+    all_day boolean DEFAULT false NOT NULL,
+    busy boolean DEFAULT true NOT NULL,
+    status character varying,
+    title character varying,
+    location character varying,
+    visibility character varying DEFAULT 'free_busy'::character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: capabilities; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -730,6 +785,13 @@ ALTER TABLE ONLY public.branches ALTER COLUMN id SET DEFAULT nextval('public.bra
 
 
 --
+-- Name: calendar_contributors id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_contributors ALTER COLUMN id SET DEFAULT nextval('public.calendar_contributors_id_seq'::regclass);
+
+
+--
 -- Name: capabilities id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -815,6 +877,22 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 ALTER TABLE ONLY public.branches
     ADD CONSTRAINT branches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: calendar_contributors calendar_contributors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_contributors
+    ADD CONSTRAINT calendar_contributors_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: calendar_events calendar_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_events
+    ADD CONSTRAINT calendar_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -1048,6 +1126,48 @@ CREATE UNIQUE INDEX index_api_keys_on_token_digest ON public.api_keys USING btre
 --
 
 CREATE UNIQUE INDEX index_branches_on_conversation_id_and_name ON public.branches USING btree (conversation_id, name);
+
+
+--
+-- Name: index_calendar_contributors_on_agent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_calendar_contributors_on_agent_id ON public.calendar_contributors USING btree (agent_id);
+
+
+--
+-- Name: index_calendar_contributors_on_owner_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_calendar_contributors_on_owner_id ON public.calendar_contributors USING btree (owner_id);
+
+
+--
+-- Name: index_calendar_contributors_on_owner_id_and_agent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_calendar_contributors_on_owner_id_and_agent_id ON public.calendar_contributors USING btree (owner_id, agent_id);
+
+
+--
+-- Name: index_calendar_events_on_agent_owner_calendar_uid; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_calendar_events_on_agent_owner_calendar_uid ON public.calendar_events USING btree (source_agent_id, owner_id, calendar, uid);
+
+
+--
+-- Name: index_calendar_events_on_owner_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_calendar_events_on_owner_id ON public.calendar_events USING btree (owner_id);
+
+
+--
+-- Name: index_calendar_events_on_source_agent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_calendar_events_on_source_agent_id ON public.calendar_events USING btree (source_agent_id);
 
 
 --
@@ -1383,6 +1503,14 @@ ALTER TABLE ONLY public.ward_findings
 
 
 --
+-- Name: calendar_contributors fk_rails_2dc963feae; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_contributors
+    ADD CONSTRAINT fk_rails_2dc963feae FOREIGN KEY (owner_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: sentinel_requests fk_rails_57f2dafd85; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1404,6 +1532,14 @@ ALTER TABLE ONLY public.petitions
 
 ALTER TABLE ONLY public.api_keys
     ADD CONSTRAINT fk_rails_5a5e375519 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: calendar_contributors fk_rails_609516a57a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_contributors
+    ADD CONSTRAINT fk_rails_609516a57a FOREIGN KEY (agent_id) REFERENCES public.principals(id);
 
 
 --
@@ -1431,6 +1567,14 @@ ALTER TABLE ONLY public.ward_notes
 
 
 --
+-- Name: calendar_events fk_rails_8319b541ce; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_events
+    ADD CONSTRAINT fk_rails_8319b541ce FOREIGN KEY (owner_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: devices fk_rails_8b23b306c0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1452,6 +1596,14 @@ ALTER TABLE ONLY public.agent_messages
 
 ALTER TABLE ONLY public.ward_findings
     ADD CONSTRAINT fk_rails_9b38963c63 FOREIGN KEY (acknowledged_by_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: calendar_events fk_rails_a15b711368; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_events
+    ADD CONSTRAINT fk_rails_a15b711368 FOREIGN KEY (source_agent_id) REFERENCES public.principals(id);
 
 
 --
@@ -1603,12 +1755,6 @@ CREATE POLICY realm_visibility ON public.sentinel_requests USING ((( SELECT real
 
 
 --
--- Name: sentinel_requests; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: todo_backends realm_visibility; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -1616,6 +1762,12 @@ CREATE POLICY realm_visibility ON public.todo_backends USING ((( SELECT realms.r
    FROM public.realms
   WHERE ((realms.slug)::text = (todo_backends.realm)::text)) <= public.app_clearance_rank()));
 
+
+--
+-- Name: sentinel_requests; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: todo_backends; Type: ROW SECURITY; Schema: public; Owner: -
@@ -1630,6 +1782,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260921000001'),
 ('20260920063000'),
 ('20260920000003'),
 ('20260920000002'),

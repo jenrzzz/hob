@@ -1,8 +1,9 @@
 module Gateway
   # A client-session tool as the caller declares it: { name, description,
   # input_schema }. Duck-typed to what ruby_llm's provider renderers read
-  # off a RubyLLM::Tool (name, description, params_schema, parameters,
-  # provider_params) so hob never has to define a Tool class per request.
+  # off a RubyLLM::Tool (name, description, parameters_schema,
+  # declared_parameters, provider_options) so hob never has to define a Tool
+  # class per request.
   class ToolDef < Struct.new(:name, :description, :input_schema, keyword_init: true)
     NAME_FORMAT = /\A[a-zA-Z0-9_-]{1,64}\z/
     CHOICES = %w[auto none required].freeze
@@ -30,9 +31,9 @@ module Gateway
       raise Invalid, "tool_choice #{choice.inspect} is not auto, none, required, or a declared tool"
     end
 
-    def params_schema = input_schema
-    def parameters = {}
-    def provider_params = {}
+    def parameters_schema = input_schema
+    def declared_parameters = {}
+    def provider_options = {}
 
     def to_h
       { "name" => name, "description" => description, "input_schema" => input_schema }

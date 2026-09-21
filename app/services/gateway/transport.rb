@@ -1,12 +1,13 @@
 module Gateway
   # The thin wrapper over ruby_llm (A2): builds a per-provider context, turns
-  # chain-link params into `with_params`, always streams (A3), reads the stop
-  # reason off the raw chunks (ruby_llm never does), and maps ruby_llm's
+  # chain-link params into provider options, always streams (A3), reads the
+  # provider's own stop reason off the raw chunks (ruby_llm normalizes it, and
+  # hob's callers are promised the provider's word), and maps ruby_llm's
   # errors onto Gateway's.
   #
-  # Tools go to the provider directly rather than through Chat#complete,
-  # because Chat's loop executes tools in-process; hob's venue is the
-  # client session (C), so a tool call ends the request instead.
+  # One completion is Chat#generate, not Chat#complete: that loop executes
+  # tools in-process; hob's venue is the client session (C), so a tool call
+  # ends the request instead.
   class Transport
     Result = Struct.new(:content, :stop_reason, :input_tokens, :output_tokens, :cache_read_tokens,
                         :cache_creation_tokens, :model, :tool_calls, keyword_init: true)
@@ -19,7 +20,7 @@ module Gateway
 
       text = +""
       stop_reason = nil
-      message = provider_complete(chat, tools, tool_choice) do |chunk|
+      message = generate(chat, tools, tool_choice) do |chunk|
         stop_reason ||= stop_reason_from(chunk.raw) if chunk.raw.is_a?(Hash)
         next if chunk.content.blank?
 
@@ -30,9 +31,9 @@ module Gateway
       Result.new(
         content: text.presence || (message.content.is_a?(String) ? message.content : nil),
         stop_reason: stop_reason || stop_reason_from(message.raw.respond_to?(:body) ? message.raw.body : nil),
-        input_tokens: message.input_tokens, output_tokens: message.output_tokens,
-        cache_read_tokens: message.cached_tokens, cache_creation_tokens: message.cache_creation_tokens,
-        model: message.model_id,
+        input_tokens: message.tokens&.input, output_tokens: message.tokens&.output,
+        cache_read_tokens: message.tokens&.cache_read, cache_creation_tokens: message.tokens&.cache_write,
+        model: message.model,
         tool_calls: (message.tool_calls || {}).values.map { |tc| { "id" => tc.id, "name" => tc.name, "arguments" => tc.arguments } }
       )
     rescue RubyLLM::RateLimitError => e
@@ -63,24 +64,23 @@ module Gateway
       # assume_model_exists: a new model release is a config row, never a code
       # change. The cost is that ruby_llm's registry can't gate features, so
       # thinking and max_tokens ride in as raw params (see EXTRACTION.md A2).
+      # An openai_compat server speaks chat completions; left to itself
+      # ruby_llm would send OpenAI's Responses API at it.
       chat = context.chat(
         model: resolution.model,
         provider: provider.kind == "anthropic" ? :anthropic : :openai,
+        protocol: provider.kind == "anthropic" ? nil : :chat_completions,
         assume_model_exists: true
       )
-      params.present? ? chat.with_params(**params.deep_symbolize_keys) : chat
+      params.present? ? chat.with_provider_options(params.deep_symbolize_keys) : chat
     end
 
-    # Chat#complete would run the tool loop itself; the provider call alone
-    # returns the message with its tool calls unexecuted.
-    def provider_complete(chat, tools, tool_choice, &block)
-      provider = chat.instance_variable_get(:@provider)
-      tool_map = tools.to_h { |t| [ t.name.to_sym, t ] }
-      choice = tool_choice && (ToolDef::CHOICES.include?(tool_choice) ? tool_choice.to_sym : tool_choice.to_s.to_sym)
-      provider.complete(
-        chat.messages, tools: tool_map, tool_prefs: { choice: choice, calls: nil }, temperature: nil,
-        model: chat.model, params: chat.params, headers: chat.headers, schema: chat.schema, thinking: nil, &block
-      )
+    # Chat#generate asks once and returns the message with its tool calls
+    # unexecuted; the tools only need the shape ToolDef gives them.
+    def generate(chat, tools, tool_choice, &block)
+      chat.with_tools(*tools) if tools.any?
+      chat.with_tool_options(choice: tool_choice.to_sym) if tool_choice
+      chat.generate(&block)
     end
 
     # user / assistant text, an assistant message carrying tool calls, or a

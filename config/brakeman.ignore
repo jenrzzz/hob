@@ -1,0 +1,143 @@
+{
+  "ignored_warnings": [
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "7a31ea006ebc9f216f4543b414b45e1cf6cbf1b6ac24658c6ee71cd4378ed31e",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/application_controller.rb",
+      "line": 141,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[name].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "ApplicationController",
+        "method": "hash_param"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "hash_param/array_param: free-form JSON (schemas, tool definitions, metadata, mission payloads) stored or passed on as one value; never assigned to model attributes."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "d06ebb4f64f5aaaa58fe81b072dde775f86fc8f79d31a853f8a8cfc19e963071",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/v1/chats_controller.rb",
+      "line": 47,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[:context].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "V1::ChatsController",
+        "method": "context_param"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Chat context is free-form by contract (a string, a hash, or a list of blocks) and goes to prompt assembly, not to a model."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "909061406e71796cdc4fcee348cc201f19d1e8cc15c8eb96b68a7b13277ca7b9",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/v1/events_controller.rb",
+      "line": 9,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[:meta].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "V1::EventsController",
+        "method": "create"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "An event's meta is the surface's own free-form JSON, stored as the node's one meta value."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "d318468ef93473cf0829546fbfef6f58f6e6cfec5e50ddad6ee4c56929488049",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/v1/missions_controller.rb",
+      "line": 64,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[:result].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "V1::MissionsController",
+        "method": "complete"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "A mission's result is whatever JSON its worker reports, stored as the one value Mission#result."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "208ee53e402aa843380ede8864e4777a9a9c47b7f4834b4843c5dd89aa16da7d",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/v1/personas_controller.rb",
+      "line": 19,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.require(:card).permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "V1::PersonasController",
+        "method": "import"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "An ST character card is a foreign, versioned document; Persona.from_card! reads named fields and archives the rest in card_import."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "17b76e94dc520c133e2f8c9292e583c28024bdb3addc4a5c37f414ce00d5d3a7",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/v1/presets_controller.rb",
+      "line": 32,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[:params].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "V1::PresetsController",
+        "method": "preset_params"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Provider params are an open set (whatever the model accepts), stored as the one JSON value Preset#params."
+    }
+  ],
+  "brakeman_version": "8.0.6"
+}

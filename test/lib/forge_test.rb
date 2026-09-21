@@ -91,7 +91,7 @@ class ForgeTest < ActiveSupport::TestCase
     assert_match(/REFUSED.md/, brief)
 
     names_after_claude = @commands.drop_while { |argv, _, _| argv.first != "claude" }.map { |argv, _, _| argv.join(" ") }
-    assert_equal [ "bundle check", "env RAILS_ENV=test bin/rails db:prepare", "bin/rails test" ],
+    assert_equal [ "bundle check", "env RAILS_ENV=test bin/rails db:test:prepare", "bin/rails test" ],
                  names_after_claude.grep(/\A(bundle|env|bin\/rails) /), "gems and the test database are prepared, then the suite runs"
     assert_nil @commands.find { |argv, _, _| argv[0..1] == %w[bundle install] }, "gems present: no install"
     push = @commands.find { |argv, _, _| argv[0..1] == %w[git push] }

@@ -276,7 +276,7 @@ lease a forge.capability mission
   git worktree add ../hob-forge/<branch> origin/main; copy local config in
   claude -p < .forge/BRIEF.md         headless; edits accepted, shell allowlisted
   (REFUSED.md written? fail the mission with the reason)
-  commit anything left uncommitted; bundle, db:prepare, bin/rails test; require a handler under sentinel/native/
+  commit anything left uncommitted; bundle, db:test:prepare, bin/rails test; require a handler under sentinel/native/
   git push; gh pr create              the PR body carries petition, spec, acceptance, summary
 complete the mission { pull_request, branch, capability, commit, summary, cost }
 ```

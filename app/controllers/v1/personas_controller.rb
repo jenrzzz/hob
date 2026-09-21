@@ -29,9 +29,10 @@ module V1
 
     private
 
+    # The prompt's keys are Persona's contract (see the model); anything else is dropped.
     def persona_params
       params.permit(:key, :name, :model_role, :voice_id).to_h.tap do |h|
-        h[:prompt] = params[:prompt].permit!.to_h if params[:prompt].present?
+        h[:prompt] = params[:prompt].permit(:system_core, :instruction, greetings: [], examples: []).to_h if params[:prompt].present?
       end
     end
 

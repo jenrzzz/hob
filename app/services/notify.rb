@@ -44,6 +44,7 @@ module Notify
     false
   rescue StandardError => e
     Rails.logger.warn("notify failed: #{e.class}: #{e.message}")
+    Rails.error.report(e, handled: true, severity: :warning, source: "hob.notify")
     false
   end
 

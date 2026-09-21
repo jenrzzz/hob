@@ -7,6 +7,10 @@ module Sentinel
   module Executor
     module_function
 
+    # Failures that answer the agent (a bad argument, a backend or webhook
+    # that is away) rather than faults in hob; anything else is reported.
+    ANSWERS = [ Gateway::Error, Todos::Error, Webhook::Error, ActiveRecord::RecordNotFound, ActiveRecord::RecordInvalid, ArgumentError ].freeze
+
     def run!(request)
       capability = request.capability
       as_agent(request) do
@@ -19,6 +23,10 @@ module Sentinel
       request
     rescue StandardError => e
       Rails.logger.error("sentinel request #{request.id} failed: #{e.class}: #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}")
+      unless ANSWERS.any? { |answer| e.is_a?(answer) }
+        Rails.error.report(e, handled: true, severity: :error, source: "hob.sentinel",
+                           context: { request: request.id, capability: request.capability&.name })
+      end
       request.fail!("#{e.class.name.demodulize}: #{e.message}")
       request
     end

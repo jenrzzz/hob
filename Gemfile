@@ -48,3 +48,7 @@ end
 gem "ruby_llm", "2.0.0.rc1"
 
 gem "apnotic", "~> 1.8"
+
+# Error reporting; config/initializers/sentry.rb, on only where SENTRY_DSN is set
+gem "sentry-ruby"
+gem "sentry-rails"

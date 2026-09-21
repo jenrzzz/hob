@@ -17,6 +17,7 @@ class UsageEvent < ApplicationRecord
     create!(created_at: Time.current, **attrs)
   rescue StandardError => e
     Rails.logger.warn("usage ledger write failed: #{e.class}: #{e.message}")
+    Rails.error.report(e, handled: true, severity: :error, source: "hob.ledger")
     nil
   end
 

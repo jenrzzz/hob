@@ -17,6 +17,9 @@ module SseStreaming
   rescue Gateway::Refused => e
     sse_write(type: "done", status: "refused", error: e.message)
   rescue StandardError => e
+    # Off the stream, anything without a rescue_from is a 500 that gets
+    # reported on its way out; on it, this rescue is as far as it goes.
+    Rails.error.report(e, handled: true, severity: :error, source: "hob.stream") unless handler_for_rescue(e)
     sse_write(type: "error", message: e.message, status: sse_status_for(e))
   ensure
     response.stream.close

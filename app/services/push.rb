@@ -69,6 +69,7 @@ module Push
     false
   rescue StandardError => e
     Rails.logger.warn("push failed for #{device.label}: #{e.class}: #{e.message}")
+    Rails.error.report(e, handled: true, severity: :warning, source: "hob.push")
     false
   end
 

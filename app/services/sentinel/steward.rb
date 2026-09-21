@@ -104,6 +104,7 @@ module Sentinel
       new(petition).process!
     rescue StandardError => e
       Rails.logger.error("steward failed on petition #{petition.id}: #{e.class}: #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}")
+      Rails.error.report(e, handled: true, severity: :error, source: "hob.steward", context: { petition: petition.id })
       steward = new(petition)
       steward.apply!(Verdict.new(action: "refer", rationale: "steward error: #{e.class.name.demodulize}: #{e.message}".truncate(500),
                                  capability: petition.capability_name, review: { "error" => e.message.truncate(500) }),

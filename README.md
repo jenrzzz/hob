@@ -22,6 +22,12 @@ Providers resolve API keys from env at request time (`ANTHROPIC_API_KEY`,
 available provider fails with a 422, and new models are config rows in
 `model_roles` — never code changes.
 
+With `SENTRY_DSN` set, errors go to Sentry: unhandled ones, and the ones hob
+rescues and carries on from (a failed stream, a sentinel request or petition
+that errored, a ledger write, a ping that didn't go out). Events carry the
+principal, surface, and clearance, never request bodies, query strings, or
+SQL (`config/initializers/sentry.rb`). An exception's own message does go.
+
 ## Onboarding a surface
 
 Every app that talks to hob is a *surface* with its own API key. hob mints

@@ -17,14 +17,23 @@ end
 
 namespace :hob do
   desc "Onboard an external agent (SENTINEL.md): create its principal and mint a key, shown once. " \
-       "bin/rails \"hob:agent[muse,clearance=household,surface=muse]\" CHANNEL=https://ntfy.sh/<topic> (re-running rotates the key)"
+       "bin/rails \"hob:agent[muse,clearance=household,surface=muse]\" CHANNEL=https://ntfy.sh/<topic> " \
+       "(re-running rotates the key; with a clearance, it also moves the agent's own grant to it)"
   task :agent, [ :name, :clearance, :surface ] => :environment do |_task, args|
     abort "usage: bin/rails \"hob:agent[name,clearance=household,surface=name]\" CHANNEL=" if args[:name].blank?
 
-    clearance = args[:clearance].presence || "household"
-    Realm.rank_of(clearance)
-    agent = Principal.find_or_create_by!(name: args[:name]) { |p| p.kind = "agent"; p.max_clearance = clearance }
+    requested = args[:clearance].presence
+    Realm.rank_of(requested || "household")
+    agent = Principal.find_or_create_by!(name: args[:name]) { |p| p.kind = "agent"; p.max_clearance = requested || "household" }
     abort "#{agent.name} is a #{agent.kind}, not an agent" unless agent.agent?
+    # A key's clearance is min(key default, principal grant), so a key minted
+    # above the grant would be a household key with a personal label. A named
+    # clearance moves the grant, up or down; none keeps the agent's own.
+    if requested && agent.max_clearance != requested
+      puts "#{agent.name}: clearance #{agent.max_clearance} → #{requested}"
+      agent.update!(max_clearance: requested)
+    end
+    clearance = agent.max_clearance
     agent.update!(channel: ENV["CHANNEL"]) if ENV.key?("CHANNEL")
 
     surface = args[:surface].presence || agent.name

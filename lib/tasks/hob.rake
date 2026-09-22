@@ -326,6 +326,86 @@ namespace :hob do
   end
 end
 
+# Budgets (BUDGET.md): where the household's books are kept.
+namespace :hob do
+  namespace :budget do
+    desc "List the YNAB plans a token can see, to choose one for hob:budget:backend: bin/rails hob:budget:plans KEY_ENV=YNAB_TOKEN"
+    task plans: :environment do
+      key = ENV[ENV["KEY_ENV"].presence || "YNAB_TOKEN"]
+      abort "usage: bin/rails hob:budget:plans KEY_ENV=YNAB_TOKEN (the env var holding a YNAB personal access token)" if key.blank?
+
+      begin
+        Budgets::Backends::Ynab.plans(key).each do |plan|
+          puts "#{plan['id']}  #{plan['name'].to_s.ljust(28)} #{plan['currency'].to_s.ljust(4)} last modified #{plan['last_modified_on']}"
+        end
+      rescue Budgets::Error => e
+        abort "#{e.class.name.demodulize.downcase}: #{e.message}"
+      end
+    end
+
+    desc "Register (or update) a budget backend (BUDGET.md): where somebody's budget is kept. " \
+         "bin/rails \"hob:budget:backend[house-ynab,ynab,<plan id>,household]\" KEY_ENV=YNAB_TOKEN " \
+         "(or KEY=<the token itself>) OWNER=jenner TIME_ZONE=America/Los_Angeles ENABLED=0"
+    task :backend, [ :name, :kind, :plan, :realm ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:budget:backend[name,kind=ynab,plan,realm=personal]\" KEY_ENV= | KEY=" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = BudgetBackend.find_or_initialize_by(name: args[:name])
+        row.kind = args[:kind].presence || row.kind || "ynab"
+        row.realm = args[:realm].presence || row.realm || "personal"
+        row.principal = Principal.find_by!(name: ENV["OWNER"]) if ENV["OWNER"].present?
+        row.principal ||= Principal.find_by!(name: "jenner")
+        config = row.config.dup
+        config["plan"] = args[:plan] if args[:plan].present?
+        config = config.except("key", "key_env").merge("key_env" => ENV["KEY_ENV"]) if ENV["KEY_ENV"].present?
+        config = config.except("key", "key_env").merge("key" => ENV["KEY"]) if ENV["KEY"].present?
+        config["time_zone"] = ENV["TIME_ZONE"].presence if ENV.key?("TIME_ZONE")
+        row.config = config.compact
+        row.enabled = ENV["ENABLED"] != "0" if ENV.key?("ENABLED")
+        created = row.new_record?
+        row.save!
+        puts "#{row.name}: #{created ? 'registered' : 'updated'}; #{row.kind} plan #{row.config['plan']}, realm #{row.realm}, " \
+             "owner #{row.principal.name}, today in #{row.time_zone.name}#{row.enabled? ? '' : ', disabled'}; " \
+             "key #{row.config['key_env'].present? ? "from #{row.config['key_env']}#{row.key.blank? ? ' (not set in this environment)' : ''}" : 'stored in the row'}"
+        puts "check it: bin/rails \"hob:budget:check[#{row.name}]\""
+      end
+    end
+
+    desc "List budget backends and whether each answers"
+    task backends: :environment do
+      Clearance.with("intimate") do
+        rows = BudgetBackend.includes(:principal).order(:name)
+        puts "no budget backends; bin/rails \"hob:budget:backend[name,ynab,plan,realm]\" KEY_ENV=" if rows.empty?
+        rows.each do |row|
+          state = "disabled" unless row.enabled?
+          state ||= begin
+            row.adapter.check && "reachable"
+          rescue Budgets::Error => e
+            "unreachable: #{e.message}"
+          end
+          puts "#{row.name.ljust(24)} #{row.kind.ljust(10)} #{row.realm.ljust(10)} #{row.principal.name.ljust(10)} #{row.config['plan']}  #{state}"
+        end
+      end
+    end
+
+    desc "Ask one budget backend how it is: bin/rails \"hob:budget:check[house-ynab]\""
+    task :check, [ :name ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:budget:check[name]\"" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = BudgetBackend.find_by!(name: args[:name])
+        begin
+          status = row.adapter.check
+          puts "#{row.name}: reachable"
+          status.except("reachable").each { |name, value| puts "  #{name}: #{value.is_a?(String) ? value : value.to_json}" }
+        rescue Budgets::Error => e
+          abort "#{row.name}: #{e.class.name.demodulize.downcase}: #{e.message}"
+        end
+      end
+    end
+  end
+end
+
 # The ward (WARD.md): the household's security watch.
 namespace :hob do
   namespace :ward do

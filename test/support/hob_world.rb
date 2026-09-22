@@ -72,6 +72,13 @@ module HobWorld
     TodoBackend.create!(name: name, kind: kind, realm: realm, principal: owner, **attrs)
   end
 
+  # A budget backend row (BUDGET.md). There is no fake kind: the ynab adapter
+  # is pointed at FakeYnab (test/support/fake_ynab.rb) through its transport.
+  def budget_backend(name = "house-ynab", realm: "household", owner: @principal, plan: "plan-1", **config)
+    BudgetBackend.create!(name: name, kind: "ynab", realm: realm, principal: owner,
+                          config: { "plan" => plan, "key_env" => "HOB_TEST_YNAB_TOKEN" }.merge(config.stringify_keys))
+  end
+
   # Runs a block the way a request from `principal` at `realm` would.
   def as(principal, realm:, surface: principal.name)
     Clearance.with(realm) do

@@ -6,6 +6,7 @@ personas, memory, tools, compute, voice. See [DESIGN.md](DESIGN.md) for the
 full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 [SENTINEL.md](SENTINEL.md) for how outside agents get in,
 [TODOS.md](TODOS.md) for the household's todos,
+[BUDGET.md](BUDGET.md) for its budget,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure, and
 [CLAUDE_CODE.md](CLAUDE_CODE.md) for how a person's own assistant gets in.
 
@@ -153,6 +154,24 @@ tailnet address), `KEY=` (store the key in the row instead of naming an
 env var), and `ENABLED=0` are the other knobs. A backend's key is never
 shown again: responses say `key: "set"` or name the env var.
 [TODOS.md](TODOS.md) is the design.
+
+## The budget
+
+The same idea, for money ([BUDGET.md](BUDGET.md)): one normalized contract
+for accounts, categories, and transactions, and a *backend* row for where
+the books are kept. The first kind is `ynab`. Amounts are decimals in the
+budget's currency, negative for money out; tags are the #hashtags in a
+memo; what an agent enters arrives unapproved, so it waits in YNAB for its
+owner. A backend's realm decides who can see any of it: Muse is a
+household agent, so the budget she helps with is a `household` backend.
+
+```sh
+export YNAB_TOKEN=...                                       # a YNAB personal access token, in hob's environment
+bin/rails hob:budget:plans KEY_ENV=YNAB_TOKEN               # the plans it sees, with their ids
+bin/rails "hob:budget:backend[house-ynab,ynab,<plan id>,household]" KEY_ENV=YNAB_TOKEN TIME_ZONE=America/Los_Angeles
+bin/rails "hob:budget:check[house-ynab]"
+bin/rails "hob:sentinel:policy[muse,budget.transactions,allow]"   # and the rest: BUDGET.md has the set
+```
 
 ## Keeping watch: the ward
 

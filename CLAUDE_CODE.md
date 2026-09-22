@@ -13,9 +13,10 @@ So there are two pieces, and hob owns the one that changes:
 
 - **`POST /v1/mcp`** serves hob's capabilities as MCP tools. The list is not
   written down anywhere: it is the native capabilities
-  (`Sentinel::Native::HANDLERS`) visible at the connection's clearance. A
-  capability built for outside agents, by hand or by the forge, is a tool in
-  Claude Code the day it is deployed.
+  (`Sentinel::Native::HANDLERS`) and the webhook ones surfaces registered
+  (mise's kitchen, `hob:surface:register`) visible at the connection's
+  clearance. A capability built for outside agents, by hand, by the forge,
+  or by a surface, is a tool in Claude Code the day it is deployed.
 - **The plugin** (`plugins/hob`) is thin on purpose: where hob is, a key, a
   clearance cap, and skills that teach method. It has no tool list to fall
   out of date.
@@ -46,6 +47,7 @@ a realm; a misspelt one must not quietly mean "everything".
 | from | what | names |
 |---|---|---|
 | capability rows, `venue: native`, enabled, realm ≤ clearance | everything the household's agents can be granted | `todo_list`, `todo_create`, `budget_transactions`, `ward_status`, `hob_usage`, ... |
+| capability rows, `venue: webhook`, enabled, realm ≤ clearance | what a surface offers agents (SENTINEL.md, *Capabilities*) | `mise_recipes`, `mise_plan_add`, `mise_chefs_ask`, ... |
 | `Mcp::Tools` | what a person's key may do and no agent is offered | `todo_delete`, `ward_findings`, `ward_ack`, `ward_unack` |
 
 - A tool's name is the capability's with the dots turned to underscores
@@ -55,14 +57,19 @@ a realm; a misspelt one must not quietly mean "everything".
   `readOnlyHint`.
 - `hob.agent.message` is left out (`Mcp::AGENTS_ONLY`): mail between agents
   means nothing from a person.
-- Webhook and poll capabilities are not served. They are other surfaces'
-  tools, signed for and queued on an agent's behalf; a person's assistant can
-  reach those surfaces itself.
+- A webhook capability is delivered to its surface exactly as the executor
+  delivers it for an agent (`Sentinel::Webhook`): signed with the row's
+  secret, naming the person as the caller (`agent: jenner`) and
+  `decided_by: person`, with no request id and no mission. The surface's
+  JSON is the tool's answer; a surface that is away is `isError`, not a
+  fault. Poll capabilities are not served: a mission queued on a person's
+  behalf is a different thing from a tool call, and nothing polls for one.
 
 A handler is given an `Mcp::Call` where the sentinel would give it a request:
-the same `arguments`, `principal`, `surface`, `realm`, and `capability`, and a
-nil `id` and `ref`, since there is no request row. A handler that needs a real
-request belongs in `AGENTS_ONLY`.
+the same `arguments`, `principal`, `surface`, `realm`, and `capability`, a
+nil `id`, `ref`, `reason`, and `on_mission_id`, since there is no request
+row, and `decided_by: "person"`. A handler that needs a real request belongs
+in `AGENTS_ONLY`.
 
 A tool that fails (`Todos::Unavailable`, a bad argument, a finding that is not
 there) is an **answer**, `isError: true` with the message, because the model

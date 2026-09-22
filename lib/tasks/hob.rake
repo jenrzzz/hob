@@ -209,6 +209,43 @@ namespace :hob do
 end
 
 namespace :hob do
+  namespace :surface do
+    desc "Register the capabilities a surface offers the sentinel (SENTINEL.md) from its manifest at /hob/capabilities, " \
+         "and hand it the secret hob signs deliveries with. bin/rails \"hob:surface:register[mise,https://mise.amber.place]\" " \
+         "APP=<coolify app uuid> (RESTART=0 to skip the restart; no APP prints the secret once, for you to set as HOB_WEBHOOK_SECRET)"
+    task :register, [ :surface, :url ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:surface:register[surface,url]\" APP=<coolify app uuid>" if args[:surface].blank? || args[:url].blank?
+
+      result = SurfaceCapabilities.new.call(surface: args[:surface], url: args[:url], app: ENV["APP"].presence,
+                                            restart: ENV["RESTART"] != "0", secret: ENV["SECRET"].presence)
+      puts "#{result.surface}: #{result.created} capability(ies) registered, #{result.updated} updated, #{result.disabled} disabled"
+      if result.pushed
+        puts "#{SurfaceCapabilities::SECRET_ENV} set on #{ENV['APP']}; #{result.restarted ? 'restart queued' : 'not restarted'}"
+      else
+        puts "set on the surface (shown once): #{SurfaceCapabilities::SECRET_ENV}=#{result.secret}"
+      end
+      SurfaceCapabilities.registered(result.surface).each do |cap|
+        puts "  #{cap.name.ljust(30)} #{cap.kind.ljust(5)} #{cap.realm.ljust(10)} #{cap.enabled ? '' : 'disabled'}"
+      end
+      puts "then let agents at them: bin/rails \"hob:sentinel:policy[marley,#{result.surface}.*,review]\" (README.md has a set)"
+    end
+
+    desc "List the capabilities registered for a surface: bin/rails \"hob:surface:capabilities[mise]\""
+    task :capabilities, [ :surface ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:surface:capabilities[surface]\"" if args[:surface].blank?
+
+      caps = SurfaceCapabilities.registered(args[:surface])
+      puts "nothing registered for #{args[:surface]}; bin/rails \"hob:surface:register[#{args[:surface]},url]\"" if caps.empty?
+      caps.each do |cap|
+        requests = cap.sentinel_requests.count
+        puts "#{cap.name.ljust(30)} #{cap.kind.ljust(5)} #{cap.realm.ljust(10)} #{cap.enabled ? 'enabled ' : 'disabled'} " \
+             "#{requests} request(s)  #{cap.config['url']}"
+      end
+    end
+  end
+end
+
+namespace :hob do
   namespace :capabilities do
     desc "Upsert the Capability rows for the native handlers in code (runs at boot; a merged forge PR lands here)"
     task sync: :environment do

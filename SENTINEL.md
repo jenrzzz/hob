@@ -110,11 +110,38 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `ward.audit.run` | act | queue a `ward.audit` mission for the ward worker to run a check now; `personal` tier |
 | `hob.capability.search` | read | keyword search over the capability catalog — name, description, kind, realm, and whether the caller may petition for each — filtered to the caller's clearance |
 
-Surfaces register their own: mise registers `mise.add_to_shopping_list` as
-a webhook (or as `poll` with its worker as assignee), and the capability
-carries the realm annotation the design's IFC gate wants. When the tool
-registry (DESIGN.md Plane 4) lands, capabilities are its sentinel-facing
-projection; until then they are the registry.
+Surfaces register their own, as `webhook` rows (or `poll`, with a worker
+as assignee), and each carries the realm annotation the design's IFC gate
+wants. A surface that hosts capabilities serves a **manifest** at
+`/hob/capabilities`: `{ surface, capabilities: [{ name, description, kind,
+realm, input_schema }] }`, with every name prefixed by the surface's own
+(`mise.`), and takes deliveries at `/hob/capabilities/<name>`. hob registers
+from it:
+
+```sh
+bin/rails "hob:surface:register[mise,https://mise.amber.place]" APP=<mise's coolify app uuid>
+bin/rails "hob:surface:capabilities[mise]"
+```
+
+That fetches the manifest, mints the secret deliveries are signed with,
+sets it on the surface's Coolify app as `HOB_WEBHOOK_SECRET` (the way
+`hob:provision` hands over a key: a person never sees it; without `APP=` it
+is printed once), and upserts a row per entry. Re-running follows the
+manifest: new entries are added, descriptions and schemas follow the
+surface's code, an entry that is gone is disabled (its requests are history,
+so it is not deleted), the secret rotates. Kind, realm, and enabled are left
+alone on a row that exists, so a household can tune them, and a native
+capability's name cannot be taken over. A petition waiting on the name is
+granted the moment the row lands, as with a forge build.
+
+The first such surface is mise, the kitchen: `mise.recipes`,
+`mise.recipe.get`, `mise.recipe.add`, `mise.plan`, `mise.plan.add`,
+`mise.plan.remove`, `mise.shopping_list`, `mise.shopping_list.add`,
+`mise.shopping_list.check`, `mise.shopping_list.generate`, `mise.chefs.ask`,
+`mise.preferences`, `mise.preference.record`, and `mise.preference.drop`
+([README.md](README.md#meals-mise); mise's `docs/HOB.md` is the contract).
+When the tool registry (DESIGN.md Plane 4) lands, capabilities are its
+sentinel-facing projection; until then they are the registry.
 
 ### Policies
 

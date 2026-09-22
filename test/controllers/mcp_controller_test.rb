@@ -89,6 +89,41 @@ class McpControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "readOnlyHint" => false, "destructiveHint" => true }, tools["todo_delete"]["annotations"])
   end
 
+  test "a surface's webhook capabilities are tools too, delivered signed with the person as the caller" do
+    Capability.create!(name: "mise.recipes", description: "Search the household's recipes.", kind: "read", realm: "household",
+                       venue: "webhook", config: { "url" => "https://mise.test/hob/capabilities/mise.recipes", "secret" => "s3cret" },
+                       input_schema: { "type" => "object", "properties" => { "q" => { "type" => "string" } } })
+    delivered = []
+    Sentinel::Webhook.transport = lambda do |url, body, headers|
+      delivered << [ url, body, headers ]
+      [ "200", '{"recipes": [{"title": "Chili"}], "count": 1}' ]
+    end
+
+    rpc("tools/list")
+    tool = body["result"]["tools"].find { |t| t["name"] == "mise_recipes" }
+    assert_equal "mise.recipes", tool["title"]
+    assert_equal({ "readOnlyHint" => true, "destructiveHint" => false }, tool["annotations"])
+    assert_equal({ "q" => { "type" => "string" } }, tool["inputSchema"]["properties"])
+
+    assert_equal({ "recipes" => [ { "title" => "Chili" } ], "count" => 1 }, answered("mise_recipes", { q: "chili" }))
+    url, body, headers = delivered.first
+    delivery = JSON.parse(body)
+    assert_equal "https://mise.test/hob/capabilities/mise.recipes", url
+    assert_equal [ "mise.recipes", "tester", "intimate", { "q" => "chili" }, "person", nil, nil ],
+                 delivery.values_at("capability", "agent", "realm", "arguments", "decided_by", "request", "mission")
+    assert Sentinel::Webhook.verify("s3cret", headers["X-Hob-Signature"], body), "signed with the capability's secret"
+
+    Sentinel::Webhook.transport = ->(*) { [ "503", '{"error": "kitchen closed"}' ] }
+    result = call_tool("mise_recipes", {})
+    assert result["isError"], "a surface that is away is an answer, not a fault"
+    assert_match(/HTTP 503: kitchen closed/, result["content"].first["text"])
+
+    Capability.find_by!(name: "mise.recipes").update!(enabled: false)
+    refute_includes tool_names, "mise_recipes"
+  ensure
+    Sentinel::Webhook.transport = nil
+  end
+
   test "the list follows the rows: a disabled capability is gone, and clearance hides what is above it" do
     Capability.find_by!(name: "todo.drop").update!(enabled: false)
     refute_includes tool_names, "todo_drop"

@@ -1,12 +1,15 @@
 # hob as an MCP server (CLAUDE_CODE.md): what a person's own assistant, Claude
 # Code first, is handed as tools. The list is not written here. It is the
-# native capabilities (Sentinel::Native) visible at the request's clearance,
-# so a capability built for outside agents is a tool the day it lands, plus
-# the few things only a person may do (Mcp::Tools).
+# native capabilities (Sentinel::Native) and the webhook ones surfaces
+# registered (mise's, say) visible at the request's clearance, so a
+# capability built for outside agents is a tool the day it lands, plus the
+# few things only a person may do (Mcp::Tools).
 #
 # A person's key is not an agent's: nothing here passes the sentinel's gate,
 # and nothing is written to its ledger. The call runs as the person, at the
 # request's clearance, the way /v1/todos would; RLS decides what it can see.
+# A webhook tool is delivered to its surface signed as the sentinel would
+# deliver it, naming the person as the caller and `decided_by: person`.
 module Mcp
   class Error < StandardError; end
   class UnknownTool < Error; end
@@ -19,10 +22,26 @@ module Mcp
   ANSWERS = [ *Sentinel::Executor::ANSWERS, Sentinel::Native::Error, Ward::Error ].freeze
 
   # What a handler is given where the sentinel would hand it a request: the
-  # arguments, and who is asking. There is no request row, so no id.
+  # arguments, and who is asking. There is no request row, so no id, no
+  # reason, and no mission; the decision was the person's own.
   Call = Struct.new(:arguments, :principal, :surface, :realm, :capability, keyword_init: true) do
     def id = nil
     def ref = nil
+    def reason = nil
+    def decided_by = "person"
+    def on_mission_id = nil
+  end
+
+  # The handler for a webhook capability: the same signed delivery the
+  # executor makes for an agent, with the person as its caller.
+  class WebhookHandler
+    def initialize(call)
+      @call = call
+    end
+
+    def call
+      Sentinel::Webhook.deliver(@call.capability, @call)
+    end
   end
 
   Tool = Struct.new(:name, :spec, :handler, :capability, keyword_init: true) do
@@ -58,10 +77,14 @@ module Mcp
   end
 
   def capability_tools
-    Capability.enabled.where(venue: "native").where.not(name: AGENTS_ONLY).order(:name).filter_map do |capability|
-      handler = capability.handler or next
-      spec = handler::CAPABILITY.merge("description" => capability.description, "input_schema" => capability.input_schema,
-                                       "kind" => capability.kind, "realm" => capability.realm)
+    Capability.enabled.where(venue: %w[native webhook]).where.not(name: AGENTS_ONLY).order(:name).filter_map do |capability|
+      handler = capability.native? ? capability.handler : WebhookHandler
+      next if handler.nil?
+
+      spec = (capability.native? ? handler::CAPABILITY : {}).merge(
+        "name" => capability.name, "description" => capability.description, "input_schema" => capability.input_schema,
+        "kind" => capability.kind, "realm" => capability.realm
+      )
       Tool.new(name: tool_name(capability.name), spec: spec, handler: handler, capability: capability)
     end
   end

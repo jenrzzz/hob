@@ -6,7 +6,7 @@ personas, memory, tools, compute, voice. See [DESIGN.md](DESIGN.md) for the
 full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 [SENTINEL.md](SENTINEL.md) for how outside agents get in,
 [TODOS.md](TODOS.md) for the household's todos,
-[BUDGET.md](BUDGET.md) for its budget,
+[BUDGET.md](BUDGET.md) for its budget, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure, and
 [CLAUDE_CODE.md](CLAUDE_CODE.md) for how a person's own assistant gets in.
 
@@ -172,6 +172,38 @@ bin/rails "hob:budget:backend[house-ynab,ynab,<plan id>,household]" KEY_ENV=YNAB
 bin/rails "hob:budget:check[house-ynab]"
 bin/rails "hob:sentinel:policy[muse,budget.transactions,allow]"   # and the rest: BUDGET.md has the set
 ```
+
+## Meals: mise
+
+The kitchen is a surface of its own, [mise](https://github.com/jenrzzz/mise),
+and it hosts its capabilities itself: recipes, the week's meal plan, the
+shopping list, each member's cravings and aversions, and a word with Chef
+Saffron and Maggie. hob registers them from mise's manifest as webhook
+capabilities and signs every delivery with a secret it hands to mise's
+Coolify app; mise's `docs/HOB.md` is the contract, and SENTINEL.md
+(*Capabilities*) is how registration works.
+
+```sh
+bin/rails "hob:surface:register[mise,https://mise.amber.place]" APP=<mise's coolify app uuid>
+bin/rails "hob:surface:capabilities[mise]"                       # what is registered, and how much each has been asked
+
+for cap in recipes recipe.get plan shopping_list preferences; do     # the reads: allowed outright
+  bin/rails "hob:sentinel:policy[marley,mise.$cap,allow]" LIMITS='{"per_hour":60}'
+done
+for cap in recipe.add plan.add plan.remove shopping_list.add shopping_list.check preference.record preference.drop; do
+  bin/rails "hob:sentinel:policy[marley,mise.$cap,review]" LIMITS='{"per_day":60}' \
+    GUIDANCE="Marley keeps the kitchen for Tessa. Planning, listing, and recording what the family said they want are fine. Question a preference nobody said out loud, and anything that empties a day already planned."
+done
+bin/rails "hob:sentinel:policy[marley,mise.shopping_list.generate,confirm]"   # rebuilds the week's list from scratch
+bin/rails "hob:sentinel:policy[marley,mise.chefs.ask,allow]" LIMITS='{"per_day":40}' \
+  CONSTRAINTS='{"act":{"pattern":"^(false)?$"}}'                               # the chefs advise; they do not act on an agent's say-so
+```
+
+The `act` constraint reads: absent or `false`. With it, an agent can ask
+the chefs anything but cannot have them change the plan or the list; a
+person, through Claude Code, can (`mise_chefs_ask` with `act: true`).
+The same capabilities are tools in Claude Code the moment they are
+registered ([CLAUDE_CODE.md](CLAUDE_CODE.md)).
 
 ## Keeping watch: the ward
 

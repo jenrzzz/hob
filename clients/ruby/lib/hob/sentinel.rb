@@ -152,7 +152,7 @@ module Hob
     end
 
     # Register (or update) a webhook or poll capability — a person's key.
-    #   register_capability(name: "mise.add_to_shopping_list", description: "...", kind: "act",
+    #   register_capability(name: "mise.shopping_list.add", description: "...", kind: "act",
     #                       venue: "webhook", config: { url: ..., secret: ... }, input_schema: {...})
     def register_capability(name:, description:, venue:, config:, kind: "act", realm: "household", input_schema: nil, enabled: nil)
       body = { name: name, description: description, venue: venue, config: config, kind: kind, realm: realm,

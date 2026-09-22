@@ -39,6 +39,8 @@ class ProvisionTest < ActiveSupport::TestCase
     assert_equal "100.64.0.1", pushed("HOB_ADDR").body[:value]
     assert_equal :post, pushed("HOB_KEY").method
     assert pushed("HOB_KEY").body[:is_shown_once], "the key is hidden in the Coolify UI"
+    assert_equal [ false, true ], pushed("HOB_KEY").body.values_at(:is_buildtime, :is_runtime), "runtime only: a build arg named like a secret fails the build"
+    assert_equal [ false, true ], pushed("HOB_URL").body.values_at(:is_buildtime, :is_runtime)
     refute pushed("HOB_URL").body[:is_shown_once]
 
     key = ApiKey.authenticate(pushed("HOB_KEY").body[:value])

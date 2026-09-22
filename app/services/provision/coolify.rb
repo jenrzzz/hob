@@ -19,12 +19,17 @@ class Provision
     end
 
     # Coolify's env endpoint is POST for a new key and PATCH for an existing
-    # one. `secret` names keys whose value the UI should stop showing.
+    # one. `secret` names keys whose value the UI should stop showing. What
+    # hob pushes is for the running app, never the image: a variable Coolify
+    # treats as build-time becomes a build argument, and Docker's
+    # SecretsUsedInArgOrEnv check refuses a build whose argument is named
+    # like a secret (HOB_WEBHOOK_SECRET), so the deploy fails. Coolify's own
+    # default for a variable made through the API is build-time.
     def set_env(uuid, vars, secret: nil)
       existing = @transport.call(:get, "/applications/#{uuid}/envs", nil).map { |e| e["key"] }
       vars.each do |key, value|
         body = { key: key, value: value, is_preview: false, is_literal: true, is_multiline: false,
-                 is_shown_once: Array(secret).include?(key) }
+                 is_buildtime: false, is_runtime: true, is_shown_once: Array(secret).include?(key) }
         @transport.call(existing.include?(key) ? :patch : :post, "/applications/#{uuid}/envs", body)
       end
     end

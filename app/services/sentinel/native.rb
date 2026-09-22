@@ -24,7 +24,13 @@ module Sentinel
       "ward_status" => "Sentinel::Native::WardStatus",
       "ward_audit_run" => "Sentinel::Native::WardAuditRun",
       "capability_search" => "Sentinel::Native::CapabilitySearch",
-      "calendar_push" => "Sentinel::Native::CalendarPush"
+      "calendar_push" => "Sentinel::Native::CalendarPush",
+      "budget_accounts" => "Sentinel::Native::BudgetAccounts",
+      "budget_categories" => "Sentinel::Native::BudgetCategories",
+      "budget_transactions" => "Sentinel::Native::BudgetTransactions",
+      "budget_transaction_get" => "Sentinel::Native::BudgetTransactionGet",
+      "budget_transaction_create" => "Sentinel::Native::BudgetTransactionCreate",
+      "budget_transaction_update" => "Sentinel::Native::BudgetTransactionUpdate"
     }.freeze
 
     module_function

@@ -45,7 +45,7 @@ a realm; a misspelt one must not quietly mean "everything".
 
 | from | what | names |
 |---|---|---|
-| capability rows, `venue: native`, enabled, realm ≤ clearance | everything the household's agents can be granted | `todo_list`, `todo_create`, `ward_status`, `hob_usage`, ... |
+| capability rows, `venue: native`, enabled, realm ≤ clearance | everything the household's agents can be granted | `todo_list`, `todo_create`, `budget_transactions`, `ward_status`, `hob_usage`, ... |
 | `Mcp::Tools` | what a person's key may do and no agent is offered | `todo_delete`, `ward_findings`, `ward_ack`, `ward_unack` |
 
 - A tool's name is the capability's with the dots turned to underscores

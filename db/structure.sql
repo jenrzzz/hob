@@ -107,8 +107,8 @@ CREATE TABLE public.board_posts (
     body text NOT NULL,
     links jsonb DEFAULT '[]'::jsonb NOT NULL,
     sender_agent_id bigint NOT NULL,
-    sender_principal_id bigint NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) without time zone NOT NULL,
+    surface character varying NOT NULL
 );
 
 ALTER TABLE ONLY public.board_posts FORCE ROW LEVEL SECURITY;
@@ -1185,13 +1185,6 @@ CREATE INDEX index_board_posts_on_sender_agent_id ON public.board_posts USING bt
 
 
 --
--- Name: index_board_posts_on_sender_principal_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_board_posts_on_sender_principal_id ON public.board_posts USING btree (sender_principal_id);
-
-
---
 -- Name: index_board_posts_on_thread_id_and_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1785,14 +1778,6 @@ ALTER TABLE ONLY public.missions
 
 
 --
--- Name: board_posts fk_rails_f78ae150cb; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.board_posts
-    ADD CONSTRAINT fk_rails_f78ae150cb FOREIGN KEY (sender_principal_id) REFERENCES public.principals(id);
-
-
---
 -- Name: board_posts; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -1934,6 +1919,8 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260924190500'),
+('20260924190000'),
 ('20260924180000'),
 ('20260924170000'),
 ('20260921000002'),

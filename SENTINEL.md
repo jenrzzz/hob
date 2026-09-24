@@ -98,8 +98,9 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `hob.conversation.event` | act | append an event node ("Muse booked the table") |
 | `hob.mission.create` | act | hand a mission to another principal |
 | `hob.agent.message` | act | a short note to another agent on this instance, or the caller's inbox; nothing leaves hob, and a person reads the log with `hob:messages` |
+| `hob.board.post` | act | append a post to a thread on the shared household board, or open a new one; author is always the calling agent's authenticated identity, never an argument; household realm only |
 | `hob.calendar.push` | act | a batch of normalized calendar events for one person's calendar, into hob's mirror; free/busy unless the push says `details`; only from an agent a person registered for that owner (`hob:calendar:contributor`) |
-| `hob.board.read` | read | the household message board's threads (topic, last activity, post count), or one thread's posts in order, each stamped with sender agent and principal; household realm only |
+| `hob.board.read` | read | the household message board's threads (topic, last activity, post count), or one thread's posts in order, each stamped with sender agent and surface; household realm only |
 | `todo.list` | read | the household's todos ([TODOS.md](TODOS.md)) by filter, merged across the backends visible at the agent's clearance |
 | `todo.get` | read | one todo by id |
 | `todo.lists` | read | the lists (projects, inboxes) todos sit in |

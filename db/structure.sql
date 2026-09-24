@@ -95,6 +95,26 @@ CREATE TABLE public.ar_internal_metadata (
 
 
 --
+-- Name: board_posts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.board_posts (
+    id character varying NOT NULL,
+    thread_id character varying NOT NULL,
+    thread_slug character varying NOT NULL,
+    thread_topic character varying NOT NULL,
+    realm character varying NOT NULL,
+    body text NOT NULL,
+    links jsonb DEFAULT '[]'::jsonb NOT NULL,
+    sender_agent_id bigint NOT NULL,
+    sender_principal_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.board_posts FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: branches; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -892,6 +912,14 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 
 --
+-- Name: board_posts board_posts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.board_posts
+    ADD CONSTRAINT board_posts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: branches branches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1147,6 +1175,34 @@ CREATE INDEX index_api_keys_on_principal_id ON public.api_keys USING btree (prin
 --
 
 CREATE UNIQUE INDEX index_api_keys_on_token_digest ON public.api_keys USING btree (token_digest);
+
+
+--
+-- Name: index_board_posts_on_sender_agent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_board_posts_on_sender_agent_id ON public.board_posts USING btree (sender_agent_id);
+
+
+--
+-- Name: index_board_posts_on_sender_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_board_posts_on_sender_principal_id ON public.board_posts USING btree (sender_principal_id);
+
+
+--
+-- Name: index_board_posts_on_thread_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_board_posts_on_thread_id_and_created_at ON public.board_posts USING btree (thread_id, created_at);
+
+
+--
+-- Name: index_board_posts_on_thread_slug; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_board_posts_on_thread_slug ON public.board_posts USING btree (thread_slug);
 
 
 --
@@ -1553,6 +1609,14 @@ ALTER TABLE ONLY public.calendar_contributors
 
 
 --
+-- Name: board_posts fk_rails_43e63fa885; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.board_posts
+    ADD CONSTRAINT fk_rails_43e63fa885 FOREIGN KEY (sender_agent_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: sentinel_requests fk_rails_57f2dafd85; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1721,6 +1785,20 @@ ALTER TABLE ONLY public.missions
 
 
 --
+-- Name: board_posts fk_rails_f78ae150cb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.board_posts
+    ADD CONSTRAINT fk_rails_f78ae150cb FOREIGN KEY (sender_principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: board_posts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.board_posts ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: budget_backends; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -1755,6 +1833,15 @@ ALTER TABLE public.petitions ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.prompt_snapshots ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: board_posts realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.board_posts USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (board_posts.realm)::text)) <= public.app_clearance_rank()));
+
 
 --
 -- Name: budget_backends realm_visibility; Type: POLICY; Schema: public; Owner: -
@@ -1847,6 +1934,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260924180000'),
 ('20260924170000'),
 ('20260921000002'),
 ('20260921000001'),

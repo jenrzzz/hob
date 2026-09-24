@@ -24,6 +24,7 @@ module Sentinel
       "ward_status" => "Sentinel::Native::WardStatus",
       "ward_audit_run" => "Sentinel::Native::WardAuditRun",
       "capability_search" => "Sentinel::Native::CapabilitySearch",
+      "board_read" => "Sentinel::Native::BoardRead",
       "calendar_push" => "Sentinel::Native::CalendarPush",
       "budget_accounts" => "Sentinel::Native::BudgetAccounts",
       "budget_categories" => "Sentinel::Native::BudgetCategories",

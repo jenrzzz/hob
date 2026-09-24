@@ -75,13 +75,21 @@ class AgentMessageTest < ActiveSupport::TestCase
       "5550102000" => /not an address: messages never leave hob/,
       "tester" => /tester is a human, not an agent/,
       "mise-worker" => /mise-worker is a worker, not an agent/,
-      "butler" => /butler is cleared above household/
+      "butler" => /butler is cleared above household and does not accept household messages/
     }.each do |to, error|
       request = send!(to: to, body: "hello")
       assert_equal "failed", request.status, "#{to} should be refused"
       assert_match error, request.error
     end
     assert_equal 0, AgentMessage.count, "nothing was stored"
+  end
+
+  test "a higher-cleared agent whose inbox a person opened receives household messages" do
+    butler = Principal.create!(name: "butler", kind: "agent", max_clearance: "personal", accepts_lower_messages: true)
+
+    request = send!(to: "butler", body: "Is Friday dinner still on?", agent: @marley)
+    assert_equal "completed", request.status, request.error.to_s
+    assert_equal butler, AgentMessage.find(request.result["id"]).recipient
   end
 
   # 3. A body over 500 characters is rejected.

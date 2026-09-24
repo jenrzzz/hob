@@ -71,7 +71,8 @@ module Sentinel
       # A registered agent at the capability's tier (household unless the
       # house retuned the row): never a person, never anything off this
       # instance, never an agent cleared higher than the tier the message
-      # travels at.
+      # travels at unless a person opened that agent's inbox to it
+      # (accepts_lower_messages, set with hob:inbox).
       def recipient!(name)
         name = name.to_s.strip
         if name.include?("@") || name.match?(/\A\+?[\d\s().-]{7,}\z/)
@@ -83,8 +84,8 @@ module Sentinel
         raise Error, "#{principal.name} is a #{principal.kind}, not an agent: messages go only to agents" unless principal.agent?
 
         tier = request.capability.realm
-        if Realm.rank_of(principal.max_clearance) > Realm.rank_of(tier)
-          raise Error, "#{principal.name} is cleared above #{tier}: messages go only to #{tier} agents"
+        if Realm.rank_of(principal.max_clearance) > Realm.rank_of(tier) && !principal.accepts_lower_messages?
+          raise Error, "#{principal.name} is cleared above #{tier} and does not accept #{tier} messages"
         end
 
         principal

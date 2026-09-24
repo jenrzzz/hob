@@ -490,7 +490,8 @@ CREATE TABLE public.principals (
     max_clearance character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    channel character varying
+    channel character varying,
+    accepts_lower_messages boolean DEFAULT false NOT NULL
 );
 
 
@@ -1846,6 +1847,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260924170000'),
 ('20260921000002'),
 ('20260921000001'),
 ('20260920063000'),

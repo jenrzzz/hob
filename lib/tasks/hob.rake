@@ -59,6 +59,26 @@ namespace :hob do
     puts principal.channel.present? ? "#{principal.name}: missions announced on #{principal.channel}" : "#{principal.name}: no channel"
   end
 
+  desc "Open or close an agent's inbox to hob.agent.message from its tier when the agent is cleared higher: " \
+       "bin/rails \"hob:inbox[skipsy,open]\"; open|closed; no state shows it; no arguments lists the open ones"
+  task :inbox, [ :agent, :state ] => :environment do |_task, args|
+    if args[:agent].blank?
+      open = Principal.agents.where(accepts_lower_messages: true).order(:name).pluck(:name)
+      puts open.any? ? open.join("\n") : "no agent accepts messages from below its clearance"
+      next
+    end
+
+    agent = Principal.agents.find_by!(name: args[:agent])
+    case args[:state]
+    when "open" then agent.update!(accepts_lower_messages: true)
+    when "closed" then agent.update!(accepts_lower_messages: false)
+    when nil, "" then nil
+    else abort "state must be open or closed, got #{args[:state].inspect}"
+    end
+    puts "#{agent.name} (#{agent.max_clearance}): " \
+         "#{agent.accepts_lower_messages? ? 'accepts' : 'refuses'} messages from agents below its clearance"
+  end
+
   desc "List agent-to-agent messages (hob.agent.message), newest first, for a person to audit: bin/rails \"hob:messages[50]\""
   task :messages, [ :limit ] => :environment do |_task, args|
     rows = AgentMessage.newest_first.limit((args[:limit].presence || 50).to_i).includes(:sender, :recipient)

@@ -489,7 +489,10 @@ calendar_events    ulid, source_agent, owner, calendar, uid (unique together), s
    tier, stored in `agent_messages` with the request that sent it, read by
    polling `inbox`. The recipients a grant allows are its `to` constraint;
    the body is handed to the reader as another agent's words, not as an
-   instruction, and grants the reader nothing.
+   instruction, and grants the reader nothing. An agent cleared above the
+   tier is refused as a recipient unless a person opens its inbox with
+   `hob:inbox[<agent>,open]`: that lets lower-tier words into a
+   higher-cleared agent's context, and its replies travel back down.
 4. **Streaming results.** `hob.complete` through the sentinel is blocking;
    the request row is the only delivery. Fine for planning-sized calls;
    revisit if an agent wants a narrator-length generation.

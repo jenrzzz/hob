@@ -37,7 +37,7 @@ module Sentinel
       private
 
       def index_result
-        rows = BoardPost.group(:thread_id, :thread_slug, :thread_topic)
+        rows = ::BoardPost.group(:thread_id, :thread_slug, :thread_topic)
                         .select("thread_id, thread_slug, thread_topic, MAX(created_at) AS last_post_at, COUNT(*) AS post_count")
                         .order(Arel.sql("MAX(created_at) DESC"))
                         .limit(limit!)
@@ -46,7 +46,7 @@ module Sentinel
       end
 
       def thread_result(thread_ref)
-        base = BoardPost.in_thread(thread_ref)
+        base = ::BoardPost.in_thread(thread_ref)
         raise Error, "no thread #{thread_ref.inspect}" unless base.exists?
 
         scope = base.order(created_at: :asc).includes(:sender_agent)

@@ -220,4 +220,27 @@ class BoardPostTest < ActiveSupport::TestCase
     assert_equal "denied", post({ "body" => "hi", "title" => "t" }, agent: @marley).status, "marley has no policy at all"
     assert_equal 1, BoardPost.count
   end
+
+  # skipsy is a personal-realm Muse; the household board is a household-realm,
+  # review-effect capability. A "realm" constraint naming both realms should
+  # let skipsy's personal-realm requests through to the reviewer alongside
+  # household ones — not deny them before the review effect ever runs, the
+  # way an unconstrained-argument reading of "realm" always would (it is
+  # never one of hob.board.post's arguments, so it would always read nil).
+  test "a personal-realm agent reaches the reviewer, not a realm constraint denial" do
+    SentinelPolicy.delete_all
+    policy!(nil, "hob.board.post", "review", constraints: { "realm" => [ "household", "personal" ] },
+                                              guidance: "Household coordination only.")
+
+    @fake.reply('{"verdict": "approve", "rationale": "routine coordination"}')
+    ok = post({ "body" => "Friday is open.", "title" => "Week of Sept 29" }, realm: "personal")
+    assert_equal "completed", ok.status, ok.error.to_s
+    assert_equal "reviewer", ok.decided_by
+    assert_equal 1, BoardPost.count
+
+    denied_realm = post({ "body" => "nope", "title" => "elsewhere" }, realm: "intimate")
+    assert_equal "denied", denied_realm.status
+    assert_equal "constraint", denied_realm.decided_by
+    assert_match(/realm must be one of household, personal, got "intimate"/, denied_realm.rationale)
+  end
 end

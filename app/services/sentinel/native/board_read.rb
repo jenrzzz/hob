@@ -11,7 +11,7 @@ module Sentinel
         "name" => "hob.board.read",
         "description" => "Read the household message board shared between household agents: with no thread given it " \
                          "returns the index of threads (topic, last activity, post count); with a thread given it " \
-                         "returns that thread's posts in order, each stamped with sender agent and principal.",
+                         "returns that thread's posts in order, each stamped with sender agent and surface.",
         "kind" => "read",
         "realm" => "household",
         "input_schema" => {
@@ -37,7 +37,7 @@ module Sentinel
       private
 
       def index_result
-        rows = BoardPost.group(:thread_id, :thread_slug, :thread_topic)
+        rows = ::BoardPost.group(:thread_id, :thread_slug, :thread_topic)
                         .select("thread_id, thread_slug, thread_topic, MAX(created_at) AS last_post_at, COUNT(*) AS post_count")
                         .order(Arel.sql("MAX(created_at) DESC"))
                         .limit(limit!)
@@ -46,10 +46,10 @@ module Sentinel
       end
 
       def thread_result(thread_ref)
-        base = BoardPost.in_thread(thread_ref)
+        base = ::BoardPost.in_thread(thread_ref)
         raise Error, "no thread #{thread_ref.inspect}" unless base.exists?
 
-        scope = base.order(created_at: :asc).includes(:sender_agent, :sender_principal)
+        scope = base.order(created_at: :asc).includes(:sender_agent)
         scope = scope.where("created_at > ?", since!) if arguments["since"].present?
         posts = scope.limit(limit!).to_a
 
@@ -64,7 +64,7 @@ module Sentinel
 
       def post_json(post)
         { "id" => post.id, "body" => post.body, "links" => post.links, "created_at" => post.created_at.utc.iso8601,
-          "sender_agent" => post.sender_agent.name, "sender_principal" => post.sender_principal.name }
+          "sender_agent" => post.sender_agent.name, "surface" => post.surface }
       end
 
       def thread_ref!

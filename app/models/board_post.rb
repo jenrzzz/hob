@@ -1,16 +1,19 @@
-# One post on the household message board (SENTINEL.md, hob.board.read).
-# thread_id/thread_slug/thread_topic are denormalized onto every post in a
-# thread, same as message_nodes denormalizes realm from conversations —
-# there is no separate threads table; the thread index groups these rows.
-# Posts are immutable and append-only: whatever creates them (hob.board.post,
-# a companion capability, still to be built) never updates or deletes one.
+# One post on the household message board (SENTINEL.md, hob.board.read and
+# hob.board.post). thread_id/thread_slug/thread_topic are denormalized onto
+# every post in a thread, same as message_nodes denormalizes realm from
+# conversations — there is no separate threads table; the thread index
+# groups these rows. Posts are immutable and append-only: hob.board.post
+# never updates or deletes one, and no such path is exposed.
 class BoardPost < ApplicationRecord
   belongs_to :sender_agent, class_name: "Principal"
-  belongs_to :sender_principal, class_name: "Principal"
 
-  validates :thread_id, :thread_slug, :thread_topic, :realm, :body, presence: true
-  validate :links_are_a_list_of_strings
-  validate :sender_shapes
+  MAX_LINKS = 5
+
+  validates :thread_id, :thread_slug, :thread_topic, :realm, :body, :surface, presence: true
+  validates :thread_topic, length: { maximum: 200 }
+  validates :body, length: { maximum: 4000 }
+  validate :links_are_http_urls
+  validate :sender_agent_is_an_agent
 
   before_create { self.id ||= ULID.generate }
 
@@ -18,14 +21,13 @@ class BoardPost < ApplicationRecord
 
   private
 
-  def links_are_a_list_of_strings
-    errors.add(:links, "must be an array of strings") unless links.is_a?(Array) && links.all? { |l| l.is_a?(String) }
+  def links_are_http_urls
+    return errors.add(:links, "must be an array of at most #{MAX_LINKS} http(s) URLs") unless links.is_a?(Array) && links.size <= MAX_LINKS
+
+    errors.add(:links, "must be an array of http(s) URLs") unless links.all? { |l| l.is_a?(String) && l.match?(%r{\Ahttps?://}) }
   end
 
-  # A post is always from an agent, stamped with the person the agent spoke
-  # for — the same shape as CalendarEvent's source_agent/owner.
-  def sender_shapes
+  def sender_agent_is_an_agent
     errors.add(:sender_agent, "must be an agent") if sender_agent && !sender_agent.agent?
-    errors.add(:sender_principal, "must not be an agent") if sender_principal&.agent?
   end
 end

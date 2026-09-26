@@ -9,8 +9,6 @@ class BoardReadTest < ActiveSupport::TestCase
     native_capabilities!
     @skipsy, _ = agent("skipsy")
     @marley, _ = agent("marley")
-    @jenner = @principal
-    @tessa = Principal.create!(name: "tessa", kind: "human", max_clearance: "intimate")
     policy!(nil, "hob.board.read", "allow")
   end
 
@@ -18,9 +16,9 @@ class BoardReadTest < ActiveSupport::TestCase
     as(agent, realm: realm) { Sentinel.submit!(agent: agent, capability: "hob.board.read", arguments: arguments) }
   end
 
-  def post!(thread:, slug:, topic:, body: "hi", sender: @marley, principal: @tessa, links: [], realm: "household", created_at: Time.current)
+  def post!(thread:, slug:, topic:, body: "hi", sender: @marley, surface: "marley", links: [], realm: "household", created_at: Time.current)
     BoardPost.create!(thread_id: thread, thread_slug: slug, thread_topic: topic, realm: realm, body: body, links: links,
-                      sender_agent: sender, sender_principal: principal, created_at: created_at)
+                      sender_agent: sender, surface: surface, created_at: created_at)
   end
 
   test "sync! registers the capability as a native read at household, with the spec's schema" do
@@ -50,19 +48,19 @@ class BoardReadTest < ActiveSupport::TestCase
     assert threads.all? { |t| t.keys.sort == %w[id last_post_at post_count slug topic] }, "no post bodies in the index"
   end
 
-  # 2. With a valid thread slug, returns that thread's posts in ascending created_at order, each carrying sender_agent and sender_principal.
-  test "a valid thread slug returns its posts in ascending order, stamped with sender agent and principal" do
-    post!(thread: "t1", slug: "birthday-gifts", topic: "Birthday gifts", body: "shortlist", sender: @marley, principal: @tessa,
+  # 2. With a valid thread slug, returns that thread's posts in ascending created_at order, each carrying sender_agent and surface.
+  test "a valid thread slug returns its posts in ascending order, stamped with sender agent and surface" do
+    post!(thread: "t1", slug: "birthday-gifts", topic: "Birthday gifts", body: "shortlist", sender: @marley, surface: "marley",
           links: [ "https://example.com/teapot" ], created_at: 2.days.ago)
-    post!(thread: "t1", slug: "birthday-gifts", topic: "Birthday gifts", body: "teapot it is", sender: @skipsy, principal: @jenner,
+    post!(thread: "t1", slug: "birthday-gifts", topic: "Birthday gifts", body: "teapot it is", sender: @skipsy, surface: "claude-code",
           created_at: 1.day.ago)
 
     request = read({ "thread" => "birthday-gifts" })
     assert_equal "completed", request.status, request.error.to_s
     posts = request.result["posts"]
     assert_equal [ "shortlist", "teapot it is" ], posts.map { |p| p["body"] }, "ascending by created_at"
-    assert_equal [ "marley", "tessa" ], posts.first.values_at("sender_agent", "sender_principal")
-    assert_equal [ "skipsy", @jenner.name ], posts.last.values_at("sender_agent", "sender_principal")
+    assert_equal [ "marley", "marley" ], posts.first.values_at("sender_agent", "surface")
+    assert_equal [ "skipsy", "claude-code" ], posts.last.values_at("sender_agent", "surface")
     assert_equal [ "https://example.com/teapot" ], posts.first["links"]
     assert_equal [], posts.last["links"]
 

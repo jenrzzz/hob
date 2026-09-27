@@ -1,0 +1,8 @@
+<div class="card">
+  <h1>New key for <%= @principal.name %></h1>
+  <p>Surface <strong><%= @surface %></strong>, clearance <strong><%= @clearance %></strong>.
+    <% if @rotated.positive? %><%= pluralize(@rotated, "older key") %> for this surface revoked.<% end %></p>
+  <p>This is the only time it is shown. Copy it now.</p>
+  <code class="token"><%= @token %></code>
+  <p><%= link_to "Done", admin_root_path(anchor: "principal-#{@principal.id}") %></p>
+</div>

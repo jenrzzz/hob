@@ -1,6 +1,25 @@
 Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
+  # Admin pages (a person's browser session; the API below takes bearer keys).
+  # POST, not DELETE: API-only Rails has no Rack::MethodOverride for forms.
+  get "login", to: "sessions#new"
+  match "auth/:provider/callback", to: "sessions#create", via: %i[get post]
+  get "auth/failure", to: "sessions#failure"
+  post "logout", to: "sessions#destroy"
+  namespace :admin do
+    root "principals#index"
+    resources :principals, only: :create do
+      resources :keys, only: :create
+    end
+    resources :keys, only: [] do
+      member do
+        post :rotate
+        post :revoke
+      end
+    end
+  end
+
   namespace :v1 do
     resources :completions, only: %i[create show]
     resources :conversations, only: %i[index create show] do

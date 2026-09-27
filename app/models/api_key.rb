@@ -12,6 +12,14 @@ class ApiKey < ApplicationRecord
     token
   end
 
+  # A new key for the principal's surface, then its older keys for that
+  # surface go. Returns the raw token and how many were revoked.
+  def self.rotate!(principal:, surface:, default_clearance:)
+    token = issue!(principal: principal, surface: surface, default_clearance: default_clearance)
+    rotated = principal.api_keys.where(surface: surface).where.not(token_digest: digest(token)).destroy_all.size
+    [ token, rotated ]
+  end
+
   def self.authenticate(token)
     return nil if token.blank?
 

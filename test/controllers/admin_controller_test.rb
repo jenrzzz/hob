@@ -1,0 +1,108 @@
+require "test_helper"
+
+# The admin pages: a person signs in through the OIDC provider and manages
+# keys; nobody else gets in.
+class AdminControllerTest < ActionDispatch::IntegrationTest
+  setup do
+    OmniAuth.config.test_mode = true
+    @principal.update!(oidc_subject: "sub-tester")
+  end
+
+  teardown do
+    OmniAuth.config.mock_auth[:oidc] = nil
+    OmniAuth.config.test_mode = false
+  end
+
+  def sign_in(subject = "sub-tester")
+    OmniAuth.config.mock_auth[:oidc] = OmniAuth::AuthHash.new(provider: "oidc", uid: subject, info: { name: "Someone" })
+    post "/auth/oidc"
+    follow_redirect!
+  end
+
+  test "signed out, admin sends you to sign in; the API is unaffected" do
+    get "/admin"
+    assert_redirected_to "/login"
+    get "/login"
+    assert_response :ok
+    assert_select "form[action='/auth/oidc']"
+
+    get "/v1/models", headers: auth
+    assert_response :ok
+  end
+
+  test "a linked person signs in, mints, rotates and revokes keys" do
+    sign_in
+    assert_redirected_to "/admin"
+    follow_redirect!
+    assert_response :ok
+    assert_select "h2", text: "tester"
+
+    muse, _token = agent("muse")
+    post "/admin/principals/#{muse.id}/keys", params: { surface: "phone", clearance: "household" }
+    assert_response :ok
+    token = css_select(".token").text.strip
+    assert_match(/\Ahob_/, token)
+    assert_equal "no-store", response.headers["Cache-Control"]
+    key = ApiKey.authenticate(token)
+    assert_equal [ muse, "phone", "household" ], [ key.principal, key.surface, key.default_clearance ]
+
+    post "/admin/keys/#{key.id}/rotate"
+    assert_response :ok
+    rotated = css_select(".token").text.strip
+    assert_nil ApiKey.authenticate(token), "rotating revokes the old key"
+    assert ApiKey.authenticate(rotated)
+    assert_equal 1, muse.api_keys.where(surface: "muse").count, "other surfaces' keys are untouched"
+
+    post "/admin/keys/#{ApiKey.authenticate(rotated).id}/revoke"
+    assert_redirected_to "/admin#principal-#{muse.id}"
+    assert_nil ApiKey.authenticate(rotated)
+  end
+
+  test "adding a principal" do
+    sign_in
+    post "/admin/principals", params: { principal: { name: "marley", kind: "agent", max_clearance: "household" } }
+    assert Principal.find_by(name: "marley").agent?
+    post "/admin/principals", params: { principal: { name: "marley", kind: "agent", max_clearance: "household" } }
+    follow_redirect!
+    assert_select ".flash.alert", /taken/
+  end
+
+  test "an unlinked subject is refused and told how to link" do
+    sign_in("sub-stranger")
+    assert_response :forbidden
+    assert_select ".token", /hob:link\[.*sub-stranger\]/
+    get "/admin"
+    assert_redirected_to "/login"
+  end
+
+  test "an agent linked to a subject still cannot sign in" do
+    muse, = agent("muse")
+    muse.update_columns(oidc_subject: "sub-muse")
+    sign_in("sub-muse")
+    assert_response :forbidden
+  end
+
+  test "unlinking ends the session; sessions expire" do
+    sign_in
+    get "/admin"
+    assert_response :ok
+    @principal.update!(oidc_subject: nil)
+    get "/admin"
+    assert_redirected_to "/login"
+
+    @principal.update!(oidc_subject: "sub-tester")
+    sign_in
+    travel Admin::BaseController::SESSION_TTL + 1.minute do
+      get "/admin"
+      assert_redirected_to "/login"
+    end
+  end
+
+  test "signing out" do
+    sign_in
+    post "/logout"
+    assert_redirected_to "/login"
+    get "/admin"
+    assert_redirected_to "/login"
+  end
+end

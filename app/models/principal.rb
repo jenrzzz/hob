@@ -21,6 +21,10 @@ class Principal < ApplicationRecord
   # Notify). Blank means nobody is told; the principal finds out by polling.
   validates :channel, format: { with: %r{\Ahttps?://\S+\z}, message: "must be an http(s) URL" }, allow_blank: true
   normalizes :channel, with: ->(url) { url.to_s.strip.presence }
+  # Who this is at the household's OIDC provider (the id token's `sub`), so a
+  # person can sign in to the admin pages. Set with `hob:link`.
+  validates :oidc_subject, uniqueness: true, allow_nil: true
+  normalizes :oidc_subject, with: ->(sub) { sub.to_s.strip.presence }
 
   scope :agents, -> { where(kind: "agent") }
 

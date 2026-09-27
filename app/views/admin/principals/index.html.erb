@@ -1,0 +1,53 @@
+<h1>Keys</h1>
+
+<% @principals.each do |principal| %>
+  <section class="card" id="principal-<%= principal.id %>">
+    <div class="card-head">
+      <h2><%= principal.name %></h2>
+      <span class="tag"><%= principal.kind %></span>
+      <span class="tag">up to <%= principal.max_clearance %></span>
+      <% if principal.oidc_subject %><span class="tag">can sign in</span><% end %>
+    </div>
+
+    <% if principal.api_keys.any? %>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Surface</th><th>Clearance</th><th>Created</th><th>Last used</th><th></th></tr>
+          <% principal.api_keys.sort_by { |k| [ k.surface, k.created_at ] }.each do |key| %>
+            <tr>
+              <td><%= key.surface %></td>
+              <td><%= key.clearance %><% if key.clearance != key.default_clearance %> <span class="muted">(asks <%= key.default_clearance %>)</span><% end %></td>
+              <td title="<%= key.created_at.utc.iso8601 %>"><%= key.created_at.to_date %></td>
+              <td title="<%= key.last_used_at&.utc&.iso8601 %>"><%= key.last_used_at ? "#{time_ago_in_words(key.last_used_at)} ago" : "never" %></td>
+              <td class="actions">
+                <%= button_to "Rotate", rotate_admin_key_path(key), form_class: "inline",
+                      form: { onsubmit: "return confirm('Rotate #{j principal.name}’s #{j key.surface} key? Every #{j key.surface} key of theirs stops working now.')" } %>
+                <%= button_to "Revoke", revoke_admin_key_path(key), class: "danger", form_class: "inline",
+                      form: { onsubmit: "return confirm('Revoke #{j principal.name}’s #{j key.surface} key? Whatever holds it stops working now.')" } %>
+              </td>
+            </tr>
+          <% end %>
+        </table>
+      </div>
+    <% else %>
+      <p class="muted">No keys.</p>
+    <% end %>
+
+    <%= form_with url: admin_principal_keys_path(principal), class: "row" do |f| %>
+      <%= f.text_field :surface, placeholder: "surface (e.g. phone)", required: true, "aria-label": "Surface" %>
+      <%= f.select :clearance, @realms.take(Realm.rank_of(principal.max_clearance) + 1), { selected: principal.max_clearance }, "aria-label": "Clearance" %>
+      <%= f.submit "Mint key" %>
+    <% end %>
+  </section>
+<% end %>
+
+<section class="card">
+  <h2>Add a principal</h2>
+  <p class="muted">An agent's keys only reach the sentinel and the mission queue. A new agent is denied everything until it has a policy or charter.</p>
+  <%= form_with model: @principal, url: admin_principals_path, class: "row" do |f| %>
+    <%= f.text_field :name, placeholder: "name", required: true, "aria-label": "Name" %>
+    <%= f.select :kind, Principal::KINDS, {}, "aria-label": "Kind" %>
+    <%= f.select :max_clearance, @realms, {}, "aria-label": "Max clearance" %>
+    <%= f.submit "Add" %>
+  <% end %>
+</section>

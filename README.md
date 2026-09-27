@@ -56,6 +56,33 @@ older keys are deleted. hob needs these in its own environment:
 | `HOB_CLIENT_URL` | the name surfaces call hob by, e.g. `https://hob.amber.place` |
 | `HOB_CLIENT_ADDR` | optional: hob's tailnet address; surfaces pin the connection to it (`Hob::Client` `ipaddr:`) so calls never leave the tailnet while the certificate check stays on the public name |
 
+## Admin
+
+`/admin` is the one browser page: principals and their keys. It mints a key
+(shown once), rotates one (a new key for the surface, then its older ones
+go), revokes one, and adds a principal. It's what `hob:key` and `hob:agent`
+do from a terminal. A rotated or revoked key stops working immediately.
+A surface onboarded with `hob:provision` should be re-provisioned instead,
+so its app gets the new key.
+
+People sign in through the household's OIDC provider (Pocket ID, with
+passkeys). Sessions last at most 12 hours. Only a person (`kind: human`)
+linked to their provider identity gets in:
+
+```sh
+bin/rails "hob:link[jenner,<sub>]"   # the sign-in page shows the sub when it isn't linked yet
+bin/rails "hob:link[jenner,]"        # unlink; ends their sessions
+```
+
+| var | value |
+|---|---|
+| `HOB_OIDC_ISSUER` | the provider's issuer, e.g. `https://id.amber.place` |
+| `HOB_OIDC_CLIENT_ID`, `HOB_OIDC_CLIENT_SECRET` | hob's client at the provider |
+| `HOB_CLIENT_URL` | hob's public URL; the callback is `$HOB_CLIENT_URL/auth/oidc/callback` |
+
+Without `HOB_OIDC_ISSUER`, development signs in by principal name through
+a plain form.
+
 ## Outside agents: the sentinel
 
 An external AI (Meta's Muse, say) gets an *agent* key, which reaches only

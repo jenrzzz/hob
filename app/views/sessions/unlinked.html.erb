@@ -1,0 +1,7 @@
+<div class="card">
+  <h1>Not linked to anyone in hob</h1>
+  <p>The provider vouched for <strong><%= @name.presence || "you" %></strong>, but no person in hob is linked to that identity.
+     To link it, run this on hob:</p>
+  <code class="token">bin/rails "hob:link[&lt;principal&gt;,<%= @subject %>]"</code>
+  <p><%= link_to "Back to sign in", login_path %></p>
+</div>

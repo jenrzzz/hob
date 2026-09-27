@@ -558,7 +558,8 @@ CREATE TABLE public.principals (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     channel character varying,
-    accepts_lower_messages boolean DEFAULT false NOT NULL
+    accepts_lower_messages boolean DEFAULT false NOT NULL,
+    oidc_subject character varying
 );
 
 
@@ -1507,6 +1508,13 @@ CREATE UNIQUE INDEX index_principals_on_name ON public.principals USING btree (n
 
 
 --
+-- Name: index_principals_on_oidc_subject; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_principals_on_oidc_subject ON public.principals USING btree (oidc_subject);
+
+
+--
 -- Name: index_prompt_snapshots_on_conversation_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2071,6 +2079,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260927193600'),
 ('20260927000001'),
 ('20260924190500'),
 ('20260924190000'),

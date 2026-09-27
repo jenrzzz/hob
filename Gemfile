@@ -52,3 +52,7 @@ gem "apnotic", "~> 1.8"
 # Error reporting; config/initializers/sentry.rb, on only where SENTRY_DSN is set
 gem "sentry-ruby"
 gem "sentry-rails"
+
+gem "omniauth", "~> 2.1"
+gem "omniauth_openid_connect", "~> 0.8.0"
+gem "omniauth-rails_csrf_protection", "~> 2.0"

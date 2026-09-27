@@ -1,0 +1,10 @@
+<div class="card">
+  <h1>Sign in</h1>
+  <% if @provider == "oidc" %>
+    <p class="muted">With your household passkey.</p>
+    <%= button_to "Sign in", "/auth/oidc", class: "primary", data: { turbo: false } %>
+  <% else %>
+    <p class="muted">No OIDC provider configured (<code>HOB_OIDC_ISSUER</code>): development sign-in by principal name.</p>
+    <%= button_to "Sign in as a developer", "/auth/developer", class: "primary" %>
+  <% end %>
+</div>

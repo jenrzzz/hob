@@ -134,6 +134,17 @@ namespace :hob do
     puts "clearance #{clearance}; #{principal.trusted? ? 'a person: may decide petitions and register a phone' : "a #{principal.kind}: cannot decide or register a phone"}"
   end
 
+  desc "Link a person to their identity at the household's OIDC provider so they can sign in to /admin: " \
+       "bin/rails \"hob:link[jenner,<sub>]\" (the sign-in page shows the sub); an empty sub unlinks and ends their sessions"
+  task :link, [ :principal, :subject ] => :environment do |_task, args|
+    abort "usage: bin/rails \"hob:link[principal,subject]\"" if args[:principal].blank?
+
+    principal = Principal.find_by!(name: args[:principal])
+    abort "#{principal.name} is a #{principal.kind}; only people sign in" unless principal.trusted?
+    principal.update!(oidc_subject: args[:subject])
+    puts principal.oidc_subject ? "#{principal.name} signs in as #{principal.oidc_subject}" : "#{principal.name}: unlinked"
+  end
+
   namespace :sentinel do
     desc "Set a policy rule. bin/rails \"hob:sentinel:policy[muse,hob.complete,review]\"; agent '*' = every agent; " \
          "GUIDANCE='...' CONSTRAINTS='{\"role\":[\"cheap-classifier\"]}' LIMITS='{\"per_day\":50}'"

@@ -41,6 +41,14 @@ module Hob
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
 
+    # The admin pages (app/controllers/admin) are the one browser surface: a
+    # person signs in through the household's OIDC provider and gets a cookie
+    # session. The API never reads it; its callers still send bearer keys.
+    config.session_store :cookie_store, key: "_hob_session", same_site: :lax, expire_after: 12.hours
+    config.middleware.use ActionDispatch::Cookies
+    config.middleware.use config.session_store, config.session_options
+    config.middleware.use ActionDispatch::Flash
+
     # RLS policies and functions live in the schema; schema.rb can't express them.
     config.active_record.schema_format = :sql
     # pg_dump's COMMENT ON EXTENSION vector breaks least-privilege db:prepare.

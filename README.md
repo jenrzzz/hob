@@ -7,7 +7,8 @@ full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 [SENTINEL.md](SENTINEL.md) for how outside agents get in,
 [TODOS.md](TODOS.md) for the household's todos,
 [BUDGET.md](BUDGET.md) for its budget, mise's `docs/HOB.md` for its kitchen,
-[WARD.md](WARD.md) for the watch it keeps over the household's exposure, and
+[WARD.md](WARD.md) for the watch it keeps over the household's exposure,
+[BROWSE.md](BROWSE.md) for the household's browser, and
 [CLAUDE_CODE.md](CLAUDE_CODE.md) for how a person's own assistant gets in.
 
 ## Running
@@ -253,6 +254,29 @@ bin/rails "hob:key[jenner,claude-code]"     # a person's key for the plugin, sho
 
 The plugin (`plugins/hob`) carries no tool list, only skills: `hob:todos`,
 `hob:capture`, and `hob:ward`. See [CLAUDE_CODE.md](CLAUDE_CODE.md).
+## Browsing
+
+hob lends out the household's own browser a tab at a time: a *browser* is
+a row naming a real, headed Chrome somewhere in the house, run by
+[gofer](BROWSE.md#gofer) on the Mac mini with a profile a person has
+logged into. An agent opens a *session* for a stated goal, gets the page
+back as an accessibility snapshot with a ref on every element, and acts by
+ref; gofer's key keeps the tab on the site and off checkout. A browser
+has a realm (the profile's logins are somebody's), and RLS hides it below
+that clearance.
+
+```sh
+export GOFER_KEY=...                                        # gofer's bearer key, in hob's environment
+bin/rails "hob:browse:browser[mini-chrome,gofer,http://mini.tailnet.ts.net:8378,personal]" KEY_ENV=GOFER_KEY ADDR=100.90.105.100
+bin/rails hob:browse:browsers                               # registered, and whether each answers
+bin/rails hob:browse:sessions                               # open tabs, whose, and for what
+bin/rails "hob:sentinel:policy[muse,browse.open,review]" GUIDANCE="..."   # the goal is judged once, at open
+bin/rails "hob:sentinel:policy[muse,browse.*,allow]"        # steps ride on the session: browse.act, browse.snapshot, browse.close
+```
+
+`OWNER=`, `KEY=`, `DOMAINS=amazon.com,ynab.com` (narrower than gofer's
+key), and `ENABLED=0` are the other knobs. [BROWSE.md](BROWSE.md) is the
+design.
 
 ## API sketch
 
@@ -292,6 +316,12 @@ PATCH /v1/todos/:id                    the same, plus notes_append, add_tags, re
 POST /v1/todos/:id/complete|reopen|drop · DELETE /v1/todos/:id
 GET  /v1/todo_lists?backend=&status=&q= → { lists: [{ id, backend, name, kind: project|inbox, path, status, open_count }], unavailable }
 GET/POST/PATCH/DELETE /v1/todo_backends[/:name] · POST /v1/todo_backends/:name/check   (a person)
+POST /v1/browse_sessions               { goal, url, browser, domains, ttl, screenshot, max_chars }
+                                       → { session: { id, browser, goal, status, steps, url, title, domains, expires_at },
+                                           snapshot, truncated, blocked, screenshot }
+GET  /v1/browse_sessions[/:id?screenshot=1] · DELETE /v1/browse_sessions/:id
+POST /v1/browse_sessions/:id/actions   { action: navigate|click|type|press|select|hover|scroll|back|forward|reload|wait|read, ... }
+GET/POST/PATCH/DELETE /v1/browsers[/:name] · POST /v1/browsers/:name/check   (a person)
 GET  /v1/personas · /v1/models · /v1/snapshots/:hash
 ```
 

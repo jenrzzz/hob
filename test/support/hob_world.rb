@@ -79,6 +79,12 @@ module HobWorld
                           config: { "plan" => plan, "key_env" => "HOB_TEST_YNAB_TOKEN" }.merge(config.stringify_keys))
   end
 
+  # A browser row (BROWSE.md). The default kind is the in-memory Fake,
+  # whose pages live in Browse::Backends::Fake.site(name) until Fake.reset!.
+  def browser(name = "mini", realm: "personal", kind: "fake", owner: @principal, **attrs)
+    Browser.create!(name: name, kind: kind, realm: realm, principal: owner, **attrs)
+  end
+
   # Runs a block the way a request from `principal` at `realm` would.
   def as(principal, realm:, surface: principal.name)
     Clearance.with(realm) do

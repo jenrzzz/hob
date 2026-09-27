@@ -111,6 +111,11 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `ward.status` | read | the household's security posture as the ward sees it ([WARD.md](WARD.md)): checks, staleness, open and acknowledged findings, the latest triage; `personal` tier |
 | `ward.audit.run` | act | queue a `ward.audit` mission for the ward worker to run a check now; `personal` tier |
 | `hob.capability.search` | read | keyword search over the capability catalog — name, description, kind, realm, and whether the caller may petition for each — filtered to the caller's clearance |
+| `browse.open` | act | a tab in one of the household's real browsers ([BROWSE.md](BROWSE.md)), at a URL, for a stated goal: the request policy judges |
+| `browse.act` | act | one step (click, type, navigate, read, ...) in a session the agent opened; bound to that session's goal |
+| `browse.snapshot` | read | the page as it is now |
+| `browse.close` | act | done with the tab |
+| `browse.sessions` | read | the agent's open sessions, and the browsers visible to it |
 
 Surfaces register their own, as `webhook` rows (or `poll`, with a worker
 as assignee), and each carries the realm annotation the design's IFC gate
@@ -465,6 +470,8 @@ todo_backends      where todos live, realm-scoped: what the todo.* capabilities 
 calendar_contributors  owner (a person), agent: who may push events for whom; a person adds the row
 calendar_events    ulid, source_agent, owner, calendar, uid (unique together), start_at, end_at, all_day,
                    busy, status, visibility free_busy|details, title?, location? (details only)
+browsers           the household's real browsers, realm-scoped: what browse.open reaches (BROWSE.md)   [RLS]
+browse_sessions    a tab an agent opened, for a goal: what binds each browse.act to a judged open     [RLS]
 ```
 
 ## Open questions

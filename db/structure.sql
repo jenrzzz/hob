@@ -148,6 +148,53 @@ ALTER SEQUENCE public.branches_id_seq OWNED BY public.branches.id;
 
 
 --
+-- Name: browse_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.browse_sessions (
+    id character varying NOT NULL,
+    browser_id character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    goal text NOT NULL,
+    domains jsonb DEFAULT '[]'::jsonb NOT NULL,
+    remote_id character varying NOT NULL,
+    status character varying DEFAULT 'open'::character varying NOT NULL,
+    steps integer DEFAULT 0 NOT NULL,
+    url character varying,
+    title character varying,
+    close_reason character varying,
+    sentinel_request_id character varying,
+    on_mission_id character varying,
+    last_step_at timestamp(6) without time zone,
+    closed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.browse_sessions FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: browsers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.browsers (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    kind character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.browsers FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: budget_backends; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -928,6 +975,22 @@ ALTER TABLE ONLY public.branches
 
 
 --
+-- Name: browse_sessions browse_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.browse_sessions
+    ADD CONSTRAINT browse_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: browsers browsers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.browsers
+    ADD CONSTRAINT browsers_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: budget_backends budget_backends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1203,6 +1266,41 @@ CREATE INDEX index_board_posts_on_thread_slug ON public.board_posts USING btree 
 --
 
 CREATE UNIQUE INDEX index_branches_on_conversation_id_and_name ON public.branches USING btree (conversation_id, name);
+
+
+--
+-- Name: index_browse_sessions_on_browser_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_browse_sessions_on_browser_id ON public.browse_sessions USING btree (browser_id);
+
+
+--
+-- Name: index_browse_sessions_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_browse_sessions_on_principal_id ON public.browse_sessions USING btree (principal_id);
+
+
+--
+-- Name: index_browse_sessions_on_principal_id_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_browse_sessions_on_principal_id_and_status ON public.browse_sessions USING btree (principal_id, status);
+
+
+--
+-- Name: index_browsers_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_browsers_on_name ON public.browsers USING btree (name);
+
+
+--
+-- Name: index_browsers_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_browsers_on_principal_id ON public.browsers USING btree (principal_id);
 
 
 --
@@ -1578,6 +1676,14 @@ ALTER TABLE ONLY public.sentinel_policies
 
 
 --
+-- Name: browsers fk_rails_133c4d17e4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.browsers
+    ADD CONSTRAINT fk_rails_133c4d17e4 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: petitions fk_rails_1915a4ce8c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1607,6 +1713,14 @@ ALTER TABLE ONLY public.calendar_contributors
 
 ALTER TABLE ONLY public.board_posts
     ADD CONSTRAINT fk_rails_43e63fa885 FOREIGN KEY (sender_agent_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: browse_sessions fk_rails_47cabf0b23; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.browse_sessions
+    ADD CONSTRAINT fk_rails_47cabf0b23 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -1746,6 +1860,14 @@ ALTER TABLE ONLY public.petitions
 
 
 --
+-- Name: browse_sessions fk_rails_d8df5fc7b2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.browse_sessions
+    ADD CONSTRAINT fk_rails_d8df5fc7b2 FOREIGN KEY (browser_id) REFERENCES public.browsers(id);
+
+
+--
 -- Name: agent_messages fk_rails_e59b64cbcb; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1782,6 +1904,18 @@ ALTER TABLE ONLY public.missions
 --
 
 ALTER TABLE public.board_posts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: browse_sessions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.browse_sessions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: browsers; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.browsers ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: budget_backends; Type: ROW SECURITY; Schema: public; Owner: -
@@ -1826,6 +1960,24 @@ ALTER TABLE public.prompt_snapshots ENABLE ROW LEVEL SECURITY;
 CREATE POLICY realm_visibility ON public.board_posts USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (board_posts.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: browse_sessions realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.browse_sessions USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (browse_sessions.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: browsers realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.browsers USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (browsers.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -1919,6 +2071,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260927000001'),
 ('20260924190500'),
 ('20260924190000'),
 ('20260924180000'),

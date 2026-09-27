@@ -32,7 +32,12 @@ module Sentinel
       "budget_transactions" => "Sentinel::Native::BudgetTransactions",
       "budget_transaction_get" => "Sentinel::Native::BudgetTransactionGet",
       "budget_transaction_create" => "Sentinel::Native::BudgetTransactionCreate",
-      "budget_transaction_update" => "Sentinel::Native::BudgetTransactionUpdate"
+      "budget_transaction_update" => "Sentinel::Native::BudgetTransactionUpdate",
+      "browse_open" => "Sentinel::Native::BrowseOpen",
+      "browse_act" => "Sentinel::Native::BrowseAct",
+      "browse_snapshot" => "Sentinel::Native::BrowseSnapshot",
+      "browse_close" => "Sentinel::Native::BrowseClose",
+      "browse_sessions" => "Sentinel::Native::BrowseSessions"
     }.freeze
 
     module_function

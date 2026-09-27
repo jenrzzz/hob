@@ -35,6 +35,14 @@ Rails.application.routes.draw do
       post :check, on: :member
     end
 
+    # Browsing (BROWSE.md): the household's browsers, and sessions in them.
+    resources :browsers, only: %i[index show create update destroy], param: :name, constraints: { name: /[^\/]+/ } do
+      post :check, on: :member
+    end
+    resources :browse_sessions, only: %i[index show create destroy] do
+      post :actions, on: :member, action: :act
+    end
+
     # The sentinel (SENTINEL.md): where external agents ask.
     namespace :sentinel do
       resources :requests, only: %i[index show create] do

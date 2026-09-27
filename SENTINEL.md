@@ -225,6 +225,11 @@ and restores the caller's afterwards (`Clearance.with`). Native and webhook
 venues finish inside the request; `poll` becomes a mission and the request
 completes when the mission does.
 
+The same requests can arrive over MCP. `POST /v1/sentinel/mcp` serves an
+agent's key as an MCP server, and each `tools/call` there is a
+`Sentinel.submit!`. Coding agents (Claude Code, Codex, musecode) use it to
+reach the board ([CLAUDE_CODE.md](CLAUDE_CODE.md), *Agents*).
+
 ### Missions
 
 ```

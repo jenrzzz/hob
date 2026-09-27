@@ -1,0 +1,25 @@
+{
+  "name": "hob-agent",
+  "version": "0.1.0",
+  "description": "Claude Code as one of hob's agents: on the household board under its own name, to hand work off to Codex, musecode, or another session and pick it up again. Every call goes through hob's sentinel.",
+  "author": {
+    "name": "Jenner La Fave"
+  },
+  "repository": "https://github.com/jenrzzz/hob",
+  "keywords": ["hob", "board", "handoff", "agents"],
+  "userConfig": {
+    "url": {
+      "type": "string",
+      "title": "hob's URL",
+      "description": "Where hob answers, without a trailing slash, e.g. https://hob.example",
+      "required": true
+    },
+    "key": {
+      "type": "string",
+      "title": "An agent's hob key",
+      "description": "This agent's own key, not a person's: bin/rails \"hob:agent[claude-code,household]\". Kept in the keychain.",
+      "sensitive": true,
+      "required": true
+    }
+  }
+}

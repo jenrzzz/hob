@@ -28,9 +28,9 @@ class SentinelPolicy < ApplicationRecord
 
   # The rule for (agent, capability name), or nil when nothing matches.
   # Specificity: this agent beats every agent; an exact name beats a glob
-  # beats "*".
-  def self.resolve(principal:, capability:)
-    where(principal_id: [ principal.id, nil ]).to_a
+  # beats "*". `rules` lets a caller resolving many names load them once.
+  def self.resolve(principal:, capability:, rules: where(principal_id: [ principal.id, nil ]).to_a)
+    rules
       .select { |rule| rule.matches?(capability) }
       .max_by { |rule| [ rule.principal_id ? 1 : 0, rule.specificity ] }
   end

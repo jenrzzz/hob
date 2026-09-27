@@ -72,6 +72,10 @@ Rails.application.routes.draw do
       end
       resources :capabilities, only: %i[index show create update destroy], param: :name, constraints: { name: /[^\/]+/ }
       resources :policies, only: %i[index create update destroy]
+      # The same MCP server for an agent's key (CLAUDE_CODE.md, "Agents"):
+      # its tools are what policy grants it, and each call is a request.
+      post "mcp", to: "mcp#create"
+      match "mcp", to: "mcp#unsupported", via: %i[get delete]
     end
     # The ward (WARD.md): checks post reports; people read findings.
     namespace :ward do

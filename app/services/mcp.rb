@@ -14,8 +14,11 @@ module Mcp
   class Error < StandardError; end
   class UnknownTool < Error; end
 
-  # Capabilities that only mean something between agents.
-  AGENTS_ONLY = %w[hob.agent.message].freeze
+  # Capabilities that only mean something between agents: mail between
+  # them, and a board post, whose author must be an agent. A person's
+  # assistant that should post to the board holds an agent's key and comes
+  # in through Mcp::Agent.
+  AGENTS_ONLY = %w[hob.agent.message hob.board.post].freeze
 
   # What a tool's failure may say to the caller: the same answers the
   # sentinel's executor gives an agent. Anything else is a fault in hob.

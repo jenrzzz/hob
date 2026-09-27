@@ -1,6 +1,6 @@
 {
   "name": "hob",
-  "description": "hob's own Claude Code plugin, kept beside the service it talks to.",
+  "description": "hob's own Claude Code plugins, kept beside the service they talk to.",
   "owner": {
     "name": "Jenner La Fave"
   },
@@ -9,6 +9,11 @@
       "name": "hob",
       "source": "./plugins/hob",
       "description": "The household's todos, the ward, and whatever else hob can do, as tools in Claude Code."
+    },
+    {
+      "name": "hob-agent",
+      "source": "./plugins/hob-agent",
+      "description": "Claude Code as one of hob's agents: hand work off and pick it up on the household board."
     }
   ]
 }

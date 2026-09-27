@@ -42,11 +42,19 @@ module Sentinel
       "#{rule.effect} by #{rule.for_every_agent? ? 'the default' : @agent.name} rule for #{rule.capability}"
     end
 
-    # constraints: { arg => [allowed] | { in:, max:, pattern: } }
+    # constraints: { arg => [allowed] | { in:, max:, pattern: } }. "realm" is
+    # reserved for the calling agent's authenticated realm rather than a
+    # capability argument: no capability's input_schema declares a "realm"
+    # property, so a constraint keyed "realm" would otherwise always read
+    # nil out of @request.arguments and deny every request it covers,
+    # regardless of the "in" list. This is what lets a household grant a
+    # household-realm, review-effect capability to a personal-realm agent
+    # (e.g. hob.board.post for skipsy) without touching the capability's own
+    # minimum-realm check above, which only ever raises the bar, never lowers it.
     def constraint_violation(rule)
       rule.constraints.each do |arg, spec|
         spec = { "in" => spec } if spec.is_a?(Array)
-        value = @request.arguments[arg.to_s]
+        value = arg.to_s == "realm" ? @request.realm : @request.arguments[arg.to_s]
         if spec.key?("in") && !spec["in"].any? { |allowed| allowed == value || allowed.to_s == value.to_s }
           return "#{arg} must be one of #{spec['in'].join(', ')}, got #{value.inspect}"
         end

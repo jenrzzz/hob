@@ -164,7 +164,11 @@ a person" in three rows, and tighten one agent without touching the rest.
 
 **Constraints** check arguments before the effect applies:
 `{ "role": ["cheap-classifier", "extractor"], "messages": { "max": 20 },
-"operation": { "pattern": "\\Amuse\\." } }`. A violation denies.
+"operation": { "pattern": "\\Amuse\\." } }`. A violation denies. `realm` is
+reserved: no capability takes it as an argument, so a constraint keyed
+`realm` checks the calling agent's authenticated realm instead — e.g.
+`{ "realm": ["household", "personal"] }` on a household-realm, `review`
+capability lets a personal-realm agent use it too, each use still reviewed.
 
 **Limits** — `per_hour`, `per_day` (non-denied requests matching the rule),
 `cost_per_day` (the agent's whole sentinel spend from the ledger, USD). A

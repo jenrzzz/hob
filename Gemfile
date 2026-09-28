@@ -45,7 +45,7 @@ end
 
 # Provider abstraction under the gateway plane (same layer mise uses)
 # Pinned to the release candidate: 1.x has CVE-2026-67991 and no fixed 1.x release. Loosen to "~> 2.0" once 2.0 is out.
-gem "ruby_llm", "2.0.0.rc1"
+gem "ruby_llm", "2.0.0"
 
 gem "apnotic", "~> 1.8"
 

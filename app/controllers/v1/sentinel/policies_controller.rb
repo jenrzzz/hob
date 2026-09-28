@@ -19,9 +19,21 @@ module V1
         render json: serialize(rule), status: :created
       end
 
+      # A guidance change writes through the audited path (GuidanceChange) —
+      # the same one a petition's approval and the admin UI use — so every
+      # edit to it is on the record no matter which door it came through.
+      # Effect, constraints, and limits are unaudited config, as before.
       def update
         rule = SentinelPolicy.find(params[:id])
-        rule.update!(policy_params)
+        attrs = policy_params
+        if attrs.key?(:guidance)
+          guidance = attrs.delete(:guidance)
+          rule.update!(attrs) if attrs.present?
+          rule.update_guidance!(guidance, source: "admin", decided_by: "human", decider: Current.principal,
+                                rationale: params[:rationale].presence)
+        else
+          rule.update!(attrs)
+        end
         render json: serialize(rule)
       end
 

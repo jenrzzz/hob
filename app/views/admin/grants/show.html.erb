@@ -1,0 +1,52 @@
+<h1><%= @grant.principal.name %> · <code><%= @grant.capability %></code></h1>
+
+<section class="card">
+  <div class="card-head">
+    <span class="tag"><%= @grant.effect %></span>
+    <span class="muted">held since <%= @grant.created_at.to_date %></span>
+  </div>
+  <dl class="facts">
+    <dt>Constraints</dt>
+    <dd><% if @grant.constraints.present? %><pre><%= JSON.pretty_generate(@grant.constraints) %></pre><% else %><span class="muted">none</span><% end %></dd>
+    <dt>Limits</dt>
+    <dd><% if @grant.limits.present? %><pre><%= JSON.pretty_generate(@grant.limits) %></pre><% else %><span class="muted">none</span><% end %></dd>
+  </dl>
+
+  <h2 style="margin-top: 14px">Guidance</h2>
+  <p class="muted">What a reviewer is told when judging this agent's asks for this capability. Changing it does not touch the effect above.</p>
+  <%= form_with url: admin_grant_path(@grant) do |f| %>
+    <%= f.text_area :guidance, value: @grant.guidance, rows: 4, style: "width: 100%; margin-bottom: 8px", "aria-label": "Guidance" %>
+    <div class="row">
+      <%= f.text_field :rationale, placeholder: "why (optional)", "aria-label": "Rationale" %>
+      <%= f.submit "Save" %>
+    </div>
+  <% end %>
+</section>
+
+<h1 style="margin-top: 32px">History</h1>
+<% if @history.empty? %>
+  <p class="muted">No guidance changes recorded yet.</p>
+<% else %>
+  <section class="card">
+    <div class="table-wrap">
+      <table>
+        <tr><th>When</th><th>Via</th><th>By</th><th>Old → new</th><th>Why</th></tr>
+        <% @history.each do |h| %>
+          <tr>
+            <td title="<%= h.created_at.utc.iso8601 %>"><%= time_ago_in_words(h.created_at) %> ago</td>
+            <td><%= h.source %><% if h.petition_id %> <span class="muted">(petition <%= h.petition_id %>)</span><% end %></td>
+            <td><%= h.decider&.name || h.decided_by %></td>
+            <td>
+              <span class="muted"><%= h.old_guidance.presence || "(none)" %></span>
+              →
+              <%= h.new_guidance.presence || "(none)" %>
+            </td>
+            <td><%= h.rationale %></td>
+          </tr>
+        <% end %>
+      </table>
+    </div>
+  </section>
+<% end %>
+
+<p><%= link_to "← All grants", admin_grants_path %></p>

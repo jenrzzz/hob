@@ -183,6 +183,16 @@ breach denies.
 Tessa's household planning. Deny anything about other household members'
 private matters. Escalate purchases."*
 
+Guidance can change after the grant — an agent's petition to widen or narrow
+what an already-held capability's guidance permits (below), or a person
+editing it directly at `/admin/grants`, both writing through
+`SentinelPolicy#update_guidance!`. The effect never moves this way:
+widening guidance cannot turn a `review` into an `allow`, only reword what
+it may be used for. Every change is a `guidance_changes` row — who (the
+steward or a person), when, the old and new text, and whether a petition or
+an admin edit drove it — kept alongside the rule, never deleted. A rule's
+`/admin/grants/:id` page lists its own history.
+
 ### The reviewer
 
 `Sentinel::Reviewer` runs the request through the `sentinel-reviewer` model
@@ -304,9 +314,16 @@ planning needs"); its `limits` cap `per_day` petitions (default 10) and
 for a `read` capability and at most `review` for one that acts (a person can
 loosen it afterwards). A capability above the agent's clearance is never
 granted; nor is one an existing rule denies — a person's `deny` is kept, the
-petition is referred. An exact rule the agent already has is left alone. An
-unreachable or refusing steward refers. A `build` verdict with an
-incomplete spec, an invalid name, or a name that already exists is referred
+petition is referred. An exact rule the agent already has keeps its
+effect — grant never loosens or tightens it — but a `want` that reads as
+scoping the same capability differently (skipsy asking for `browse.open`'s
+guidance to also cover read-only parcel tracking, having already been
+granted it for Amazon order pages) updates its guidance instead
+(`SentinelPolicy#update_guidance!`, logged as a `guidance_changes` row); a
+charter of `confirm` still refers a guidance change to a person, same as any
+other grant. An unreachable or refusing steward refers. A `build` verdict
+with an incomplete spec, an invalid name, or a name that already exists is
+referred
 too, never built.
 
 A person settles a pending or failed petition with `decide`: `grant`

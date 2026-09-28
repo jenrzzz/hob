@@ -44,6 +44,12 @@
       <% if p.action %><dt>Steward</dt><dd><%= p.action %><% if p.rationale.present? %>: <%= p.rationale %><% end %></dd><% end %>
       <% if p.capability_name %><dt>Recommends</dt><dd><code><%= p.capability_name %></code><% if p.effect %> at <%= p.effect %><% end %></dd><% end %>
       <% if p.spec["description"].present? %><dt>Would build</dt><dd><%= p.spec["description"] %></dd><% end %>
+      <% if p.spec["guidance"].present? %><dt>Steward's guidance</dt><dd><%= p.spec["guidance"] %></dd><% end %>
+      <% if (held = existing_grant(p)) %>
+        <dt>Already held</dt>
+        <dd><%= held.effect %> since <%= time_ago_in_words(held.created_at) %> ago
+          <% if held.guidance.present? %> — current guidance: “<%= held.guidance %>”<% end %></dd>
+      <% end %>
       <% if p.error.present? %><dt>Error</dt><dd><%= p.error %></dd><% end %>
     </dl>
     <% if p.arguments.present? %><pre><%= JSON.pretty_generate(p.arguments) %></pre><% end %>
@@ -53,6 +59,8 @@
     <%= form_with url: admin_decide_sentinel_petition_path(p), class: "row" do |f| %>
       <%= f.text_field :capability, value: p.capability_name || p.spec["name"], placeholder: "capability", "aria-label": "Capability" %>
       <%= f.select :effect, Petition::GRANTABLE_EFFECTS, { selected: p.effect || "review" }, "aria-label": "Effect" %>
+      <%= f.text_area :guidance, value: (existing_grant(p)&.guidance || p.spec["guidance"]), rows: 2,
+            placeholder: "guidance for the reviewer (blank leaves it unchanged)", "aria-label": "Guidance" %>
       <%= f.text_field :rationale, placeholder: "why (optional)", "aria-label": "Rationale" %>
       <%= f.button "Grant", name: "decision", value: "grant", class: "primary" %>
       <%= f.button "Build", name: "decision", value: "build",

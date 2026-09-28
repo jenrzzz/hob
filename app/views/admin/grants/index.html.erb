@@ -1,0 +1,32 @@
+<h1>Grants</h1>
+<p class="muted">
+  What each agent holds (a <code>sentinel_policies</code> row) and the guidance that scopes it.
+  Effects are decided from the <%= link_to "sentinel page", admin_sentinel_path %>, by a petition or a person;
+  here you edit a held capability's guidance directly, on the record.
+</p>
+
+<p>
+  <%= link_to "All agents", admin_grants_path, class: ("current" unless @agent) %>
+  <% @agents.each do |a| %> · <%= link_to a.name, admin_grants_path(agent: a.name), class: ("current" if @agent == a) %><% end %>
+</p>
+
+<section class="card">
+  <% if @grants.empty? %>
+    <p class="muted">No grants.</p>
+  <% else %>
+    <div class="table-wrap">
+      <table>
+        <tr><th>Agent</th><th>Capability</th><th>Effect</th><th>Guidance</th><th></th></tr>
+        <% @grants.each do |g| %>
+          <tr>
+            <td><%= g.principal.name %></td>
+            <td><code><%= g.capability %></code></td>
+            <td><%= g.effect %></td>
+            <td class="muted"><%= truncate(g.guidance, length: 80) if g.guidance.present? %></td>
+            <td class="actions"><%= link_to "Edit", admin_grant_path(g) %></td>
+          </tr>
+        <% end %>
+      </table>
+    </div>
+  <% end %>
+</section>

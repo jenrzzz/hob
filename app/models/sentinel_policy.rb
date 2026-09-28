@@ -18,6 +18,7 @@ class SentinelPolicy < ApplicationRecord
   LIMIT_KEYS = %w[per_hour per_day cost_per_day builds_per_day].freeze
 
   belongs_to :principal, optional: true
+  has_many :guidance_changes, dependent: :restrict_with_exception
 
   validates :capability, presence: true
   validates :effect, inclusion: { in: EFFECTS }
@@ -48,6 +49,24 @@ class SentinelPolicy < ApplicationRecord
 
   def for_every_agent?
     principal_id.nil?
+  end
+
+  # Change guidance on an already-held grant, and log it (GuidanceChange):
+  # who approved it, when, the old and new text, and whether a petition
+  # approval or an admin edit drove it. `effect` is never touched here — a
+  # scope-widening or -narrowing guidance change must not loosen or tighten
+  # what the grant allows. A no-op (the text is unchanged) writes nothing.
+  def update_guidance!(new_guidance, source:, decided_by:, decider: nil, petition: nil, rationale: nil)
+    new_guidance = new_guidance.to_s.presence
+    return self if new_guidance == guidance
+
+    old_guidance = guidance
+    transaction do
+      update!(guidance: new_guidance)
+      guidance_changes.create!(source: source, decided_by: decided_by, decider: decider, petition: petition,
+                               old_guidance: old_guidance, new_guidance: new_guidance, rationale: rationale)
+    end
+    self
   end
 
   private

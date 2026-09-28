@@ -18,6 +18,9 @@ Rails.application.routes.draw do
     get "sentinel", to: "sentinel#index"
     post "sentinel/requests/:id/decide", to: "sentinel#decide_request", as: :decide_sentinel_request
     post "sentinel/petitions/:id/decide", to: "sentinel#decide_petition", as: :decide_sentinel_petition
+    get "grants", to: "grants#index"
+    get "grants/:id", to: "grants#show", as: :grant
+    post "grants/:id", to: "grants#update", as: :update_grant
     resources :keys, only: [] do
       member do
         post :rotate

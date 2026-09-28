@@ -363,6 +363,25 @@ ALTER SEQUENCE public.devices_id_seq OWNED BY public.devices.id;
 
 
 --
+-- Name: guidance_changes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.guidance_changes (
+    id character varying NOT NULL,
+    sentinel_policy_id bigint NOT NULL,
+    petition_id character varying,
+    source character varying NOT NULL,
+    decided_by character varying NOT NULL,
+    decider_id bigint,
+    old_guidance text,
+    new_guidance text,
+    rationale text,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: message_nodes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1083,6 +1102,14 @@ ALTER TABLE ONLY public.devices
 
 
 --
+-- Name: guidance_changes guidance_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guidance_changes
+    ADD CONSTRAINT guidance_changes_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: message_nodes message_nodes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1440,6 +1467,34 @@ CREATE UNIQUE INDEX index_devices_on_token ON public.devices USING btree (token)
 
 
 --
+-- Name: index_guidance_changes_on_decider_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_guidance_changes_on_decider_id ON public.guidance_changes USING btree (decider_id);
+
+
+--
+-- Name: index_guidance_changes_on_petition_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_guidance_changes_on_petition_id ON public.guidance_changes USING btree (petition_id);
+
+
+--
+-- Name: index_guidance_changes_on_sentinel_policy_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_guidance_changes_on_sentinel_policy_id ON public.guidance_changes USING btree (sentinel_policy_id);
+
+
+--
+-- Name: index_guidance_changes_on_sentinel_policy_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_guidance_changes_on_sentinel_policy_id_and_created_at ON public.guidance_changes USING btree (sentinel_policy_id, created_at);
+
+
+--
 -- Name: index_message_nodes_on_conversation_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1789,6 +1844,14 @@ ALTER TABLE ONLY public.sign_in_grants
 
 
 --
+-- Name: guidance_changes fk_rails_3afeba51b4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guidance_changes
+    ADD CONSTRAINT fk_rails_3afeba51b4 FOREIGN KEY (sentinel_policy_id) REFERENCES public.sentinel_policies(id);
+
+
+--
 -- Name: board_posts fk_rails_43e63fa885; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1802,6 +1865,14 @@ ALTER TABLE ONLY public.board_posts
 
 ALTER TABLE ONLY public.browse_sessions
     ADD CONSTRAINT fk_rails_47cabf0b23 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: guidance_changes fk_rails_4897281c3f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guidance_changes
+    ADD CONSTRAINT fk_rails_4897281c3f FOREIGN KEY (petition_id) REFERENCES public.petitions(id);
 
 
 --
@@ -1898,6 +1969,14 @@ ALTER TABLE ONLY public.ward_findings
 
 ALTER TABLE ONLY public.calendar_events
     ADD CONSTRAINT fk_rails_a15b711368 FOREIGN KEY (source_agent_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: guidance_changes fk_rails_a7232fab90; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guidance_changes
+    ADD CONSTRAINT fk_rails_a7232fab90 FOREIGN KEY (decider_id) REFERENCES public.principals(id);
 
 
 --
@@ -2152,6 +2231,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260928221000'),
 ('20260928041600'),
 ('20260927193600'),
 ('20260927000001'),

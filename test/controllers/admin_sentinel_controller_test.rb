@@ -75,6 +75,34 @@ class AdminSentinelControllerTest < ActionDispatch::IntegrationTest
     assert_select "table td", /muse petitioned for hob.usage/
   end
 
+  test "approving a petition to widen an already-held capability's guidance shows the current grant and logs the change" do
+    rule = policy!(@muse, "browse.open", "review", guidance: "Amazon order and product pages for YNAB bookkeeping.")
+    petition = Petition.create!(principal: @muse, want: "track packages on carrier sites", capability_name: "browse.open",
+                                effect: "review", realm: "household", surface: "muse", status: "pending", action: "refer",
+                                rationale: "referred by the steward")
+    admin_sign_in
+    get "/admin/sentinel"
+    assert_select "#petition-#{petition.id} dd", /review since.*Amazon order and product pages/m
+    assert_select "#petition-#{petition.id} textarea", "Amazon order and product pages for YNAB bookkeeping."
+
+    post "/admin/sentinel/petitions/#{petition.id}/decide",
+         params: { decision: "grant", capability: "browse.open",
+                   guidance: "Amazon order and product pages, and read-only parcel tracking on ups.com, fedex.com, usps.com.",
+                   rationale: "widened for parcel tracking" }
+    assert_redirected_to "/admin/sentinel"
+    petition.reload
+    assert_equal "granted", petition.status
+    rule.reload
+    assert_equal "review", rule.effect, "the guidance edit does not change the effect"
+    assert_equal "Amazon order and product pages, and read-only parcel tracking on ups.com, fedex.com, usps.com.", rule.guidance
+
+    change = rule.guidance_changes.last
+    assert_equal "petition", change.source
+    assert_equal "human", change.decided_by
+    assert_equal @principal, change.decider
+    assert_equal petition, change.petition
+  end
+
   test "a bad decision is refused with a message" do
     petition = pending_petition
     admin_sign_in

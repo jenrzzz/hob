@@ -112,7 +112,7 @@ class StewardTest < ActiveSupport::TestCase
     charter!(@muse, "allow")
     steward_says("grant", capability: "hob.usage", effect: "allow")
     original = Sentinel::Steward.instance_method(:write_rule!)
-    Sentinel::Steward.define_method(:write_rule!) { |_v| raise ActiveRecord::RecordInvalid, SentinelPolicy.new }
+    Sentinel::Steward.define_method(:write_rule!) { |*| raise ActiveRecord::RecordInvalid, SentinelPolicy.new }
     begin
       row = petition("see my spend", capability: "hob.usage")
     ensure
@@ -148,6 +148,79 @@ class StewardTest < ActiveSupport::TestCase
     assert_equal "granted", row.status
     assert_match(/already permitted: confirm/, row.rationale)
     assert_equal "confirm", SentinelPolicy.find_by!(principal: @muse, capability: "hob.usage").effect, "an existing exact rule is kept"
+  end
+
+  test "grant widens guidance on an already-held capability under a review charter, without touching the effect" do
+    charter!(@muse, "review")
+    rule = policy!(@muse, "browse.open", "review", guidance: "Amazon order and product pages for YNAB bookkeeping.")
+    steward_says("grant", capability: "browse.open", effect: "allow", # the steward's own cap is ignored; the effect is kept
+                 guidance: "Amazon order and product pages, and read-only parcel tracking on ups.com, fedex.com, usps.com.",
+                 rationale: "widening to cover parcel tracking, still read-only")
+
+    row = petition("track my packages on the carrier sites", reason: "YNAB bookkeeping needs delivery status")
+    assert_equal "granted", row.status
+    assert_equal "grant", row.action
+    assert_equal "steward", row.decided_by
+    assert_equal "browse.open", row.capability_name
+    assert_equal "review", row.effect, "grant never loosens an existing effect"
+
+    rule.reload
+    assert_equal "review", rule.effect
+    assert_equal "Amazon order and product pages, and read-only parcel tracking on ups.com, fedex.com, usps.com.", rule.guidance
+
+    change = GuidanceChange.last
+    assert_equal 1, GuidanceChange.count
+    assert_equal rule, change.sentinel_policy
+    assert_equal row, change.petition
+    assert_equal "petition", change.source
+    assert_equal "steward", change.decided_by
+    assert_nil change.decider
+    assert_equal "Amazon order and product pages for YNAB bookkeeping.", change.old_guidance
+    assert_equal "Amazon order and product pages, and read-only parcel tracking on ups.com, fedex.com, usps.com.", change.new_guidance
+  end
+
+  test "a confirm charter refers a guidance widening on an already-held capability, and leaves the grant untouched" do
+    charter!(@muse, "confirm")
+    rule = policy!(@muse, "browse.open", "review", guidance: "Amazon order and product pages for YNAB bookkeeping.")
+    steward_says("grant", capability: "browse.open", guidance: "Also read-only parcel tracking on ups.com, fedex.com, usps.com.",
+                 rationale: "wants tracking")
+
+    row = petition("track my packages")
+    assert_equal "pending", row.status
+    assert_equal "refer", row.action
+    assert_match(/refers every petition to a person/, row.rationale)
+    rule.reload
+    assert_equal "Amazon order and product pages for YNAB bookkeeping.", rule.guidance, "unapplied until a person looks"
+    assert_equal 0, GuidanceChange.count
+  end
+
+  test "a person approves a referred guidance widening; the grant updates and the change is on the record" do
+    charter!(@muse, "confirm")
+    rule = policy!(@muse, "browse.open", "review", guidance: "Amazon order and product pages for YNAB bookkeeping.")
+    steward_says("refer", rationale: "let a person decide")
+    row = petition("track my packages on carrier sites", reason: "YNAB bookkeeping needs delivery status")
+    assert_equal "pending", row.status
+
+    granted = Sentinel.decide_petition!(
+      row, decision: "grant", decider: @principal, capability: "browse.open",
+      guidance: "Amazon order and product pages, and read-only parcel tracking on ups.com, fedex.com, usps.com.",
+      rationale: "approved: read-only tracking lookups are in scope"
+    )
+    assert_equal "granted", granted.status
+    assert_equal "human", granted.decided_by
+    assert_equal @principal, granted.decider
+
+    rule.reload
+    assert_equal "review", rule.effect, "a guidance change never changes the effect, even decided by a person"
+    assert_equal "Amazon order and product pages, and read-only parcel tracking on ups.com, fedex.com, usps.com.", rule.guidance
+
+    change = GuidanceChange.last
+    assert_equal 1, GuidanceChange.count
+    assert_equal "petition", change.source
+    assert_equal "human", change.decided_by
+    assert_equal @principal, change.decider
+    assert_equal row, change.petition
+    assert_equal "approved: read-only tracking lookups are in scope", change.rationale
   end
 
   test "a confirm charter refers everything, with the steward's advice attached" do
@@ -339,7 +412,7 @@ class StewardTest < ActiveSupport::TestCase
     assert_match(/working on mission #{mission.id}: Plan the week/, content)
     assert_match(/hob.usage: completed \(policy\)/, content)
     assert_match(/first: deny/, content)
-    assert_match(/may already ask for:\n- hob.usage: allow/, content)
+    assert_match(/already holds.*:\n- hob.usage: allow/, content)
     assert_match(/"week": 38/, content)
     assert_no_match(/^- hob.usage — read/, content, "what it already has is not offered to grant")
   end

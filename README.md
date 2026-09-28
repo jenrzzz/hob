@@ -67,7 +67,14 @@ so its app gets the new key.
 
 `/admin/sentinel` lists the requests and petitions waiting on a person,
 and decides them: what `hob:sentinel:pending`, `:decide` and `:petition` do.
-The notification for a held request or petition links there.
+The notification for a held request or petition links there. A petition
+that widens or narrows an already-held capability's guidance shows what it
+currently holds alongside the decide form.
+
+`/admin/grants` lists every agent's capability grants (`sentinel_policies`)
+and their guidance; a grant's own page edits the guidance text and shows its
+full history — who changed it, when, and whether a petition or this page
+did it (SENTINEL.md, "Policies").
 
 The companion app (clients/ios) signs in through the same page: it opens
 `/app/sign_in` in a browser sheet, you confirm, and it trades a one-time

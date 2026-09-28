@@ -10,6 +10,7 @@ module Admin
     layout "admin"
     protect_from_forgery with: :exception
     before_action :require_person!
+    around_action :with_clearance
     helper_method :current_person
 
     private
@@ -24,6 +25,13 @@ module Admin
 
       Current.principal = person
       Current.surface = "admin"
+    end
+
+    # RLS tables (sentinel requests, petitions) read at the person's own
+    # clearance, as their key would.
+    def with_clearance(&)
+      Current.clearance = current_person.max_clearance
+      Clearance.with(Current.clearance, &)
     end
 
     def session_person

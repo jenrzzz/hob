@@ -39,6 +39,25 @@ class ActionDispatch::IntegrationTest
     JSON.parse(response.body)
   end
 
+  # Sign in to the admin pages as whoever the OIDC provider says `subject`
+  # is. Needs OmniAuth.config.test_mode on; see admin_signing_in!.
+  def admin_sign_in(subject = "sub-tester")
+    OmniAuth.config.mock_auth[:oidc] = OmniAuth::AuthHash.new(provider: "oidc", uid: subject, info: { name: "Someone" })
+    post "/auth/oidc"
+    follow_redirect!
+  end
+
+  # The test person, linked and able to sign in; OmniAuth mocked until teardown.
+  def admin_signing_in!
+    OmniAuth.config.test_mode = true
+    @principal.update!(oidc_subject: "sub-tester")
+  end
+
+  def admin_signed_out!
+    OmniAuth.config.mock_auth[:oidc] = nil
+    OmniAuth.config.test_mode = false
+  end
+
   def sse_events
     response.body.scan(/^data: (.*)$/).flatten.map { |line| JSON.parse(line) }
   end

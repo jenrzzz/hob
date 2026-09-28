@@ -189,7 +189,7 @@ module Sentinel
       when "refer"
         record(verdict, decided_by: decided_by, decider: decider)
         Notify.person(title: "hob: #{@agent.name} petitions for a capability",
-                      body: "#{@petition.want.truncate(200)}\n#{verdict.rationale}\nbin/rails hob:sentinel:pending", tags: "bell", about: @petition)
+                      body: "#{@petition.want.truncate(200)}\n#{verdict.rationale}\n#{Sentinel.decide_hint}", tags: "bell", about: @petition)
       else
         record(verdict, decided_by: decided_by, decider: decider)
       end

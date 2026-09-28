@@ -58,12 +58,16 @@ older keys are deleted. hob needs these in its own environment:
 
 ## Admin
 
-`/admin` is the one browser page: principals and their keys. It mints a key
-(shown once), rotates one (a new key for the surface, then its older ones
-go), revokes one, and adds a principal. It's what `hob:key` and `hob:agent`
-do from a terminal. A rotated or revoked key stops working immediately.
+`/admin` is hob's browser page, in two parts. The keys page lists
+principals and their keys. It mints a key (shown once), rotates one (a new
+key for the surface, then its older ones go), revokes one, and adds a
+principal: what `hob:key` and `hob:agent` do from a terminal. A rotated or revoked key stops working immediately.
 A surface onboarded with `hob:provision` should be re-provisioned instead,
 so its app gets the new key.
+
+`/admin/sentinel` lists the requests and petitions waiting on a person,
+and decides them: what `hob:sentinel:pending`, `:decide` and `:petition` do.
+The notification for a held request or petition links there.
 
 People sign in through the household's OIDC provider (Pocket ID, with
 passkeys). Sessions last at most 12 hours. Only a person (`kind: human`)

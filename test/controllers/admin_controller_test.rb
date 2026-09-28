@@ -3,21 +3,8 @@ require "test_helper"
 # The admin pages: a person signs in through the OIDC provider and manages
 # keys; nobody else gets in.
 class AdminControllerTest < ActionDispatch::IntegrationTest
-  setup do
-    OmniAuth.config.test_mode = true
-    @principal.update!(oidc_subject: "sub-tester")
-  end
-
-  teardown do
-    OmniAuth.config.mock_auth[:oidc] = nil
-    OmniAuth.config.test_mode = false
-  end
-
-  def sign_in(subject = "sub-tester")
-    OmniAuth.config.mock_auth[:oidc] = OmniAuth::AuthHash.new(provider: "oidc", uid: subject, info: { name: "Someone" })
-    post "/auth/oidc"
-    follow_redirect!
-  end
+  setup { admin_signing_in! }
+  teardown { admin_signed_out! }
 
   test "signed out, admin sends you to sign in; the API is unaffected" do
     get "/admin"
@@ -31,7 +18,7 @@ class AdminControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "a linked person signs in, mints, rotates and revokes keys" do
-    sign_in
+    admin_sign_in
     assert_redirected_to "/admin"
     follow_redirect!
     assert_response :ok
@@ -59,7 +46,7 @@ class AdminControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "adding a principal" do
-    sign_in
+    admin_sign_in
     post "/admin/principals", params: { principal: { name: "marley", kind: "agent", max_clearance: "household" } }
     assert Principal.find_by(name: "marley").agent?
     post "/admin/principals", params: { principal: { name: "marley", kind: "agent", max_clearance: "household" } }
@@ -68,7 +55,7 @@ class AdminControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "an unlinked subject is refused and told how to link" do
-    sign_in("sub-stranger")
+    admin_sign_in("sub-stranger")
     assert_response :forbidden
     assert_select ".token", /hob:link\[.*sub-stranger\]/
     get "/admin"
@@ -78,12 +65,12 @@ class AdminControllerTest < ActionDispatch::IntegrationTest
   test "an agent linked to a subject still cannot sign in" do
     muse, = agent("muse")
     muse.update_columns(oidc_subject: "sub-muse")
-    sign_in("sub-muse")
+    admin_sign_in("sub-muse")
     assert_response :forbidden
   end
 
   test "unlinking ends the session; sessions expire" do
-    sign_in
+    admin_sign_in
     get "/admin"
     assert_response :ok
     @principal.update!(oidc_subject: nil)
@@ -91,7 +78,7 @@ class AdminControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to "/login"
 
     @principal.update!(oidc_subject: "sub-tester")
-    sign_in
+    admin_sign_in
     travel Admin::BaseController::SESSION_TTL + 1.minute do
       get "/admin"
       assert_redirected_to "/login"
@@ -99,7 +86,7 @@ class AdminControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "signing out" do
-    sign_in
+    admin_sign_in
     post "/logout"
     assert_redirected_to "/login"
     get "/admin"

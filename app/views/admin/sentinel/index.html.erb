@@ -1,0 +1,85 @@
+<h1>Waiting on you</h1>
+
+<% if @requests.empty? && @petitions.empty? %>
+  <p class="muted">Nothing is waiting.</p>
+<% end %>
+
+<% @requests.each do |r| %>
+  <section class="card" id="request-<%= r.id %>">
+    <div class="card-head">
+      <h2><%= r.principal.name %> asks for <code><%= r.capability.name %></code></h2>
+      <span class="tag">request <%= r.id %></span>
+      <span class="tag"><%= r.realm %></span>
+      <span class="muted" title="<%= r.created_at.utc.iso8601 %>"><%= time_ago_in_words(r.created_at) %> ago</span>
+    </div>
+    <dl class="facts">
+      <% if r.reason.present? %><dt>Reason</dt><dd><%= r.reason %></dd><% end %>
+      <% if r.rationale.present? %><dt>Held because</dt><dd><%= r.rationale %></dd><% end %>
+      <% if r.on_mission_id %><dt>On mission</dt><dd><%= r.on_mission_id %></dd><% end %>
+    </dl>
+    <pre><%= JSON.pretty_generate(r.arguments) %></pre>
+    <% if r.review.present? %>
+      <details><summary>Reviewer's notes</summary><pre><%= JSON.pretty_generate(r.review) %></pre></details>
+    <% end %>
+    <%= form_with url: admin_decide_sentinel_request_path(r), class: "row" do |f| %>
+      <%= f.text_field :rationale, placeholder: "why (optional)", "aria-label": "Rationale" %>
+      <%= f.button "Allow", name: "decision", value: "allow", class: "primary" %>
+      <%= f.button "Deny", name: "decision", value: "deny", class: "danger" %>
+    <% end %>
+  </section>
+<% end %>
+
+<% @petitions.each do |p| %>
+  <section class="card" id="petition-<%= p.id %>">
+    <div class="card-head">
+      <h2><%= p.principal.name %> petitions</h2>
+      <span class="tag">petition <%= p.id %></span>
+      <span class="tag"><%= p.status %></span>
+      <span class="tag"><%= p.realm %></span>
+      <span class="muted" title="<%= p.created_at.utc.iso8601 %>"><%= time_ago_in_words(p.created_at) %> ago</span>
+    </div>
+    <p><%= p.want %></p>
+    <dl class="facts">
+      <% if p.reason.present? %><dt>Reason</dt><dd><%= p.reason %></dd><% end %>
+      <% if p.action %><dt>Steward</dt><dd><%= p.action %><% if p.rationale.present? %>: <%= p.rationale %><% end %></dd><% end %>
+      <% if p.capability_name %><dt>Recommends</dt><dd><code><%= p.capability_name %></code><% if p.effect %> at <%= p.effect %><% end %></dd><% end %>
+      <% if p.spec["description"].present? %><dt>Would build</dt><dd><%= p.spec["description"] %></dd><% end %>
+      <% if p.error.present? %><dt>Error</dt><dd><%= p.error %></dd><% end %>
+    </dl>
+    <% if p.arguments.present? %><pre><%= JSON.pretty_generate(p.arguments) %></pre><% end %>
+    <% if p.spec.present? %>
+      <details><summary>Full spec</summary><pre><%= JSON.pretty_generate(p.spec) %></pre></details>
+    <% end %>
+    <%= form_with url: admin_decide_sentinel_petition_path(p), class: "row" do |f| %>
+      <%= f.text_field :capability, value: p.capability_name || p.spec["name"], placeholder: "capability", "aria-label": "Capability" %>
+      <%= f.select :effect, Petition::GRANTABLE_EFFECTS, { selected: p.effect || "review" }, "aria-label": "Effect" %>
+      <%= f.text_field :rationale, placeholder: "why (optional)", "aria-label": "Rationale" %>
+      <%= f.button "Grant", name: "decision", value: "grant", class: "primary" %>
+      <%= f.button "Build", name: "decision", value: "build",
+            onclick: "return confirm('Have the forge build this capability as a pull request?')" %>
+      <%= f.button "Deny", name: "decision", value: "deny", class: "danger" %>
+    <% end %>
+  </section>
+<% end %>
+
+<h1 style="margin-top: 32px">Recently settled</h1>
+<section class="card">
+  <div class="table-wrap">
+    <table>
+      <tr><th>When</th><th>What</th><th>Outcome</th><th>By</th></tr>
+      <% (@recent_requests.to_a + @recent_petitions.to_a).sort_by(&:created_at).reverse.first(20).each do |row| %>
+        <tr>
+          <td title="<%= row.created_at.utc.iso8601 %>"><%= time_ago_in_words(row.created_at) %> ago</td>
+          <% if row.is_a?(SentinelRequest) %>
+            <td><%= row.principal.name %> → <code><%= row.capability.name %></code></td>
+            <td><%= row.status %></td>
+          <% else %>
+            <td title="<%= row.want %>"><%= row.principal.name %> petitioned<% if row.capability_name %> for <code><%= row.capability_name %></code><% end %></td>
+            <td><%= row.status %><% if row.pull_request.present? %> · <%= link_to "PR", row.pull_request %><% end %></td>
+          <% end %>
+          <td><%= row.decider&.name || row.decided_by || "—" %></td>
+        </tr>
+      <% end %>
+    </table>
+  </div>
+</section>

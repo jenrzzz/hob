@@ -37,8 +37,14 @@ module Sentinel
   # A person has to look: the household topic and the companion app (Notify).
   def ask_person!(request)
     Notify.person(title: "hob: #{request.principal.name} asks for #{request.capability.name}",
-                  body: [ request.reason.presence, request.rationale.presence, "bin/rails hob:sentinel:pending" ].compact.join("\n"),
+                  body: [ request.reason.presence, request.rationale.presence, decide_hint ].compact.join("\n"),
                   tags: "bell", about: request)
+  end
+
+  # Where a person goes to decide: the admin page when hob knows its own URL.
+  def decide_hint
+    base = ENV["HOB_CLIENT_URL"].presence
+    base ? "#{base.chomp('/')}/admin/sentinel" : "bin/rails hob:sentinel:pending"
   end
 
   # A person settles a pending request.

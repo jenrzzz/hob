@@ -6,6 +6,9 @@ Rails.application.routes.draw do
   get "login", to: "sessions#new"
   match "auth/:provider/callback", to: "sessions#create", via: %i[get post]
   get "auth/failure", to: "sessions#failure"
+  # The companion app signing in (clients/ios): a browser sheet, then a key.
+  get "app/sign_in", to: "app_sign_ins#new"
+  post "app/sign_in", to: "app_sign_ins#create"
   post "logout", to: "sessions#destroy"
   namespace :admin do
     root "principals#index"
@@ -25,6 +28,7 @@ Rails.application.routes.draw do
 
   namespace :v1 do
     resources :completions, only: %i[create show]
+    resources :app_sessions, only: :create
     resources :conversations, only: %i[index create show] do
       resources :branches, only: %i[index create update], param: :name
       resource :chat, only: :create, controller: "chats"

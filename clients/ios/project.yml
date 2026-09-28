@@ -104,5 +104,6 @@ schemes:
         HOB_URL: "${HOB_URL}"
         HOB_KEY: "${HOB_KEY}"
         SHOT_DIR: "${SHOT_DIR}"
+        HOB_SIGN_IN_AS: "${HOB_SIGN_IN_AS}"
     archive:
       config: Release

@@ -718,6 +718,42 @@ ALTER TABLE ONLY public.sentinel_requests FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: sign_in_grants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sign_in_grants (
+    id bigint NOT NULL,
+    code_digest character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    code_challenge character varying NOT NULL,
+    surface character varying NOT NULL,
+    expires_at timestamp(6) without time zone NOT NULL,
+    redeemed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: sign_in_grants_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.sign_in_grants_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: sign_in_grants_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.sign_in_grants_id_seq OWNED BY public.sign_in_grants.id;
+
+
+--
 -- Name: todo_backends; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -926,6 +962,13 @@ ALTER TABLE ONLY public.providers ALTER COLUMN id SET DEFAULT nextval('public.pr
 --
 
 ALTER TABLE ONLY public.sentinel_policies ALTER COLUMN id SET DEFAULT nextval('public.sentinel_policies_id_seq'::regclass);
+
+
+--
+-- Name: sign_in_grants id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sign_in_grants ALTER COLUMN id SET DEFAULT nextval('public.sign_in_grants_id_seq'::regclass);
 
 
 --
@@ -1149,6 +1192,14 @@ ALTER TABLE ONLY public.sentinel_policies
 
 ALTER TABLE ONLY public.sentinel_requests
     ADD CONSTRAINT sentinel_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sign_in_grants sign_in_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sign_in_grants
+    ADD CONSTRAINT sign_in_grants_pkey PRIMARY KEY (id);
 
 
 --
@@ -1585,6 +1636,20 @@ CREATE INDEX index_sentinel_requests_on_status_and_created_at ON public.sentinel
 
 
 --
+-- Name: index_sign_in_grants_on_code_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sign_in_grants_on_code_digest ON public.sign_in_grants USING btree (code_digest);
+
+
+--
+-- Name: index_sign_in_grants_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sign_in_grants_on_principal_id ON public.sign_in_grants USING btree (principal_id);
+
+
+--
 -- Name: index_todo_backends_on_name; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1713,6 +1778,14 @@ ALTER TABLE ONLY public.ward_findings
 
 ALTER TABLE ONLY public.calendar_contributors
     ADD CONSTRAINT fk_rails_2dc963feae FOREIGN KEY (owner_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: sign_in_grants fk_rails_2fe08944e5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sign_in_grants
+    ADD CONSTRAINT fk_rails_2fe08944e5 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -2079,6 +2152,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260928041600'),
 ('20260927193600'),
 ('20260927000001'),
 ('20260924190500'),

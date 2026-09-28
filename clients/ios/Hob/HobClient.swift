@@ -58,6 +58,14 @@ struct HobClient: Sendable {
         try await post("/v1/sentinel/requests/\(id)/decide", body: decision)
     }
 
+    // MARK: Signing in
+
+    /// Trade the one-time code from the browser sign-in for a key. Needs no
+    /// key of its own (the client's is ignored).
+    func appSession(code: String, verifier: String) async throws -> AppSession {
+        try await post("/v1/app_sessions", body: AppSessionRequest(code: code, codeVerifier: verifier))
+    }
+
     // MARK: Devices
 
     func devices() async throws -> [DeviceRecord] {

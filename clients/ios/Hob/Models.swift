@@ -160,6 +160,19 @@ struct DeviceRecord: Codable, Hashable {
     var pushConfigured: Bool?
 }
 
+struct AppSessionRequest: Encodable {
+    var code: String
+    var codeVerifier: String
+}
+
+/// A key minted for this phone by the browser sign-in.
+struct AppSession: Decodable {
+    let key: String
+    let principal: String
+    let surface: String
+    let clearance: String
+}
+
 struct DeviceRegistration: Encodable {
     var token: String
     var environment: String

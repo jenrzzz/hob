@@ -10,6 +10,16 @@ The server side is `Push` (`app/services/push.rb`) behind `Notify.person`,
 and `POST /v1/devices` for the phone to register. See
 [SENTINEL.md](../../SENTINEL.md), "Petitions and the forge".
 
+## Signing in
+
+**Sign in** opens hob's `/app/sign_in` in the system sign-in sheet. You sign
+in there as for hob's admin page (your passkey, at the household's
+provider) and confirm. hob redirects to `hob://signed-in` with a one-time
+code, and the app trades it with its PKCE verifier at `POST /v1/app_sessions`
+for a key of its own, surface `app:<device name>`, kept in the keychain.
+Signing in again from the same device replaces that key. Revoke it on the
+admin page's Keys. **Use a key instead** still takes a pasted key.
+
 ## Build
 
 Requires Xcode 26 or later and [xcodegen](https://github.com/yonaskolb/XcodeGen)
@@ -53,6 +63,12 @@ HOB_URL=http://localhost:3400 HOB_KEY=hob_… SHOT_DIR=$PWD/shots xcodegen gener
 xcodebuild test -project Hob.xcodeproj -scheme Hob \
   -destination "platform=iOS Simulator,id=<udid>" -derivedDataPath build CODE_SIGNING_ALLOWED=NO
 ```
+
+`SignInUITests` walks the sign-in sheet against a development hob (no
+`HOB_OIDC_ISSUER`, so its sign-in is a developer form): add
+`HOB_SIGN_IN_AS=jenner` to the `xcodegen generate` line, clear the
+simulator's saved key with `xcrun simctl keychain <udid> reset`, and pass
+`-only-testing:HobUITests/SignInUITests`.
 
 The variables go into the scheme (the generated project is gitignored, so
 the key stays out of git). Screenshots land in `SHOT_DIR`; the tests skip

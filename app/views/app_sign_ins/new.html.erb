@@ -1,0 +1,13 @@
+<div class="card">
+  <h1>Sign in the Hob app?</h1>
+  <p><strong><%= @surface.delete_prefix("app:") %></strong> gets its own key for <strong><%= current_person.name %></strong>,
+     at <strong><%= current_person.max_clearance %></strong> clearance. It can read and decide what the sentinel holds for you.
+     Signing in again from the same device replaces its key; you can revoke it under Keys.</p>
+  <%= form_with url: app_sign_in_path, class: "row" do |f| %>
+    <% %i[redirect_uri state code_challenge code_challenge_method device].each do |name| %>
+      <%= hidden_field_tag name, params[name] %>
+    <% end %>
+    <%= f.button "Sign in", class: "primary" %>
+    <%= f.button "Cancel", name: "cancel", value: "1" %>
+  <% end %>
+</div>

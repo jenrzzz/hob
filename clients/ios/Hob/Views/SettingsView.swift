@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 import UserNotifications
 
@@ -5,9 +6,12 @@ import UserNotifications
 struct SettingsView: View {
     @Environment(Session.self) private var session
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
     @State private var serverURL = Config.serverURL
     @State private var apiKey = Config.apiKey ?? ""
     @State private var connecting = false
+    @State private var signingIn = false
+    @State private var usingKey = false
     @State private var connectError: String?
     @State private var authorization: UNAuthorizationStatus = .notDetermined
     @State private var pingResult: String?
@@ -20,25 +24,44 @@ struct SettingsView: View {
                     .textContentType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                SecureField("Your hob key (hob_…)", text: $apiKey)
-                    .textContentType(.password)
                 Button {
-                    Task { await connect() }
+                    Task { await signIn() }
                 } label: {
                     HStack {
                         Spacer()
-                        if connecting { ProgressView() } else { Text(session.isConfigured ? "Reconnect" : "Connect").bold() }
+                        if signingIn { ProgressView() } else { Text(session.isConfigured ? "Sign in again" : "Sign in").bold() }
                         Spacer()
                     }
                 }
-                .disabled(connecting || apiKey.isEmpty)
+                .disabled(signingIn || connecting)
                 if let connectError {
                     Text(connectError).font(.footnote).foregroundStyle(.red)
                 }
             } header: {
                 Text("hob")
             } footer: {
-                Text("A person's key: mint one on the hob box with bin/rails \"hob:key[jenner,phone]\". Agent and surface keys cannot decide petitions.")
+                Text("Sign in with your passkey in hob's sign-in sheet. This phone gets its own key, which you can revoke from hob's admin page.")
+            }
+
+            Section {
+                DisclosureGroup("Use a key instead", isExpanded: $usingKey) {
+                    SecureField("Your hob key (hob_…)", text: $apiKey)
+                        .textContentType(.password)
+                    Button {
+                        Task { await connect() }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if connecting { ProgressView() } else { Text(session.isConfigured ? "Reconnect" : "Connect").bold() }
+                            Spacer()
+                        }
+                    }
+                    .disabled(connecting || signingIn || apiKey.isEmpty)
+                }
+            } footer: {
+                if usingKey {
+                    Text("A person's key: mint one on hob's admin page, or with bin/rails \"hob:key[jenner,phone]\". Agent and surface keys cannot decide petitions.")
+                }
             }
 
             if session.isConfigured {
@@ -111,12 +134,35 @@ struct SettingsView: View {
         defer { connecting = false }
         do {
             try await session.connect(serverURL: serverURL, key: apiKey)
-            authorization = await PushCenter.shared.authorizationStatus()
-            if authorization == .notDetermined { await session.enableNotifications() }
-            authorization = await PushCenter.shared.authorizationStatus()
-            if session.path.isEmpty { dismiss() }
+            await connected()
         } catch {
             connectError = error.localizedDescription
         }
+    }
+
+    private func signIn() async {
+        signingIn = true
+        connectError = nil
+        defer { signingIn = false }
+        do {
+            try await session.signIn(serverURL: serverURL) { url in
+                try await webAuthenticationSession.authenticate(
+                    using: url, callbackURLScheme: SignIn.callbackScheme, preferredBrowserSession: .shared
+                )
+            }
+            apiKey = ""
+            await connected()
+        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            // Closed the sheet: nothing to say.
+        } catch {
+            connectError = error.localizedDescription
+        }
+    }
+
+    private func connected() async {
+        authorization = await PushCenter.shared.authorizationStatus()
+        if authorization == .notDetermined { await session.enableNotifications() }
+        authorization = await PushCenter.shared.authorizationStatus()
+        if session.path.isEmpty { dismiss() }
     }
 }

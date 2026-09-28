@@ -31,19 +31,38 @@ final class Session {
 
     /// Verify the key (GET /v1/devices needs a person's key) and keep it.
     func connect(serverURL: String, key: String) async throws {
-        let trimmedURL = serverURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let url = try Self.server(serverURL)
         let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmedURL), url.host != nil else {
-            throw HobClient.Failure(status: 0, message: "That is not a URL.")
-        }
         let candidate = HobClient(baseURL: url, key: trimmedKey)
         _ = try await candidate.devices()
-        Config.serverURL = trimmedURL
-        Config.apiKey = trimmedKey
+        await adopt(candidate)
+    }
+
+    /// Sign in through hob in a browser sheet (SignIn): `authenticate` shows
+    /// the sheet and returns the hob://signed-in URL it ended on.
+    func signIn(serverURL: String, authenticate: (URL) async throws -> URL) async throws {
+        let url = try Self.server(serverURL)
+        let request = SignIn(server: url, device: UIDevice.current.name)
+        let code = try request.code(from: try await authenticate(request.url))
+        let session = try await HobClient(baseURL: url, key: "").appSession(code: code, verifier: request.verifier)
+        await adopt(HobClient(baseURL: url, key: session.key))
+    }
+
+    private func adopt(_ candidate: HobClient) async {
+        Config.serverURL = candidate.baseURL.absoluteString
+        Config.apiKey = candidate.key
         client = candidate
         registeredDevice = nil
         await registerDevice()
         await refresh()
+    }
+
+    private static func server(_ text: String) throws -> URL {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: trimmed), url.host != nil else {
+            throw HobClient.Failure(status: 0, message: "That is not a URL.")
+        }
+        return url
     }
 
     func disconnect() {

@@ -21,7 +21,10 @@ module Admin
 
     def require_person!
       person = session_person
-      return redirect_to login_path if person.nil?
+      if person.nil?
+        session[:return_to] = request.fullpath if request.get?
+        return redirect_to login_path
+      end
 
       Current.principal = person
       Current.surface = "admin"

@@ -24,11 +24,13 @@ class SessionsController < ActionController::Base
       return render :unlinked, status: :forbidden
     end
 
+    return_to = session[:return_to].to_s
     reset_session
     session[:principal_id] = person.id
     session[:oidc_subject] = person.oidc_subject if auth.provider.to_s == "oidc"
     session[:signed_in_at] = Time.current.to_i
-    redirect_to admin_root_path
+    # Back to where sign-in interrupted: a path on this host, nothing else.
+    redirect_to return_to.match?(%r{\A/(?![/\\])}) ? return_to : admin_root_path
   end
 
   def failure

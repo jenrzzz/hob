@@ -69,6 +69,10 @@ so its app gets the new key.
 and decides them: what `hob:sentinel:pending`, `:decide` and `:petition` do.
 The notification for a held request or petition links there.
 
+The companion app (clients/ios) signs in through the same page: it opens
+`/app/sign_in` in a browser sheet, you confirm, and it trades a one-time
+code for a key of its own (`app:<device>`) at `POST /v1/app_sessions`.
+
 People sign in through the household's OIDC provider (Pocket ID, with
 passkeys). Sessions last at most 12 hours. Only a person (`kind: human`)
 linked to their provider identity gets in:

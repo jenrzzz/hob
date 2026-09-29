@@ -76,6 +76,15 @@ and their guidance; a grant's own page edits the guidance text and shows its
 full history — who changed it, when, and whether a petition or this page
 did it (SENTINEL.md, "Policies").
 
+`/admin/gofer_keys` widens or narrows a gofer browsing key's domain
+allowlist without rotating its token (BROWSE.md, "gofer"). "Load" prefills
+from what gofer says a browser row's own key's domains are now; gofer has
+no endpoint to read an arbitrary key by name, so anything else starts
+blank. Every accepted change is logged (`GoferKeyChange`), with what hob
+last saw as the "before". Needs `GOFER_ADMIN_TOKEN` in hob's own
+environment — a credential separate from any browser row's own key, never
+sent to the browser.
+
 The companion app (clients/ios) signs in through the same page: it opens
 `/app/sign_in` in a browser sheet, you confirm, and it trades a one-time
 code for a key of its own (`app:<device>`) at `POST /v1/app_sessions`.

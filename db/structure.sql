@@ -363,6 +363,23 @@ ALTER SEQUENCE public.devices_id_seq OWNED BY public.devices.id;
 
 
 --
+-- Name: gofer_key_changes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.gofer_key_changes (
+    id character varying NOT NULL,
+    browser_id character varying NOT NULL,
+    key_name character varying NOT NULL,
+    decider_id bigint NOT NULL,
+    domains_before jsonb,
+    domains_after jsonb DEFAULT '[]'::jsonb NOT NULL,
+    rationale text,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: guidance_changes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1102,6 +1119,14 @@ ALTER TABLE ONLY public.devices
 
 
 --
+-- Name: gofer_key_changes gofer_key_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gofer_key_changes
+    ADD CONSTRAINT gofer_key_changes_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: guidance_changes guidance_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1275,6 +1300,13 @@ ALTER TABLE ONLY public.ward_notes
 
 ALTER TABLE ONLY public.ward_runs
     ADD CONSTRAINT ward_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_on_browser_id_key_name_created_at_febc83505f; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_browser_id_key_name_created_at_febc83505f ON public.gofer_key_changes USING btree (browser_id, key_name, created_at);
 
 
 --
@@ -1464,6 +1496,20 @@ CREATE INDEX index_devices_on_principal_id ON public.devices USING btree (princi
 --
 
 CREATE UNIQUE INDEX index_devices_on_token ON public.devices USING btree (token);
+
+
+--
+-- Name: index_gofer_key_changes_on_browser_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_gofer_key_changes_on_browser_id ON public.gofer_key_changes USING btree (browser_id);
+
+
+--
+-- Name: index_gofer_key_changes_on_decider_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_gofer_key_changes_on_decider_id ON public.gofer_key_changes USING btree (decider_id);
 
 
 --
@@ -1820,6 +1866,14 @@ ALTER TABLE ONLY public.petitions
 
 
 --
+-- Name: gofer_key_changes fk_rails_28ce00eb44; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gofer_key_changes
+    ADD CONSTRAINT fk_rails_28ce00eb44 FOREIGN KEY (decider_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: ward_findings fk_rails_2b2f7cfe82; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1841,6 +1895,14 @@ ALTER TABLE ONLY public.calendar_contributors
 
 ALTER TABLE ONLY public.sign_in_grants
     ADD CONSTRAINT fk_rails_2fe08944e5 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: gofer_key_changes fk_rails_35aa256496; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gofer_key_changes
+    ADD CONSTRAINT fk_rails_35aa256496 FOREIGN KEY (browser_id) REFERENCES public.browsers(id);
 
 
 --
@@ -2231,6 +2293,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260929120000'),
 ('20260928221000'),
 ('20260928041600'),
 ('20260927193600'),

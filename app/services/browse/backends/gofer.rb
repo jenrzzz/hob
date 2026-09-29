@@ -10,6 +10,8 @@ module Browse
     #
     # The bearer key is the browser row's (Browser#key). Domains a session
     # is opened with go to gofer, which holds them to the key's own.
+    # `update_key_domains` is the one admin exception: it edits a key's
+    # domains with GOFER_ADMIN_TOKEN, never browser.key.
     class Gofer < Base
       # Tests inject a lambda (verb, url, body, headers) -> [status, body]
       # here, as Todos::Backends::Omnifocus does, so nothing touches the network.
@@ -57,6 +59,24 @@ module Browse
         status = get("/v1/status")
         { "reachable" => true, "gofer" => status["gofer"], "driver" => status["browser"], "sessions" => status["sessions"],
           "limits" => status["limits"], "gofer_key" => status["key"] }.compact
+      end
+
+      # PATCH /v1/keys/:name (BROWSE.md's admin path, not a browsing
+      # session): widens or narrows a key's domains without rotating its
+      # token. Authenticated with GOFER_ADMIN_TOKEN, a household-admin
+      # credential separate from any browser row's own bearer key — this
+      # never touches browser.key. `actor`, when given, is gofer's own
+      # X-Admin-Actor audit field.
+      def update_key_domains(name, domains, admin_token:, actor: nil)
+        raise Browse::Unavailable, "no GOFER_ADMIN_TOKEN configured" if admin_token.blank?
+
+        headers = { "Authorization" => "Bearer #{admin_token}", "Accept" => "application/json", "Content-Type" => "application/json" }
+        headers["X-Admin-Actor"] = actor if actor.present?
+        status, response = deliver("PATCH", "#{browser.url}/v1/keys/#{escape(name)}", JSON.generate({ "domains" => domains }), headers)
+        data = parse(response)
+        return data if status.to_s.start_with?("2")
+
+        raise admin_error_for(status.to_i, data)
       end
 
       private
@@ -141,6 +161,18 @@ module Browse
 
       def escape(id)
         ERB::Util.url_encode(id.to_s)
+      end
+
+      # gofer's { error } for the admin key-patch route: only 400, 401 and
+      # 404 are documented (API.md, "Key management (admin)").
+      def admin_error_for(status, data)
+        detail = data["error"].is_a?(String) ? data["error"] : nil
+        case status
+        when 404 then Browse::NotFound.new(detail || "gofer has no key by that name")
+        when 400 then Browse::Invalid.new(detail || "gofer rejected the domains (HTTP 400)")
+        when 401 then Browse::Forbidden.new(detail || "gofer refused the admin credentials")
+        else Browse::Error.new("gofer answered HTTP #{status}#{detail && ": #{detail}"}")
+        end
       end
     end
   end

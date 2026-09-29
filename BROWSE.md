@@ -207,6 +207,24 @@ what hob knows about it.
 | check | `GET /v1/status`: version, the Chrome it drives, sessions open, the key's domains |
 | errors | 404 → NotFound; 410 → Gone; 400, 422 → Invalid; 401, 403 → Forbidden; 429, 502, 5xx, refused connections, timeouts → Unavailable |
 
+**Editing a key's domains.** `/admin/gofer_keys` widens or narrows a key's
+allowlist in place, without rotating its token: `Gofer#update_key_domains`
+sends `PATCH /v1/keys/:name { domains }` with `Authorization: Bearer
+GOFER_ADMIN_TOKEN` — a household-admin credential set in hob's own
+environment, never the browser row's own bearer key, and never sent to the
+browser. gofer answers 200 with the domains as it now has them, 400 for a
+non-array or an entry that isn't a non-empty string, 401 for a missing or
+wrong admin token (a browsing key does not work here), 404 for an unknown
+key name. Every accepted change is logged (`GoferKeyChange`): who, when,
+the browser and key, and the domains before and after — "before" is
+best-effort, hob's own last-known value, since gofer has no endpoint to
+read an arbitrary named key's current domains back. The one exception:
+"Load" on the admin page calls `check` (`GET /v1/status`, the browser
+row's own bearer key) and prefills from what gofer says *that* key's
+domains are now — real, when it's the key being edited, but only that
+one. A `GET /v1/keys/:name` on gofer's side would let the form prefill
+any key by name instead.
+
 What gofer enforces that hob cannot: **where a tab may go.** A key is
 made with domains and blocked paths (`bin/gofer key add hob --domains
 amazon.com --block /checkout,/gp/buy,/buy`), and a request route in the
@@ -268,3 +286,10 @@ browse_sessions  ulid, browser_id, principal_id, realm, goal, domains jsonb, rem
 6. **Expiry.** gofer closes idle tabs itself; hob learns a session expired
    when the next step says `410`. A sweeper marking rows `expired` from
    `expires_at` would keep `browse.sessions` honest between steps.
+7. **Reading a key's domains.** gofer's admin path can only set a key's
+   domains (`PATCH /v1/keys/:name`), not read an arbitrary one back by
+   name; `/admin/gofer_keys` can only prefill via `check`, for the one key
+   a browser row's own bearer token happens to be. `GoferKeyChange.domains_before`
+   is otherwise only ever what hob itself last wrote. A `GET
+   /v1/keys/:name` on gofer's side would let the form prefill any key by
+   name, with the truth.

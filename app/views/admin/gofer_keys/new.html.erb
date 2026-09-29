@@ -1,0 +1,65 @@
+<h1>Gofer key domains</h1>
+<p class="muted">
+  Widen or narrow a gofer browsing key's domain allowlist without rotating its token (gofer's
+  admin-only <code>PATCH /v1/keys/:name</code>, BROWSE.md). gofer has no way to read an arbitrary
+  named key's domains back, so enter the full list you want the key to have, not just what changed.
+  Leave the domains field empty and check "unrestricted" to clear a key's allowlist entirely.
+</p>
+
+<section class="card">
+  <% if @browsers.empty? %>
+    <p class="muted">No gofer browsers registered yet (BROWSE.md, "Setting one up").</p>
+  <% else %>
+    <p class="muted" style="margin-bottom: 12px">
+      Load the current key &amp; domains from what gofer says now:
+      <% @browsers.each_with_index do |b, i| %><%= ", " if i.positive? %><%= link_to b.name, admin_gofer_keys_path(browser: b.name, load: 1) %><% end %>
+    </p>
+    <% if @load_error %><div class="flash alert"><%= @load_error %></div><% end %>
+    <%= form_with url: admin_gofer_keys_path, method: :post do |f| %>
+      <div class="row">
+        <label>
+          Browser
+          <%= f.select :browser, @browsers.map { |b| [ b.name, b.name ] }, { selected: @browser_name }, { "aria-label": "Browser" } %>
+        </label>
+        <label>
+          Key name
+          <%= f.text_field :key_name, value: @key_name, placeholder: "hob", "aria-label": "Key name" %>
+        </label>
+      </div>
+      <p class="muted" style="margin: 10px 0 4px">Domains, one per line:</p>
+      <%= f.text_area :domains, value: @domains_raw, rows: 6, style: "width: 100%", placeholder: "amazon.com\nynab.com", "aria-label": "Domains" %>
+      <div class="row">
+        <label><%= f.check_box :unrestricted, checked: @unrestricted %> unrestricted (clear the allowlist)</label>
+        <%= f.text_field :rationale, placeholder: "why (optional)", "aria-label": "Rationale" %>
+        <%= f.submit "Save" %>
+      </div>
+    <% end %>
+  <% end %>
+</section>
+
+<h1 style="margin-top: 32px">Recent changes</h1>
+<% if @history.empty? %>
+  <p class="muted">No gofer key changes recorded yet.</p>
+<% else %>
+  <section class="card">
+    <div class="table-wrap">
+      <table>
+        <tr><th>When</th><th>Browser</th><th>Key</th><th>By</th><th>Before → after</th><th>Why</th></tr>
+        <% @history.each do |h| %>
+          <tr>
+            <td title="<%= h.created_at.utc.iso8601 %>"><%= time_ago_in_words(h.created_at) %> ago</td>
+            <td><%= h.browser.name %></td>
+            <td><code><%= h.key_name %></code></td>
+            <td><%= h.decider&.name %></td>
+            <td>
+              <span class="muted"><%= h.domains_before.nil? ? "(unknown)" : h.domains_before.presence&.join(", ") || "unrestricted" %></span>
+              →
+              <%= h.domains_after.presence&.join(", ") || "unrestricted" %>
+            </td>
+            <td><%= h.rationale %></td>
+          </tr>
+        <% end %>
+      </table>
+    </div>
+  </section>
+<% end %>

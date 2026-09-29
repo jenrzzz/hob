@@ -21,6 +21,8 @@ Rails.application.routes.draw do
     get "grants", to: "grants#index"
     get "grants/:id", to: "grants#show", as: :grant
     post "grants/:id", to: "grants#update", as: :update_grant
+    get "gofer_keys", to: "gofer_keys#new", as: :gofer_keys
+    post "gofer_keys", to: "gofer_keys#update"
     resources :keys, only: [] do
       member do
         post :rotate

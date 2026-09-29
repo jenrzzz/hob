@@ -75,6 +75,39 @@ class BrowseGoferTest < ActiveSupport::TestCase
     assert_match(/gateway/, assert_raises(Browse::Unavailable) { adapter.state("x", screenshot: false, max_chars: nil) }.message)
   end
 
+  test "update_key_domains PATCHes /v1/keys/:name with the admin token, never the browser's own key" do
+    @responses << [ 200, { "name" => "hob", "domains" => [ "amazon.com", "ynab.com" ] }.to_json ]
+    result = adapter.update_key_domains("hob", [ "amazon.com", "ynab.com" ], admin_token: "gofer-admin-secret", actor: "jenner")
+    assert_equal({ "name" => "hob", "domains" => [ "amazon.com", "ynab.com" ] }, result)
+
+    verb, url, body, headers = @calls.last
+    assert_equal "PATCH", verb
+    assert_equal "http://mini.test:8378/v1/keys/hob", url
+    assert_equal({ "domains" => [ "amazon.com", "ynab.com" ] }, body)
+    assert_equal "Bearer gofer-admin-secret", headers["Authorization"]
+    assert_equal "jenner", headers["X-Admin-Actor"]
+  end
+
+  test "update_key_domains without an actor sends no X-Admin-Actor header" do
+    @responses << [ 200, { "name" => "hob", "domains" => [] }.to_json ]
+    adapter.update_key_domains("hob", [], admin_token: "gofer-admin-secret")
+    refute @calls.last[3].key?("X-Admin-Actor")
+  end
+
+  test "update_key_domains maps gofer's admin statuses to Browse's errors" do
+    { 404 => Browse::NotFound, 400 => Browse::Invalid, 401 => Browse::Forbidden }.each do |status, klass|
+      @responses << [ status, { "error" => "because #{status}" }.to_json ]
+      error = assert_raises(klass, status.to_s) { adapter.update_key_domains("hob", [], admin_token: "t") }
+      assert_match(/because #{status}/, error.message)
+    end
+  end
+
+  test "update_key_domains refuses to call gofer with no admin token" do
+    error = assert_raises(Browse::Unavailable) { adapter.update_key_domains("hob", [], admin_token: nil) }
+    assert_match(/GOFER_ADMIN_TOKEN/, error.message)
+    assert_empty @calls
+  end
+
   test "no key, or no way to the mini, is unavailable, not a crash" do
     ENV.delete("HOB_TEST_GOFER_KEY")
     error = assert_raises(Browse::Unavailable) { adapter.check }

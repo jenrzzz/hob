@@ -28,6 +28,7 @@ RUN groupadd --system --gid 1000 forge && \
 WORKDIR /forge
 COPY --chown=forge:forge bin/forge bin/forge
 COPY --chown=forge:forge lib/forge.rb lib/forge.rb
+COPY --chown=forge:forge lib/forge lib/forge
 COPY --chown=forge:forge clients/ruby/lib clients/ruby/lib
 USER forge
 ENV HOME=/home/forge

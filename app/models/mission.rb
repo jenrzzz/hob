@@ -103,9 +103,18 @@ class Mission < ApplicationRecord
   end
 
   # The outcome, back to whoever queued it, on their channel; not when they
-  # queued it for themselves, and not when nobody did.
+  # queued it for themselves. A mission nobody queued but one of hob's own
+  # schedules (SCHEDULES.md) reports to the household: always when it
+  # failed, and when it completed only if the worker asked (`notify: true`
+  # in the result: an upkeep PR waiting for review, not one that merged).
   def report!(summary)
-    return if created_by.nil? || created_by_id == assignee_id
+    if created_by.nil?
+      return if schedule_id.nil? || (status == "completed" && !(result.is_a?(Hash) && result["notify"]))
+
+      return Notify.person(title: "hob: #{assignee.name} #{status} #{title.truncate(60)}",
+                           body: summary.to_s.truncate(300), tags: status == "completed" ? "eyes" : "warning")
+    end
+    return if created_by_id == assignee_id
 
     Notify.principal(created_by, title: "hob: #{assignee.name} #{status} #{title.truncate(60)}",
                      body: summary.to_s.truncate(300), tags: status == "completed" ? "white_check_mark" : "warning")

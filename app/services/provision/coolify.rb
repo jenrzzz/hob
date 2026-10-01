@@ -18,6 +18,12 @@ class Provision
       @transport.call(:get, "/applications/#{uuid}", nil)
     end
 
+    # Every application this token can see (upkeep discovery reads their
+    # git_repository and git_branch).
+    def applications
+      Array(@transport.call(:get, "/applications", nil))
+    end
+
     # Coolify's env endpoint is POST for a new key and PATCH for an existing
     # one. `secret` names keys whose value the UI should stop showing. What
     # hob pushes is for the running app, never the image: a variable Coolify

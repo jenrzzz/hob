@@ -820,11 +820,43 @@ namespace :hob do
       end
     end
 
+    desc "Fire one schedule now, as if it were due: bin/rails \"hob:schedules:fire[name]\" (BY=<principal> for one an agent made). " \
+         "Skipped, as always, while its last mission is open."
+    task :fire, [ :name ] => :environment do |_task, args|
+      Clearance.with("intimate") do
+        by = ENV["BY"].presence && Principal.find_by!(name: ENV["BY"])
+        schedule = Schedule.find_by!(created_by: by, name: args[:name])
+        mission = schedule.fire!
+        puts mission ? "#{schedule.name}: queued #{mission.id}" : "#{schedule.name}: skipped; #{schedule.last_mission_id} is still open"
+      end
+    end
+
     desc "Fire whatever is due now, as ScheduleTickJob does every minute (for when bin/jobs is not running)"
     task tick: :environment do
       fired = ScheduleTickJob.new.perform
       puts "nothing due" if fired.empty?
       fired.each { |schedule, mission| puts "#{schedule.name}: #{mission ? "queued #{mission.id}" : 'skipped, last mission still open'}" }
+    end
+  end
+end
+
+namespace :hob do
+  namespace :upkeep do
+    desc "Give every household repo on Coolify its upkeep schedules (SCHEDULES.md); UpkeepDiscoverJob does this weekly. DRY=1 to only show"
+    task discover: :environment do
+      Clearance.with("intimate") do
+        report = Upkeep.discover!(dry_run: ENV["DRY"] == "1")
+        puts "#{ENV['DRY'] == '1' ? '(dry run) ' : ''}repos: #{report.repos.join(', ').presence || 'none'} (owners #{Upkeep.owners.join(', ')})"
+        %i[created updated disabled].each { |k| puts "#{k}: #{report[k].join(', ')}" if report[k].any? }
+      end
+    end
+
+    desc "Run a repo's upkeep now: bin/rails \"hob:upkeep:run[hob]\" or \"hob:upkeep:run[hob,major]\""
+    task :run, [ :repo, :scope ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:upkeep:run[repo,minor|major]\"" if args[:repo].blank?
+
+      repo = args[:repo].include?("/") ? args[:repo] : "#{Upkeep.owners.first}/#{args[:repo]}"
+      Rake::Task["hob:schedules:fire"].invoke(Upkeep.schedule_name(repo, args[:scope].presence || "minor"))
     end
   end
 end

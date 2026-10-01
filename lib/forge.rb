@@ -45,6 +45,23 @@ module Forge
     [ status.exitstatus, out, err ]
   end
 
+  # The build a mission's payload asks for: a capability (Build) or an app's
+  # upkeep (Upkeep, lib/forge/upkeep.rb). `base` is hob's branch, which an
+  # upkeep build has no use for: it works on its own repo's.
+  def self.build(payload:, repo:, workdir:, base: "main", log: $stderr)
+    if (payload || {}).to_h["kind"] == Upkeep::KIND
+      Upkeep.new(payload: payload, workdir: workdir, log: log)
+    else
+      Build.new(payload: payload, repo: repo, workdir: workdir, base: base, log: log)
+    end
+  end
+
+  # What a mission is about, for names and logs, after the checks its kind
+  # makes: a capability's name, or an upkeep's repo.
+  def self.label!(payload)
+    (payload || {}).to_h["kind"] == Upkeep::KIND ? Upkeep.check!(payload) : check!(payload)
+  end
+
   # The checks every build makes before it runs anything. -> the spec's name
   def self.check!(payload)
     payload = (payload || {}).to_h
@@ -463,10 +480,10 @@ module Forge
       @timeout = timeout
       @keep = keep
       @clock = clock || -> { Time.now }
-      capability = Forge.check!(@payload)
+      @label = Forge.label!(@payload)
       # One name per mission, so a second attempt at the same mission finds the
       # first attempt's workspace; a petition rebuilt later is a new mission.
-      suffix = mission.to_s.downcase[-8..] || @payload["petition"].to_s.downcase[-6..] || capability.tr("._", "-")[0, 12]
+      suffix = mission.to_s.downcase[-8..] || @payload["petition"].to_s.downcase[-6..] || @label.tr("._/", "-")[0, 12]
       @name = "forge-#{suffix}".gsub(/[^a-z0-9-]/, "-")
     end
 
@@ -627,7 +644,7 @@ module Forge
     end
 
     def say(message)
-      log.puts("[forge #{Time.now.utc.iso8601}] #{payload.dig('spec', 'name')}: #{message}") if log
+      log.puts("[forge #{Time.now.utc.iso8601}] #{@label}: #{message}") if log
     end
   end
 
@@ -646,7 +663,7 @@ module Forge
       @heartbeat = heartbeat
       @lease = lease
       @log = log
-      @build = build || ->(payload, _id) { Build.new(payload: payload, repo: repo, workdir: workdir, base: base, log: log) }
+      @build = build || ->(payload, _id) { Forge.build(payload: payload, repo: repo, workdir: workdir, base: base, log: log) }
     end
 
     # Handle missions until `once` or the queue is empty with `drain`.
@@ -683,7 +700,7 @@ module Forge
       beat = heartbeat_thread(mission)
       result = @build.call(mission.payload, mission.id).call
       @hob.missions.complete(mission, result)
-      say "completed mission #{mission.id}: #{result['pull_request']}"
+      say "completed mission #{mission.id}: #{result['summary'] || result['pull_request']}"
       result
     rescue StandardError => e
       say "mission #{mission.id} failed: #{e.class}: #{e.message}"
@@ -719,3 +736,5 @@ module Forge
     end
   end
 end
+
+require_relative "forge/upkeep"

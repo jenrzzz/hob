@@ -382,8 +382,8 @@ runs beside the loop, which is fine for a laptop and nothing else. The
 workspace image (`agent-workspace-hob`, in the infra repo under
 `agentbox/coder/workspace-hob`) carries Ruby, Postgres with pgvector, and
 this repo's gems; `forge-env` starts the database and exports the tokens.
-The loop itself is `Dockerfile.forge`: Ruby, the `coder` CLI, and these
-three files, built by Coolify from this repo on every push so it tracks the
+The loop itself is `Dockerfile.forge`: Ruby, the `coder` CLI, `bin/forge`,
+`lib/forge*`, and the client gem, built by Coolify from this repo on every push so it tracks the
 code, and configured by the four variables alone.
 
 The brief tells the implementer exactly what to touch (a
@@ -403,6 +403,8 @@ refuse instead.
 
 Nothing about the forge is specific to petitions: any `forge.capability`
 mission with a spec in its payload builds. A person can queue one by hand.
+The forge also takes `forge.upkeep` missions, which keep the household's
+other apps current ([SCHEDULES.md](SCHEDULES.md), "Upkeep").
 
 ### Trust
 

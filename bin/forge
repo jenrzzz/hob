@@ -54,7 +54,7 @@ if ARGV.first == "build"
   need "claude", "gh", "git"
 
   payload = JSON.parse(options[:payload] ? File.read(options[:payload]) : $stdin.read)
-  report = Forge.report(Forge::Build.new(payload: payload, repo: root, workdir: options[:workdir], base: options[:base]))
+  report = Forge.report(Forge.build(payload: payload, repo: root, workdir: options[:workdir], base: options[:base]))
   json = JSON.pretty_generate(report)
   if options[:result]
     File.write("#{options[:result]}.tmp", json)
@@ -100,6 +100,6 @@ build = if options[:coder]
 end
 worker = Forge::Worker.new(hob: hob, repo: root, workdir: options[:workdir], base: options[:base], build: build)
 where = options[:coder] ? "fresh #{options[:template]} workspaces at #{ENV['CODER_URL']} (#{options[:image]}, repo #{options[:repo]})" : "repo #{root}, worktrees in #{options[:workdir]}"
-$stderr.puts "[forge] listening for #{Forge::KIND} missions at #{ENV['HOB_URL']}; building in #{where}"
+$stderr.puts "[forge] listening for #{Forge::KIND} and #{Forge::Upkeep::KIND} missions at #{ENV['HOB_URL']}; building in #{where}"
 handled = worker.work(wait: options[:wait], once: options[:once], drain: options[:drain])
 $stderr.puts "[forge] handled #{handled} mission(s)"

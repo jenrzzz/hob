@@ -115,3 +115,37 @@ class ScheduleTest < ActiveSupport::TestCase
     assert_empty Schedule.where(name: "private")
   end
 end
+
+class ScheduledMissionReportTest < ActiveSupport::TestCase
+  setup do
+    @worker = Principal.create!(name: "upkeep", kind: "worker", max_clearance: "household")
+    @pings = []
+    Notify.transport = ->(url, title, body, _headers) { @pings << [ url, title, body ]; "200" }
+    ENV["HOB_NOTIFY_URL"] = "https://ntfy.test/hob"
+    @schedule = Schedule.create!(name: "upkeep-x", cron: "@weekly", assignee: @worker, realm: "household", title: "upkeep: x")
+  end
+
+  teardown do
+    Notify.transport = nil
+    ENV.delete("HOB_NOTIFY_URL")
+  end
+
+  def reports = @pings.reject { |_, title, _| title.include?("mission for") }
+
+  test "hob's own schedules report to the household: failures always, completions only when the worker asks" do
+    @schedule.fire!.complete!({ "summary" => "x: merged #1", "notify" => false })
+    assert_empty reports
+
+    @schedule.fire!.complete!({ "summary" => "x: #2 needs review: major versions: rails", "notify" => true })
+    assert_equal [ [ "https://ntfy.test/hob", "hob: upkeep completed upkeep: x", "x: #2 needs review: major versions: rails" ] ], reports
+
+    @pings.clear
+    @schedule.fire!.fail!("Refused: needs Ruby 4.0.6")
+    assert_equal [ "hob: upkeep failed upkeep: x" ], reports.map { |_, title, _| title }
+  end
+
+  test "a mission nobody queued and no schedule fired still reports to no one" do
+    Mission.create!(assignee: @worker, title: "loose", realm: "household").complete!({ "notify" => true })
+    assert_empty reports
+  end
+end

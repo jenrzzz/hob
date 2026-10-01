@@ -106,29 +106,71 @@ makes or retimes it without rotating the worker's key. The worker then
 runs `ward.py work` without `--every`, and the stale-check alarm still
 catches a clock that stopped.
 
-## Upkeep (next)
+## Upkeep
 
-Not built yet. The second use this was made for: keep every app the
-household runs on Coolify current, frameworks and dependencies alike,
-so nothing goes crusty.
+Keep every app the household runs on Coolify current, frameworks and
+dependencies alike, so nothing goes crusty.
 
-- **Which apps.** Discovered from Coolify: every application with a git
-  source, read with hob's `COOLIFY_TOKEN`. A weekly `upkeep-discover`
-  schedule reconciles the list into one `upkeep-<repo>` schedule per
-  repo, staggered across the week. Each can be disabled like any other
-  schedule, and a disabled one is never re-enabled by discovery.
-- **The work.** A `forge.upkeep` mission (`{ kind, repo, branch }`) for
-  the forge, built in a fresh Coder workspace like a capability build,
-  with its own brief: upgrade the framework and dependencies within
-  their constraints, run the repo's own tests, open one PR. Never touch
-  secrets, deploy config, or the database.
-- **Merging.** A PR of only patch and minor bumps whose checks pass is
-  merged by the forge, and Coolify deploys it. A major version, a
-  framework upgrade, a language-version change, or any code change
-  beyond the lockfile stays a PR for a person.
-- **What it needs first.** `Forge::Build` assumes it is building a hob
-  capability, and the workspace image carries hob's toolchain only; the
-  household's apps are Ruby (airing, mise, parboil, hob), Node
-  (chatelaine, lumen), and Python (feedcurator). Dependabot covers
-  mise, parboil, and hob already; upkeep should merge its green PRs
-  rather than duplicate them.
+**Which apps.** `UpkeepDiscoverJob` (Sundays at 1am, and
+`bin/rails hob:upkeep:discover`, `DRY=1` to look first) reads Coolify's
+applications with hob's `COOLIFY_TOKEN` and keeps those built from a
+GitHub repo whose owner is in `HOB_UPKEEP_OWNERS` (default `jenrzzz`):
+not a Docker image, not someone else's project. Each repo, once however
+many apps it backs, gets two hob-owned schedules for the forge:
+
+| schedule | when | scope |
+|---|---|---|
+| `upkeep-<repo>` | weekly, 2 to 5am on the repo's own weekday | `minor` |
+| `upkeep-<repo>-major` | monthly, 3am on the repo's own day | `major` |
+
+Discovery owns the payload (repo, branch); a person owns the timing and
+the switch, so a retimed or disabled schedule stays that way. A repo
+that leaves Coolify has its schedules disabled, not deleted.
+
+**The work.** A `forge.upkeep` mission (`{ kind, repo, branch, scope }`,
+priority -1 so capability builds go first) is built like a capability:
+in a fresh Coder workspace with the same image, by `Forge::Upkeep`
+(`lib/forge/upkeep.rb`). It clones the repo with `gh`, hands Claude Code
+a brief for the scope, then decides for itself what happens next:
+
+- **minor.** First, Dependabot's open PRs that bump one dependency within
+  its major and whose checks passed are merged. Then the implementer
+  takes everything to its newest patch or minor release, lockfiles only,
+  holding back whatever breaks the tests, and lists the majors waiting in
+  `.forge/MAJORS.md`. The forge reruns the repo's tests itself, with a
+  plan it reads off the repo (`bundle exec rspec` or `bin/rails test`,
+  `npm test`, `uv run pytest`), pushes `upkeep/minor`, and opens or
+  refreshes the PR. It **merges** only when every one of these holds:
+  only lockfiles changed (`Gemfile.lock`, `package-lock.json`, `uv.lock`,
+  `poetry.lock`); no version in them crossed a major (below 1.0, a minor
+  counts); its own test run passed; and no GitHub check failed (pending
+  ones are waited on for half an hour). Otherwise the PR waits, with the
+  reasons in the mission's result.
+- **major.** One framework, runtime, or major upgrade, with the code
+  changes it needs, on `upkeep/major`. Never merged by the forge.
+
+Each scope has one branch per repo, rebuilt from the base and
+force-pushed on every run, so an unmerged PR is refreshed in place, not
+joined by another. A merge to an app's branch is a deploy: Coolify
+builds it as for any push.
+
+**Hearing about it.** Missions from hob's own schedules report to the
+household (`Notify.person`): always when they fail, and when they
+complete only if the worker sets `notify` in its result. Upkeep sets it
+for a PR left for review, not for one it merged or a repo already
+current. The result carries the repo, status (`current`, `merged`,
+`review`), the PR, why it needs review, what moved, the forge's test
+run, the Dependabot PRs merged, and the majors waiting.
+
+```sh
+bin/rails hob:upkeep:discover                 # DRY=1 to only show
+bin/rails "hob:upkeep:run[airing]"            # now, as if due; "hob:upkeep:run[airing,major]"
+bin/rails "hob:schedules:set[upkeep-airing]" ENABLED=0   # leave one alone
+```
+
+**Limits.** The workspace image has one Ruby (hob's); an app pinned to
+another may not install, and the implementer refuses rather than guess.
+Tests that need services beyond Postgres will fail in the sandbox, and
+those PRs wait for a person. The sandbox's GitHub token needs push and
+merge on every repo discovery finds. Branch protection that requires a
+review stops the merge; the PR waits, which is the point of it.

@@ -27,7 +27,11 @@ In production the clock ([SCHEDULES.md](SCHEDULES.md)) is a second
 process from the same image, `bin/jobs` (Solid Queue: the schedule tick
 every minute, the ward's hourly sweep), with the app's environment and
 the queue database (`hob_production_queue`) the app's `db:prepare`
-loads. Keep `SOLID_QUEUE_IN_PUMA` unset.
+loads. Keep `SOLID_QUEUE_IN_PUMA` unset. Schedules made by rake read
+their times in `HOB_TIME_ZONE` (an IANA zone, default UTC). Upkeep
+discovery reads `HOB_UPKEEP_OWNERS` (the GitHub owners whose repos on
+Coolify the forge keeps current) and `HOB_FORGE_PRINCIPAL` (default
+`forge`).
 
 Providers resolve API keys from env at request time (`ANTHROPIC_API_KEY`,
 `HOB_OPENAI_COMPAT_KEY` + `HOB_OPENAI_COMPAT_BASE`). A model role with no

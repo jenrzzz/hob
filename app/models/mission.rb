@@ -10,6 +10,7 @@ class Mission < ApplicationRecord
 
   belongs_to :assignee, class_name: "Principal"
   belongs_to :created_by, class_name: "Principal", optional: true
+  belongs_to :schedule, optional: true
 
   validates :title, presence: true
   validates :status, inclusion: { in: STATUSES }

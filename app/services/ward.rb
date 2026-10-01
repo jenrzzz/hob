@@ -12,6 +12,19 @@ module Ward
 
   module_function
 
+  # A check's scheduled run as a hob schedule (SCHEDULES.md): the same
+  # ward.audit mission `ward.audit.run` queues, for the ward worker, on a
+  # cron line. Owned by hob (no creator); re-running retimes it.
+  def schedule!(check, worker:, cron:, time_zone: ENV.fetch("HOB_TIME_ZONE", "Etc/UTC"))
+    schedule = Schedule.find_or_initialize_by(created_by: nil, name: "ward-#{check.slug}")
+    schedule.update!(
+      description: "the ward's #{check.slug} check (WARD.md)", cron: cron, time_zone: time_zone,
+      assignee: worker, realm: "personal", title: "ward: run #{check.slug}",
+      payload: { "kind" => Sentinel::Native::WardAuditRun::KIND, "check" => check.slug }, enabled: check.enabled?
+    )
+    schedule
+  end
+
   # The whole picture a person or `ward.status` wants: each check with its
   # last run and staleness, the open and acknowledged findings, the latest
   # triage. Sweeps first, so a stale check shows as one.

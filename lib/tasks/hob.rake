@@ -489,9 +489,23 @@ namespace :hob do
       check = WardCheck.find_or_create_by!(slug: "exposure") do |c|
         c.description = "infra security/audit.py: Coolify inventory, routes, Authelia gates, full TCP exposure"
       end
+      schedule = Clearance.with("intimate") { Ward.schedule!(check, worker: ward, cron: ENV.fetch("CRON", "0 4 * * 1")) }
       puts "#{ward.name}: worker key (shown once): #{token}"
-      puts "rotated #{rotated} old key(s). Checks: #{WardCheck.order(:slug).pluck(:slug).join(', ')} (exposure every #{check.interval_seconds / 86_400}d)"
-      puts "On the runner: HOB_URL=https://... HOB_KEY=<key> COOLIFY_BASE_URL= COOLIFY_API_TOKEN=<read-only> python3 security/ward.py work --every #{check.interval_seconds}"
+      puts "rotated #{rotated} old key(s). Checks: #{WardCheck.order(:slug).pluck(:slug).join(', ')}; " \
+           "#{schedule.name} fires #{schedule.cron} (#{schedule.time_zone}), next #{schedule.next_fire_at&.utc&.iso8601}"
+      puts "On the runner: HOB_URL=https://... HOB_KEY=<key> COOLIFY_BASE_URL= COOLIFY_API_TOKEN=<read-only> python3 security/ward.py work"
+    end
+
+    desc "Run a check on hob's clock: a ward.audit mission for the worker on a cron line. " \
+         "bin/rails \"hob:ward:schedule[exposure]\" CRON='0 4 * * 1' TZ_NAME=America/Los_Angeles (the worker then runs `work` without --every)"
+    task :schedule, [ :slug ] => :environment do |_task, args|
+      check = WardCheck.find(args[:slug].presence || "exposure")
+      worker = Principal.find_by!(name: ENV.fetch("HOB_WARD_PRINCIPAL", "ward"), kind: "worker")
+      Clearance.with("intimate") do
+        schedule = Ward.schedule!(check, worker: worker, cron: ENV.fetch("CRON", "0 4 * * 1"),
+                                  time_zone: ENV["TZ_NAME"].presence || ENV.fetch("HOB_TIME_ZONE", "Etc/UTC"))
+        puts "#{schedule.name}: #{schedule.cron} (#{schedule.time_zone}) → #{worker.name}, next #{schedule.next_fire_at&.utc&.iso8601 || 'never (disabled)'}"
+      end
     end
 
     desc "Register or retune a check. bin/rails \"hob:ward:check[exposure,7,1]\" (slug, interval days, grace days) DESCRIPTION= ENABLED=0|1"
@@ -593,7 +607,7 @@ namespace :hob do
       end
     end
 
-    desc "The ward's clock: raise stale checks, expire acknowledgements, triage what changed. Run hourly (a Coolify scheduled task)."
+    desc "The ward's clock: raise stale checks, expire acknowledgements, triage what changed. WardSweepJob runs it hourly; this is by hand."
     task sweep: :environment do
       Clearance.with("intimate") do
         Current.set(surface: Ward::SURFACE) do
@@ -750,6 +764,67 @@ namespace :hob do
         puts "#{collection.name}: every current record meets schema version #{collection.schema_version}" if refused.empty?
         refused.each { |record, problems| puts "#{record.ref} (v#{record.version}, schema v#{record.schema_version}): #{problems.join('; ')}" }
       end
+    end
+  end
+end
+
+namespace :hob do
+  namespace :schedules do
+    desc "Create or retime a schedule hob owns (SCHEDULES.md). bin/rails \"hob:schedules:set[name,0 7 * * *,assignee]\" " \
+         "TITLE= BRIEF= PAYLOAD='{\"kind\":...}' REALM=household TZ_NAME=America/Los_Angeles PRIORITY=0 DESCRIPTION= ENABLED=0|1"
+    task :set, [ :name, :cron, :assignee ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:schedules:set[name,cron,assignee]\" TITLE=..." if args[:name].blank?
+
+      Clearance.with("intimate") do
+        schedule = Schedule.find_or_initialize_by(created_by: nil, name: args[:name])
+        schedule.cron = args[:cron] if args[:cron].present?
+        schedule.assignee = Principal.find_by!(name: args[:assignee]) if args[:assignee].present?
+        schedule.title = ENV["TITLE"] if ENV.key?("TITLE")
+        schedule.title ||= schedule.name
+        schedule.brief = ENV["BRIEF"].presence if ENV.key?("BRIEF")
+        schedule.payload = JSON.parse(ENV["PAYLOAD"]) if ENV.key?("PAYLOAD")
+        schedule.realm = ENV["REALM"] if ENV.key?("REALM")
+        schedule.realm ||= "household"
+        schedule.time_zone = ENV["TZ_NAME"] if ENV.key?("TZ_NAME")
+        schedule.time_zone = ENV.fetch("HOB_TIME_ZONE", "Etc/UTC") if schedule.new_record? && !ENV.key?("TZ_NAME")
+        schedule.priority = ENV["PRIORITY"].to_i if ENV.key?("PRIORITY")
+        schedule.description = ENV["DESCRIPTION"] if ENV.key?("DESCRIPTION")
+        schedule.enabled = ENV["ENABLED"] != "0" if ENV.key?("ENABLED")
+        abort schedule.errors.full_messages.to_sentence unless schedule.save
+
+        puts "#{schedule.name}: #{schedule.cron} (#{schedule.time_zone}) → #{schedule.assignee.name}, " \
+             "next #{schedule.next_fire_at&.utc&.iso8601 || 'never (disabled)'}"
+      end
+    end
+
+    desc "Every schedule: who made it, what it queues, when it fires next"
+    task list: :environment do
+      Clearance.with("intimate") do
+        rows = Schedule.includes(:assignee, :created_by).order(:next_fire_at, :name)
+        puts "no schedules" if rows.empty?
+        rows.each do |s|
+          state = s.enabled? ? "next #{s.next_fire_at&.utc&.iso8601}" : "disabled"
+          skips = ", #{s.skipped_count} skipped" if s.skipped_count.positive?
+          puts "#{s.name.ljust(28)} #{(s.created_by&.name || 'hob').ljust(10)} → #{s.assignee.name.ljust(10)} " \
+               "#{s.cron} (#{s.time_zone})  #{state}  fired #{s.fired_count}#{skips}\n    #{s.title}"
+        end
+      end
+    end
+
+    desc "Delete a schedule: bin/rails \"hob:schedules:drop[name]\" (BY=<principal> for one an agent made)"
+    task :drop, [ :name ] => :environment do |_task, args|
+      Clearance.with("intimate") do
+        by = ENV["BY"].presence && Principal.find_by!(name: ENV["BY"])
+        Schedule.find_by!(created_by: by, name: args[:name]).destroy!
+        puts "dropped #{args[:name]}"
+      end
+    end
+
+    desc "Fire whatever is due now, as ScheduleTickJob does every minute (for when bin/jobs is not running)"
+    task tick: :environment do
+      fired = ScheduleTickJob.new.perform
+      puts "nothing due" if fired.empty?
+      fired.each { |schedule, mission| puts "#{schedule.name}: #{mission ? "queued #{mission.id}" : 'skipped, last mission still open'}" }
     end
   end
 end

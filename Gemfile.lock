@@ -439,6 +439,7 @@ DEPENDENCIES
   brakeman
   bundler-audit
   debug
+  fugit (~> 1.11)
   json_schemer (~> 2.5)
   kamal
   omniauth (~> 2.1)

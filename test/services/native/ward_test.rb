@@ -81,3 +81,20 @@ class WardNativeTest < ActiveSupport::TestCase
     assert_match(/no ward worker/, nobody.error)
   end
 end
+
+class WardScheduleTest < ActiveSupport::TestCase
+  test "Ward.schedule! puts a check's audit on hob's clock as the ward.audit mission, and retimes it in place" do
+    check = WardCheck.create!(slug: "exposure", description: "the audit")
+    ward = Principal.create!(name: "ward", kind: "worker", max_clearance: "personal")
+    schedule = Ward.schedule!(check, worker: ward, cron: "0 4 * * 1", time_zone: "America/Los_Angeles")
+    assert_equal [ "ward-exposure", nil, ward, "personal", "ward: run exposure" ],
+                 [ schedule.name, schedule.created_by, schedule.assignee, schedule.realm, schedule.title ]
+    assert_equal({ "kind" => "ward.audit", "check" => "exposure" }, schedule.payload)
+
+    Ward.schedule!(check, worker: ward, cron: "0 5 * * 1")
+    assert_equal [ 1, "0 5 * * 1" ], [ Schedule.count, schedule.reload.cron ]
+
+    mission = schedule.fire!
+    assert_equal [ ward, { "kind" => "ward.audit", "check" => "exposure" } ], [ mission.assignee, mission.payload ]
+  end
+end

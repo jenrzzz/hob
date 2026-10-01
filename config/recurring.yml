@@ -1,0 +1,14 @@
+# hob's clock (SCHEDULES.md). Solid Queue's scheduler enqueues these; the
+# `bin/jobs` process runs them. Household schedules are rows in `schedules`,
+# fired by the tick, never lines here.
+
+production:
+  schedule_tick:
+    class: ScheduleTickJob
+    schedule: every minute
+  ward_sweep:
+    class: WardSweepJob
+    schedule: every hour at minute 7
+  clear_solid_queue_finished_jobs:
+    command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
+    schedule: every hour at minute 12

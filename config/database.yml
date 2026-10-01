@@ -98,3 +98,6 @@ production:
     <<: *primary_production
     database: hob_production_queue
     migrations_paths: db/queue_migrate
+    # Solid Queue's own schema (db/queue_schema.rb); the primary stays on
+    # structure.sql for its RLS policies.
+    schema_format: ruby

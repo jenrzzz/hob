@@ -97,6 +97,9 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `hob.conversation.read` | read | one branch's transcript |
 | `hob.conversation.event` | act | append an event node ("Muse booked the table") |
 | `hob.mission.create` | act | hand a mission to another principal |
+| `hob.schedule.create` | act | have hob queue a mission on a cron line ([SCHEDULES.md](SCHEDULES.md)), for the agent or another principal; the same name replaces it; at most every 15 minutes, 25 per agent |
+| `hob.schedule.list` | read | the schedules the agent made and the ones that queue missions for it |
+| `hob.schedule.cancel` | act | end a schedule the agent made; missions it already queued stay |
 | `hob.agent.message` | act | a short note to another agent on this instance, or the caller's inbox; nothing leaves hob, and a person reads the log with `hob:messages` |
 | `hob.board.post` | act | append a post to a thread on the shared household board, or open a new one; author is always the calling agent's authenticated identity, never an argument; household realm only |
 | `hob.calendar.push` | act | a batch of normalized calendar events for one person's calendar, into hob's mirror; free/busy unless the push says `details`; only from an agent a person registered for that owner (`hob:calendar:contributor`) |

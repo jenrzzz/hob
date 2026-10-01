@@ -101,7 +101,7 @@ module V1
         title: mission.title, brief: mission.brief, payload: mission.payload, priority: mission.priority,
         realm: mission.realm, status: mission.status, attempts: mission.attempts,
         leased_at: mission.leased_at, lease_expires_at: mission.lease_expires_at,
-        result: mission.result, error: mission.error, request: mission.sentinel_request_id,
+        result: mission.result, error: mission.error, request: mission.sentinel_request_id, schedule: mission.schedule_id,
         created_at: mission.created_at, updated_at: mission.updated_at
       }.tap { |h| h[:lease_token] = mission.lease_token if token && mission.leased? }.compact
     end

@@ -125,14 +125,13 @@ that grows without a commit.
 
 ### The sweep
 
-hob has no scheduler yet (Solid Queue is in the Gemfile and not wired).
-The ward keeps time three ways instead: every ingest sweeps, every status
-read sweeps, and `bin/rails hob:ward:sweep` runs hourly as a scheduled
-task on the hob container in Coolify. A sweep raises stale findings and
-expires acknowledgements; when it changes something outside an ingest it
-writes a **sweep run** (no exit code, no lines) so the change is on the
-record and triaged like any other. Idempotent, cheap, quiet when nothing
-moved.
+Every ingest sweeps, every status read sweeps, and `WardSweepJob` sweeps
+hourly on hob's clock ([SCHEDULES.md](SCHEDULES.md)). A sweep raises
+stale findings and expires acknowledgements; when it changes something
+outside an ingest it writes a **sweep run** (no exit code, no lines) so
+the change is on the record and triaged like any other. Idempotent,
+cheap, quiet when nothing moved. `bin/rails hob:ward:sweep` does one by
+hand.
 
 ### Triage
 
@@ -189,7 +188,10 @@ forge's loop in Python: lease `ward.audit` missions, heartbeat while the
 scan runs, post the run with the mission id, complete the mission; and
 with `--every`, run the scheduled check whenever the last successful post
 is older than the interval. One process is both the clock and the
-on-demand worker.
+on-demand worker. Since hob has a clock, the scheduled run is a hob
+schedule instead (`ward-exposure`, a weekly `ward.audit` mission;
+SCHEDULES.md), and the worker runs `work` without `--every`: it only
+leases.
 
 It runs as a Coolify app on **agentbox** from `infra/coolify/ward`, with
 `HOB_URL`, `HOB_KEY`, `COOLIFY_BASE_URL`, and a **read-only**
@@ -223,7 +225,8 @@ bin/rails "hob:ward:findings[open]" CHECK=exposure
 bin/rails "hob:ward:ack[<id>,jenner]" NOTE='reviewed: intentional' UNTIL=2026-12-01
 bin/rails "hob:ward:note[cadance,jenner]" BODY='8888 is nordlynx; auth required on it'
 bin/rails "hob:ward:runs[exposure]"
-bin/rails hob:ward:sweep                           # hourly, as a Coolify scheduled task on the hob app
+bin/rails "hob:ward:schedule[exposure]" CRON='0 4 * * 1' TZ_NAME=America/Los_Angeles   # the weekly run, on hob's clock
+bin/rails hob:ward:sweep                           # by hand; WardSweepJob runs it hourly
 ```
 
 On agentbox, the ward app from `infra/coolify/ward` with the key from
@@ -246,10 +249,9 @@ Not realm-scoped: one class of data, read by people and by a
 
 ## Open questions
 
-1. **The clock.** A Coolify scheduled task is a fine hourly sweep until
-   Solid Queue is wired (infra `TODO.md` wants the queue schema and a
-   separate job process first). When it is, the sweep becomes a recurring
-   job and the scheduled task goes.
+1. **The clock.** Settled: hob has one ([SCHEDULES.md](SCHEDULES.md)).
+   The sweep is `WardSweepJob`, the weekly audit is the `ward-exposure`
+   schedule, and the Coolify scheduled task goes.
 2. **Structured audit output.** The worker posts text lines and hob
    fingerprints them; that is enough because `audit.py`'s WARN/FAIL/ERROR
    messages are stable per subject. A `--json` mode in `audit.py` with an
@@ -260,7 +262,8 @@ Not realm-scoped: one class of data, read by people and by a
    link and a screen with ack-with-note is the next surface.
 4. **A digest.** The ward is quiet when nothing changes, which is right for
    pings and wrong for a monthly "here is where the house stands". A
-   scheduled digest through the same triage role, once there is a clock.
+   scheduled digest through the same triage role, now that there is a
+   clock.
 5. **Findings as memory.** When Plane 3 exists, a finding's subject is an
    entity and an acknowledgement is an observation with provenance.
    Nothing in v1's shape prevents that migration.

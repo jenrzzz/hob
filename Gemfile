@@ -16,6 +16,7 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 # Use the database-backed adapters for Rails.cache and Active Job
 gem "solid_cache"
 gem "solid_queue"
+gem "fugit", "~> 1.11" # cron lines for schedules (SCHEDULES.md); solid_queue already depends on it
 
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false

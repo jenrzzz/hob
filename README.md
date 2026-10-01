@@ -9,6 +9,7 @@ full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 [BUDGET.md](BUDGET.md) for its budget, [RECORDS.md](RECORDS.md) for what
 its agents keep, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure,
+[SCHEDULES.md](SCHEDULES.md) for its clock,
 [BROWSE.md](BROWSE.md) for the household's browser, and
 [CLAUDE_CODE.md](CLAUDE_CODE.md) for how a person's own assistant gets in.
 
@@ -21,6 +22,12 @@ clearance from day one, so the app must connect as a non-superuser role.
 bin/rails db:prepare db:seed   # seeds print a dev API key once
 ANTHROPIC_API_KEY=sk-... bin/rails server
 ```
+
+In production the clock ([SCHEDULES.md](SCHEDULES.md)) is a second
+process from the same image, `bin/jobs` (Solid Queue: the schedule tick
+every minute, the ward's hourly sweep), with the app's environment and
+the queue database (`hob_production_queue`) the app's `db:prepare`
+loads. Keep `SOLID_QUEUE_IN_PUMA` unset.
 
 Providers resolve API keys from env at request time (`ANTHROPIC_API_KEY`,
 `HOB_OPENAI_COMPAT_KEY` + `HOB_OPENAI_COMPAT_BASE`). A model role with no

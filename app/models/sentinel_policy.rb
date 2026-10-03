@@ -26,6 +26,7 @@ class SentinelPolicy < ApplicationRecord
   validate :principal_is_agent
   validate :constraints_shape
   validate :limits_shape
+  validate :person_confirms_what_requires_one
 
   # The rule for (agent, capability name), or nil when nothing matches.
   # Specificity: this agent beats every agent; an exact name beats a glob
@@ -73,6 +74,16 @@ class SentinelPolicy < ApplicationRecord
 
   def principal_is_agent
     errors.add(:principal, "must be an agent") if principal && !principal.agent?
+  end
+
+  # A rule naming a person-confirmed capability exactly may confirm or deny
+  # it, nothing else. A glob may say allow; the gate still asks a person.
+  def person_confirms_what_requires_one
+    return unless %w[allow review].include?(effect) && specificity == 2
+
+    if Capability.find_by(name: capability)&.requires_person?
+      errors.add(:effect, "must be confirm or deny: only a person may approve #{capability}")
+    end
   end
 
   def constraints_shape

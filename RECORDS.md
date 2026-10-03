@@ -3,6 +3,11 @@
 *What the household's agents found out and want to keep. hob does keep
 these: they have no other home.*
 
+**Status.** Implemented 2026-10-03 as written here: the three tables, the
+`Records` module, the eleven `records.*` capabilities (and MCP tools),
+the `requires_person` rule, `hob:records:*`, and `/admin/records`. The
+open questions at the end are still open.
+
 [Budgets](BUDGET.md) and [todos](TODOS.md) store nothing in hob, because
 somewhere else already keeps them and a second copy only drifts. Some
 things an agent learns have no such somewhere. Muse reads Amazon's order
@@ -167,7 +172,9 @@ one, both confirmed.
 **Delete is retraction.** A deleted record gets a tombstone version and
 stops answering `get`, `query`, and `changes` (where it appears once, as
 `retracted: true`, so a reader's copy can drop it). A deleted collection
-takes all its records with it the same way, and its name is not free
+takes all its records with it: the collection is not found, by any read
+or by `changes`, so a reader drops the lot. Its records are left as they
+were, so restoring it brings them all back, and its name is not free
 again until it is purged. Nothing is gone: the versions and their
 provenance stay, and `/admin/records` restores a record or a collection
 with one click. Only a person, in `/admin/records`, **purges**, which
@@ -183,8 +190,9 @@ Two runs of an agent, or two agents, may write the same record. The
 default is last write wins, which for evidence is usually right: both
 saw the order, the later look is the better one. When a writer read a
 record, changed it, and needs nothing to have changed in between, it puts
-with `if_version`, and a put against a newer version is refused with the
-current record (`Records::Conflict`). It reads again and decides.
+with `if_version`, and a put against a newer version is refused
+(`Records::Conflict`), saying the version the record is at. It reads
+again and decides.
 
 hob does not hand out locks. Postgres advisory locks live as long as a
 database session, and an agent's session with hob is an HTTP request: a
@@ -199,8 +207,13 @@ Agents cannot be pushed to (MUSE.md, "Listening for missions"), so a
 subscription is a poll that is cheap to repeat. `Records.changes` answers
 with every key changed since a cursor and a `next_since` to ask with next
 time, oldest first, the way `hob.board.read` does. The cursor is opaque
-and stays good for 30 days. fineass, a digest job, or an extraction run
+and does not expire: versions are kept until a purge. fineass, a digest job, or an extraction run
 keeps its cursor and reads only what moved.
+
+A version is handed out only once every transaction older than its own
+has finished (it is ordered by its transaction id, and read below
+Postgres's snapshot horizon), so a write that commits late is never
+stepped past by a reader who already moved on.
 
 A collection may name an ntfy channel to post on when it changes, as a
 wake-up and never as the feed itself; not before something needs it.
@@ -212,11 +225,13 @@ record_collections  ulid, name (unique slug), principal (the owner: a person), r
                     key_path, schema jsonb, schema_version, description, notify jsonb,
                     proposed_by (an agent, or null), sentinel_request_id,
                     retracted_at, retracted_by, timestamps                         [RLS]
-records             ulid, collection_id, key, version, data jsonb, links text[],
-                    observed_at, source, retracted, timestamps                     [RLS]
-record_versions     ulid, record_id, version, schema_version, data jsonb, links text[],
-                    observed_at, source, principal (the writer), surface, sentinel_request_id,
-                    mission_id, retracted, created_at                              [RLS]
+records             ulid, collection_id, realm, key, version, schema_version, data jsonb,
+                    links text[], observed_at, source, written_by, surface,
+                    retracted_at, document tsvector (generated), timestamps        [RLS]
+record_versions     ulid, record_id, collection_id, realm, version, schema_version,
+                    data jsonb, links text[], observed_at, source, retracted, reason,
+                    principal (the writer), surface, sentinel_request_id, mission_id,
+                    txid, seq (the changes cursor), created_at                    [RLS]
 ```
 
 `records` holds the current version, unique on `(collection_id, key)`;
@@ -229,7 +244,7 @@ it.
 
 ```sh
 bin/rails "hob:records:collection[amazon-orders,household,order_id]" \
-  OWNER=jenner SCHEMA=config/records/amazon-orders.json \
+  OWNER=jenner SCHEMA=path/to/amazon-orders.schema.json \
   DESCRIPTION="Amazon orders as Muse read them, for matching the Prime Visa"
 bin/rails hob:records:collections                        # what exists, how many records, last write
 ```

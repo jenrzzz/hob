@@ -269,6 +269,7 @@ module Sentinel
         end
         verdict.effect ||= EFFECT_CAP.fetch(cap.kind)
         verdict.effect = tighter(verdict.effect, EFFECT_CAP.fetch(cap.kind)) unless human
+        verdict.effect = "confirm" if cap.requires_person? && verdict.effect != "confirm"
         verdict.action = "refer" if charter && charter.effect == "confirm" && !human
         verdict.rationale = "#{verdict.rationale} (the charter refers every petition to a person)" if verdict.action == "refer"
         verdict

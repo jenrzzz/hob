@@ -69,6 +69,7 @@
         <%= link_to admin_sentinel_path, class: ("current" if current_page?(admin_sentinel_path)) do %>Sentinel<% if (waiting = SentinelRequest.pending.count + Petition.where(status: %w[pending failed]).count).positive? %> <span class="badge"><%= waiting %></span><% end %><% end %>
         <%= link_to "Grants", admin_grants_path, class: ("current" if controller_name == "grants") %>
         <%= link_to "Gofer keys", admin_gofer_keys_path, class: ("current" if controller_name == "gofer_keys") %>
+        <%= link_to "Records", admin_records_path, class: ("current" if controller_name == "records") %>
       <% end %>
     </nav>
     <% if current_person %>

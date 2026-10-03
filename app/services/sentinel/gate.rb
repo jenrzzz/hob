@@ -25,6 +25,11 @@ module Sentinel
         return deny("limit", problem)
       end
 
+      if @capability.requires_person? && %w[allow review].include?(rule.effect)
+        return Verdict.new(decision: "escalate", decided_by: "policy",
+                           rationale: "#{rule_label(rule)}, but only a person may approve #{@capability.name}: a person must confirm")
+      end
+
       case rule.effect
       when "allow" then Verdict.new(decision: "allow", decided_by: "policy", rationale: rule_label(rule))
       when "confirm" then Verdict.new(decision: "escalate", decided_by: "policy", rationale: "#{rule_label(rule)}: a person must confirm")

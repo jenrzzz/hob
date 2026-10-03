@@ -682,3 +682,74 @@ namespace :hob do
     end
   end
 end
+
+# Records (RECORDS.md): what the household's agents keep.
+namespace :hob do
+  namespace :records do
+    desc "Make (or change) a record collection as a person. bin/rails \"hob:records:collection[amazon-orders,household,order_id]\" " \
+         "OWNER=jenner SCHEMA=path/to/schema.json (SCHEMA=none drops it) DESCRIPTION='...'"
+    task :collection, [ :name, :realm, :key ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:records:collection[name,realm,key]\" DESCRIPTION= SCHEMA= OWNER=" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        Current.set(clearance: "intimate") do
+          schema = case ENV["SCHEMA"]
+          when nil then :unset
+          when "none", "" then nil
+          else JSON.parse(File.read(ENV["SCHEMA"]))
+          end
+          existing = RecordCollection.find_by(name: args[:name])
+          begin
+            if existing
+              abort "#{existing.name} is retracted; restore it in /admin/records first" if existing.retracted?
+              attrs = { "collection" => existing.name, "reason" => "changed from a terminal" }
+              attrs["description"] = ENV["DESCRIPTION"] if ENV["DESCRIPTION"].present?
+              attrs["schema"] = schema unless schema == :unset
+              result = Records.update_collection(attrs)
+              row = result["collection"]
+              puts "#{row['name']}: #{result['changed'] ? 'updated' : 'unchanged'}; schema version #{row['schema_version']}" \
+                   "#{result['refused'].positive? ? ", #{result['refused']} current records the schema would refuse (hob:records:check)" : ''}"
+            else
+              owner = Principal.find_by!(name: ENV["OWNER"].presence || "jenner")
+              abort "usage: DESCRIPTION='what it holds and why' is required for a new collection" if ENV["DESCRIPTION"].blank?
+              row = Records.create_collection(
+                { "name" => args[:name], "realm" => args[:realm].presence || "household", "key" => args[:key],
+                  "description" => ENV["DESCRIPTION"], "schema" => schema == :unset ? nil : schema }, owner: owner
+              )
+              puts "#{row.name}: made; realm #{row.realm}, key #{row.key_path}, owner #{row.principal.name}, " \
+                   "#{row.schema ? 'with a schema' : 'no schema'}"
+            end
+          rescue Records::Error => e
+            abort "#{e.class.name.demodulize.downcase}: #{e.message}"
+          end
+        end
+      end
+    end
+
+    desc "List record collections: realm, owner, key, schema version, how many records, last write"
+    task collections: :environment do
+      Clearance.with("intimate") do
+        rows = RecordCollection.includes(:principal, :proposed_by).order(:name)
+        puts "no record collections; bin/rails \"hob:records:collection[name,realm,key]\" DESCRIPTION=" if rows.empty?
+        rows.each do |row|
+          live = row.records.live
+          puts "#{row.name.ljust(24)} #{row.realm.ljust(10)} #{row.principal.name.ljust(10)} key #{row.key_path.ljust(14)} " \
+               "schema v#{row.schema_version}#{row.schema ? '' : ' (none)'}  #{live.count} records, last #{live.maximum(:updated_at)&.utc&.iso8601 || 'never'}" \
+               "#{row.proposed_by ? "  (asked for by #{row.proposed_by.name})" : ''}#{row.retracted? ? '  RETRACTED' : ''}"
+        end
+      end
+    end
+
+    desc "List the current records a collection's schema would now refuse: bin/rails \"hob:records:check[amazon-orders]\""
+    task :check, [ :name ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:records:check[name]\"" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        collection = RecordCollection.find_by!(name: args[:name])
+        refused = Records.refusals(collection)
+        puts "#{collection.name}: every current record meets schema version #{collection.schema_version}" if refused.empty?
+        refused.each { |record, problems| puts "#{record.ref} (v#{record.version}, schema v#{record.schema_version}): #{problems.join('; ')}" }
+      end
+    end
+  end
+end

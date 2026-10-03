@@ -441,7 +441,8 @@ CREATE TABLE public.missions (
     error text,
     sentinel_request_id character varying,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    schedule_id character varying
 );
 
 ALTER TABLE ONLY public.missions FORCE ROW LEVEL SECURITY;
@@ -675,6 +676,136 @@ CREATE TABLE public.realms (
     slug character varying NOT NULL,
     rank integer NOT NULL
 );
+
+
+--
+-- Name: record_collections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.record_collections (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    key_path character varying NOT NULL,
+    schema jsonb,
+    schema_version integer DEFAULT 1 NOT NULL,
+    description text NOT NULL,
+    notify jsonb DEFAULT '{}'::jsonb NOT NULL,
+    proposed_by_id bigint,
+    sentinel_request_id character varying,
+    retracted_at timestamp(6) without time zone,
+    retracted_by_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.record_collections FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: record_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.record_versions (
+    id character varying NOT NULL,
+    record_id character varying NOT NULL,
+    collection_id character varying NOT NULL,
+    realm character varying NOT NULL,
+    version integer NOT NULL,
+    schema_version integer NOT NULL,
+    data jsonb NOT NULL,
+    links character varying[] DEFAULT '{}'::character varying[] NOT NULL,
+    observed_at timestamp(6) without time zone NOT NULL,
+    source text,
+    retracted boolean DEFAULT false NOT NULL,
+    reason text,
+    principal_id bigint NOT NULL,
+    surface character varying,
+    sentinel_request_id character varying,
+    mission_id character varying,
+    txid bigint DEFAULT ((pg_current_xact_id())::text)::bigint NOT NULL,
+    seq bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.record_versions FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: record_versions_seq_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.record_versions_seq_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: record_versions_seq_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.record_versions_seq_seq OWNED BY public.record_versions.seq;
+
+
+--
+-- Name: records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.records (
+    id character varying NOT NULL,
+    collection_id character varying NOT NULL,
+    realm character varying NOT NULL,
+    key character varying NOT NULL,
+    version integer NOT NULL,
+    schema_version integer NOT NULL,
+    data jsonb NOT NULL,
+    links character varying[] DEFAULT '{}'::character varying[] NOT NULL,
+    observed_at timestamp(6) without time zone NOT NULL,
+    source text,
+    written_by_id bigint NOT NULL,
+    surface character varying,
+    retracted_at timestamp(6) without time zone,
+    document tsvector GENERATED ALWAYS AS (jsonb_to_tsvector('simple'::regconfig, data, '["string", "numeric"]'::jsonb)) STORED,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.records FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: schedules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.schedules (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    cron character varying NOT NULL,
+    time_zone character varying DEFAULT 'Etc/UTC'::character varying NOT NULL,
+    assignee_id bigint NOT NULL,
+    created_by_id bigint,
+    realm character varying NOT NULL,
+    title character varying NOT NULL,
+    brief text,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    priority integer DEFAULT 0 NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    next_fire_at timestamp(6) without time zone,
+    last_fired_at timestamp(6) without time zone,
+    last_mission_id character varying,
+    fired_count integer DEFAULT 0 NOT NULL,
+    skipped_count integer DEFAULT 0 NOT NULL,
+    last_skipped_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.schedules FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -994,6 +1125,13 @@ ALTER TABLE ONLY public.providers ALTER COLUMN id SET DEFAULT nextval('public.pr
 
 
 --
+-- Name: record_versions seq; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.record_versions ALTER COLUMN seq SET DEFAULT nextval('public.record_versions_seq_seq'::regclass);
+
+
+--
 -- Name: sentinel_policies id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1220,6 +1358,38 @@ ALTER TABLE ONLY public.providers
 
 ALTER TABLE ONLY public.realms
     ADD CONSTRAINT realms_pkey PRIMARY KEY (slug);
+
+
+--
+-- Name: record_collections record_collections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.record_collections
+    ADD CONSTRAINT record_collections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: record_versions record_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.record_versions
+    ADD CONSTRAINT record_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: records records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.records
+    ADD CONSTRAINT records_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: schedules schedules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.schedules
+    ADD CONSTRAINT schedules_pkey PRIMARY KEY (id);
 
 
 --
@@ -1576,6 +1746,13 @@ CREATE INDEX index_missions_on_created_by_id ON public.missions USING btree (cre
 
 
 --
+-- Name: index_missions_on_schedule_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_missions_on_schedule_id ON public.missions USING btree (schedule_id);
+
+
+--
 -- Name: index_missions_on_sentinel_request_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1685,6 +1862,125 @@ CREATE UNIQUE INDEX index_providers_on_slug ON public.providers USING btree (slu
 --
 
 CREATE UNIQUE INDEX index_realms_on_rank ON public.realms USING btree (rank);
+
+
+--
+-- Name: index_record_collections_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_record_collections_on_name ON public.record_collections USING btree (name);
+
+
+--
+-- Name: index_record_collections_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_record_collections_on_principal_id ON public.record_collections USING btree (principal_id);
+
+
+--
+-- Name: index_record_collections_on_proposed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_record_collections_on_proposed_by_id ON public.record_collections USING btree (proposed_by_id);
+
+
+--
+-- Name: index_record_collections_on_retracted_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_record_collections_on_retracted_by_id ON public.record_collections USING btree (retracted_by_id);
+
+
+--
+-- Name: index_record_versions_on_collection_id_and_txid_and_seq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_record_versions_on_collection_id_and_txid_and_seq ON public.record_versions USING btree (collection_id, txid, seq);
+
+
+--
+-- Name: index_record_versions_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_record_versions_on_principal_id ON public.record_versions USING btree (principal_id);
+
+
+--
+-- Name: index_record_versions_on_record_id_and_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_record_versions_on_record_id_and_version ON public.record_versions USING btree (record_id, version);
+
+
+--
+-- Name: index_records_on_collection_id_and_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_records_on_collection_id_and_key ON public.records USING btree (collection_id, key);
+
+
+--
+-- Name: index_records_on_collection_id_and_updated_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_records_on_collection_id_and_updated_at ON public.records USING btree (collection_id, updated_at);
+
+
+--
+-- Name: index_records_on_data; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_records_on_data ON public.records USING gin (data jsonb_path_ops);
+
+
+--
+-- Name: index_records_on_document; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_records_on_document ON public.records USING gin (document);
+
+
+--
+-- Name: index_records_on_links; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_records_on_links ON public.records USING gin (links);
+
+
+--
+-- Name: index_records_on_written_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_records_on_written_by_id ON public.records USING btree (written_by_id);
+
+
+--
+-- Name: index_schedules_on_assignee_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_schedules_on_assignee_id ON public.schedules USING btree (assignee_id);
+
+
+--
+-- Name: index_schedules_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_schedules_on_created_by_id ON public.schedules USING btree (created_by_id);
+
+
+--
+-- Name: index_schedules_on_created_by_id_and_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_schedules_on_created_by_id_and_name ON public.schedules USING btree (created_by_id, name) NULLS NOT DISTINCT;
+
+
+--
+-- Name: index_schedules_on_enabled_and_next_fire_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_schedules_on_enabled_and_next_fire_at ON public.schedules USING btree (enabled, next_fire_at);
 
 
 --
@@ -1850,6 +2146,14 @@ ALTER TABLE ONLY public.sentinel_policies
 
 
 --
+-- Name: record_collections fk_rails_110107042c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.record_collections
+    ADD CONSTRAINT fk_rails_110107042c FOREIGN KEY (retracted_by_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: browsers fk_rails_133c4d17e4; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1863,6 +2167,14 @@ ALTER TABLE ONLY public.browsers
 
 ALTER TABLE ONLY public.petitions
     ADD CONSTRAINT fk_rails_1915a4ce8c FOREIGN KEY (sentinel_policy_id) REFERENCES public.sentinel_policies(id);
+
+
+--
+-- Name: schedules fk_rails_1b0dc14136; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.schedules
+    ADD CONSTRAINT fk_rails_1b0dc14136 FOREIGN KEY (assignee_id) REFERENCES public.principals(id);
 
 
 --
@@ -1962,6 +2274,14 @@ ALTER TABLE ONLY public.api_keys
 
 
 --
+-- Name: record_versions fk_rails_5ed139fa96; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.record_versions
+    ADD CONSTRAINT fk_rails_5ed139fa96 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: calendar_contributors fk_rails_609516a57a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2010,6 +2330,14 @@ ALTER TABLE ONLY public.devices
 
 
 --
+-- Name: record_versions fk_rails_9108a7562e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.record_versions
+    ADD CONSTRAINT fk_rails_9108a7562e FOREIGN KEY (collection_id) REFERENCES public.record_collections(id);
+
+
+--
 -- Name: agent_messages fk_rails_92352b2e86; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2031,6 +2359,14 @@ ALTER TABLE ONLY public.ward_findings
 
 ALTER TABLE ONLY public.calendar_events
     ADD CONSTRAINT fk_rails_a15b711368 FOREIGN KEY (source_agent_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: record_versions fk_rails_a481e04532; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.record_versions
+    ADD CONSTRAINT fk_rails_a481e04532 FOREIGN KEY (record_id) REFERENCES public.records(id);
 
 
 --
@@ -2074,6 +2410,14 @@ ALTER TABLE ONLY public.todo_backends
 
 
 --
+-- Name: records fk_rails_c8d9734b1e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.records
+    ADD CONSTRAINT fk_rails_c8d9734b1e FOREIGN KEY (written_by_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: petitions fk_rails_ca627f2e79; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2090,11 +2434,35 @@ ALTER TABLE ONLY public.browse_sessions
 
 
 --
+-- Name: records fk_rails_e28b504d28; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.records
+    ADD CONSTRAINT fk_rails_e28b504d28 FOREIGN KEY (collection_id) REFERENCES public.record_collections(id);
+
+
+--
 -- Name: agent_messages fk_rails_e59b64cbcb; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.agent_messages
     ADD CONSTRAINT fk_rails_e59b64cbcb FOREIGN KEY (recipient_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: schedules fk_rails_e5a6d0fc5e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.schedules
+    ADD CONSTRAINT fk_rails_e5a6d0fc5e FOREIGN KEY (created_by_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: record_collections fk_rails_ec6368c65c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.record_collections
+    ADD CONSTRAINT fk_rails_ec6368c65c FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -2111,6 +2479,14 @@ ALTER TABLE ONLY public.sentinel_requests
 
 ALTER TABLE ONLY public.usage_events
     ADD CONSTRAINT fk_rails_efdc5578b2 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: record_collections fk_rails_f4d99c1415; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.record_collections
+    ADD CONSTRAINT fk_rails_f4d99c1415 FOREIGN KEY (proposed_by_id) REFERENCES public.principals(id);
 
 
 --
@@ -2257,6 +2633,42 @@ CREATE POLICY realm_visibility ON public.prompt_snapshots USING ((( SELECT realm
 
 
 --
+-- Name: record_collections realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.record_collections USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (record_collections.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: record_versions realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.record_versions USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (record_versions.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: records realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.records USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (records.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: schedules realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.schedules USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (schedules.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
 -- Name: sentinel_requests realm_visibility; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -2273,6 +2685,30 @@ CREATE POLICY realm_visibility ON public.todo_backends USING ((( SELECT realms.r
    FROM public.realms
   WHERE ((realms.slug)::text = (todo_backends.realm)::text)) <= public.app_clearance_rank()));
 
+
+--
+-- Name: record_collections; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.record_collections ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: record_versions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.record_versions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: records; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.records ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: schedules; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.schedules ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: sentinel_requests; Type: ROW SECURITY; Schema: public; Owner: -
@@ -2293,6 +2729,8 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261003060000'),
+('20261001202000'),
 ('20260929120000'),
 ('20260928221000'),
 ('20260928041600'),

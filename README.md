@@ -6,7 +6,8 @@ personas, memory, tools, compute, voice. See [DESIGN.md](DESIGN.md) for the
 full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 [SENTINEL.md](SENTINEL.md) for how outside agents get in,
 [TODOS.md](TODOS.md) for the household's todos,
-[BUDGET.md](BUDGET.md) for its budget, mise's `docs/HOB.md` for its kitchen,
+[BUDGET.md](BUDGET.md) for its budget, [RECORDS.md](RECORDS.md) for what
+its agents keep, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure,
 [BROWSE.md](BROWSE.md) for the household's browser, and
 [CLAUDE_CODE.md](CLAUDE_CODE.md) for how a person's own assistant gets in.

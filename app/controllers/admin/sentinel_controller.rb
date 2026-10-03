@@ -2,7 +2,7 @@ module Admin
   # What hob:sentinel:pending, :decide and :petition do from a terminal: the
   # requests and petitions waiting on a person, and deciding them.
   class SentinelController < BaseController
-    helper_method :existing_grant
+    helper_method :existing_grant, :records_context
 
     def index
       @requests = SentinelRequest.pending.recent.includes(:capability, :principal)
@@ -19,6 +19,40 @@ module Admin
       return nil if name.blank?
 
       SentinelPolicy.find_by(principal: petition.principal, capability: name)
+    end
+
+    # What a person needs to see to decide a records.* request that only a
+    # person may approve (RECORDS.md): the collection as proposed, the
+    # schema it has beside the one asked for and how many current records
+    # the new one would refuse, the record a delete would take, or how much
+    # a collection delete would take with it. nil for anything else.
+    def records_context(request)
+      name = request.capability.name
+      return nil unless request.capability.requires_person? && name.start_with?("records.")
+
+      args = request.arguments
+      return { kind: "create" } if name == "records.collection.create"
+
+      collection = RecordCollection.live.find_by(name: args["collection"])
+      return { kind: "missing", collection: args["collection"] } if collection.nil?
+
+      case name
+      when "records.collection.update"
+        context = { kind: "update", collection: collection, schema_changes: args.key?("schema") && args["schema"] != collection.schema }
+        if context[:schema_changes] && args["schema"].is_a?(Hash)
+          context[:refused] = begin
+            Records.refusals(collection, schema: args["schema"]).size
+          rescue StandardError => e
+            "the new schema could not be checked: #{e.message}"
+          end
+        end
+        context
+      when "records.delete"
+        { kind: "delete", collection: collection, record: collection.records.live.find_by(key: args["key"].to_s) }
+      when "records.collection.delete"
+        live = collection.records.live
+        { kind: "collection_delete", collection: collection, count: live.count, last: live.maximum(:updated_at) }
+      end
     end
 
     def decide_request

@@ -37,7 +37,18 @@ module Sentinel
       "browse_act" => "Sentinel::Native::BrowseAct",
       "browse_snapshot" => "Sentinel::Native::BrowseSnapshot",
       "browse_close" => "Sentinel::Native::BrowseClose",
-      "browse_sessions" => "Sentinel::Native::BrowseSessions"
+      "browse_sessions" => "Sentinel::Native::BrowseSessions",
+      "records_collections" => "Sentinel::Native::RecordsCollections",
+      "records_get" => "Sentinel::Native::RecordsGet",
+      "records_query" => "Sentinel::Native::RecordsQuery",
+      "records_history" => "Sentinel::Native::RecordsHistory",
+      "records_changes" => "Sentinel::Native::RecordsChanges",
+      "records_put" => "Sentinel::Native::RecordsPut",
+      "records_put_many" => "Sentinel::Native::RecordsPutMany",
+      "records_collection_create" => "Sentinel::Native::RecordsCollectionCreate",
+      "records_collection_update" => "Sentinel::Native::RecordsCollectionUpdate",
+      "records_delete" => "Sentinel::Native::RecordsDelete",
+      "records_collection_delete" => "Sentinel::Native::RecordsCollectionDelete"
     }.freeze
 
     module_function
@@ -50,7 +61,8 @@ module Sentinel
       HANDLERS.transform_values(&:constantize)
     end
 
-    # Upsert a Capability row per handler. Description and schema follow the
+    # Upsert a Capability row per handler. Description, schema, and whether
+    # only a person may approve it (CAPABILITY["requires_person"]) follow the
     # code; realm, kind, and enabled are left alone once a row exists so a
     # household can tune them.
     def sync!
@@ -58,7 +70,7 @@ module Sentinel
         spec = klass::CAPABILITY
         Capability.find_or_initialize_by(name: spec["name"]).tap do |cap|
           cap.venue = "native"
-          cap.config = { "handler" => key }
+          cap.config = { "handler" => key, "requires_person" => spec["requires_person"] || nil }.compact
           cap.description = spec["description"]
           cap.input_schema = spec["input_schema"]
           cap.kind = spec["kind"] if cap.new_record?

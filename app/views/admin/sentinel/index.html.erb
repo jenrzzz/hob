@@ -17,7 +17,11 @@
       <% if r.rationale.present? %><dt>Held because</dt><dd><%= r.rationale %></dd><% end %>
       <% if r.on_mission_id %><dt>On mission</dt><dd><%= r.on_mission_id %></dd><% end %>
     </dl>
-    <pre><%= JSON.pretty_generate(r.arguments) %></pre>
+    <% if (records = records_context(r)) %>
+      <%= render "records_context", request: r, context: records %>
+    <% else %>
+      <pre><%= JSON.pretty_generate(r.arguments) %></pre>
+    <% end %>
     <% if r.review.present? %>
       <details><summary>Reviewer's notes</summary><pre><%= JSON.pretty_generate(r.review) %></pre></details>
     <% end %>

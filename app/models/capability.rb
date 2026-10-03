@@ -4,6 +4,7 @@
 #   poll     hob queues a mission for a principal that polls for work (config.assignee)
 # `realm` is the clearance an agent needs to ask; `kind` says whether the
 # capability reads or acts, which the reviewer and listings care about.
+# config.requires_person marks one only a person may approve.
 class Capability < ApplicationRecord
   NAME_FORMAT = /\A[a-z0-9]+(?:[._-][a-z0-9]+)*\z/
   KINDS = %w[read act].freeze
@@ -43,6 +44,13 @@ class Capability < ApplicationRecord
 
   def realm_rank
     Realm.rank_of(realm)
+  end
+
+  # Only a person may approve a request for it (RECORDS.md): whatever rule
+  # covers it, `allow` and `review` are taken as `confirm` (Sentinel::Gate),
+  # and a rule naming it exactly cannot say otherwise (SentinelPolicy).
+  def requires_person?
+    config["requires_person"] == true
   end
 
   private

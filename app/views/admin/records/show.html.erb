@@ -1,0 +1,42 @@
+<h1><%= @collection.name %></h1>
+<section class="card">
+  <dl class="facts">
+    <dt>Holds</dt><dd><%= @collection.description %></dd>
+    <dt>Realm</dt><dd><%= @collection.realm %></dd>
+    <dt>Owner</dt><dd><%= @collection.principal.name %><% if @collection.proposed_by %> · asked for by <%= @collection.proposed_by.name %><% end %></dd>
+    <dt>Key</dt><dd><code><%= @collection.key_path %></code></dd>
+    <dt>Records</dt><dd><%= @count %></dd>
+    <dt>Schema</dt><dd>version <%= @collection.schema_version %><% unless @collection.schema %> · none<% end %></dd>
+  </dl>
+  <% if @collection.schema %>
+    <details><summary>Schema</summary><pre><%= JSON.pretty_generate(@collection.schema) %></pre></details>
+  <% end %>
+  <% if @collection.retracted? %>
+    <p>Retracted <span title="<%= @collection.retracted_at.utc.iso8601 %>"><%= time_ago_in_words(@collection.retracted_at) %> ago</span><% if @collection.retracted_by %> by <%= @collection.retracted_by.name %><% end %>: no agent can read or write it.</p>
+    <%= button_to "Restore", admin_restore_records_collection_path(@collection.name), class: "primary", form_class: "inline" %>
+    <%= form_with url: admin_purge_records_collection_path(@collection.name), class: "row" do |f| %>
+      <%= f.text_field :confirm_name, placeholder: "type #{@collection.name} to purge it", "aria-label": "Collection name" %>
+      <%= f.button "Purge for good", class: "danger" %>
+    <% end %>
+  <% end %>
+</section>
+
+<h1 style="margin-top: 32px">Latest records</h1>
+<section class="card">
+  <% if @records.empty? %>
+    <p class="muted">None.</p>
+  <% end %>
+  <% @records.each do |r| %>
+    <details>
+      <summary><code><%= r.key %></code> · v<%= r.version %> · <%= r.written_by.name %><% if r.surface %> via <%= r.surface %><% end %>
+        · <span title="<%= r.updated_at.utc.iso8601 %>"><%= time_ago_in_words(r.updated_at) %> ago</span></summary>
+      <% if r.links.any? %><p class="muted"><%= r.links.join(" · ") %></p><% end %>
+      <pre><%= JSON.pretty_generate(r.data) %></pre>
+    </details>
+  <% end %>
+</section>
+
+<% if @retracted.any? %>
+  <h1 style="margin-top: 32px">Retracted</h1>
+  <section class="card"><%= render "retracted", records: @retracted %></section>
+<% end %>

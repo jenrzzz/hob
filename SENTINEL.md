@@ -162,6 +162,13 @@ glob | *) → effect`, plus constraints, limits, and guidance.
 | `review` | an LLM reviewer judges it under the rule's `guidance` |
 | `confirm` | a person must approve |
 
+**Some capabilities only a person may approve.** A native capability
+whose handler says `requires_person` (`records.collection.create`,
+`.collection.update`, `.delete`, and `.collection.delete`: RECORDS.md)
+is held for a person under any rule that would `allow` or `review` it, a
+`*` among them; a rule naming one exactly may only `confirm` or `deny`
+it, and the steward grants it at `confirm` whatever it was asked for.
+
 The most specific rule wins: a rule for this agent beats one for every
 agent; an exact name beats a glob beats `*`. So a household can say
 "everything is reviewed, `hob.usage` is allowed, `hob.mission.create` needs

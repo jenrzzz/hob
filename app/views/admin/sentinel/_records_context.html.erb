@@ -1,0 +1,57 @@
+<%# A records.* request only a person may approve (RECORDS.md), shown as what it would do. %>
+<% args = request.arguments %>
+<% case context[:kind] %>
+<% when "create" %>
+  <dl class="facts">
+    <dt>New collection</dt><dd><code><%= args["name"] %></code>, in <%= args["realm"].presence || request.realm %>; you would own it</dd>
+    <dt>Keyed by</dt><dd><code><%= args["key"] %></code></dd>
+    <dt>Holds</dt><dd><%= args["description"] %></dd>
+  </dl>
+  <% if args["schema"].present? %>
+    <pre><%= JSON.pretty_generate(args["schema"]) %></pre>
+  <% else %>
+    <p class="muted">No schema: any JSON object holding the key would do.</p>
+  <% end %>
+<% when "missing" %>
+  <p class="muted">There is no live collection named <code><%= context[:collection] %></code>; allowing this would fail.</p>
+  <pre><%= JSON.pretty_generate(args) %></pre>
+<% when "update" %>
+  <% c = context[:collection] %>
+  <dl class="facts">
+    <dt>Collection</dt><dd><%= link_to c.name, admin_records_collection_path(c.name) %>, <%= c.records.live.count %> records</dd>
+    <% if args.key?("description") %><dt>Description</dt><dd><%= args["description"] %> <span class="muted">(was: <%= c.description %>)</span></dd><% end %>
+    <% if context[:schema_changes] %>
+      <dt>Schema</dt><dd>version <%= c.schema_version %> → <%= c.schema_version + 1 %></dd>
+      <% if context.key?(:refused) %>
+        <dt>Would refuse</dt><dd><%= context[:refused].is_a?(Integer) ? "#{context[:refused]} of the current records (they stay as written)" : context[:refused] %></dd>
+      <% end %>
+    <% elsif args.key?("schema") %>
+      <dt>Schema</dt><dd class="muted">unchanged</dd>
+    <% end %>
+  </dl>
+  <% if context[:schema_changes] %>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px">
+      <div><span class="muted">Now</span><pre><%= c.schema ? JSON.pretty_generate(c.schema) : "none" %></pre></div>
+      <div><span class="muted">Asked for</span><pre><%= args["schema"] ? JSON.pretty_generate(args["schema"]) : "none" %></pre></div>
+    </div>
+  <% end %>
+<% when "delete" %>
+  <% c = context[:collection] %>
+  <% if (record = context[:record]) %>
+    <dl class="facts">
+      <dt>Would retract</dt><dd><code><%= record.ref %></code>, version <%= record.version %>, last written by <%= record.written_by.name %></dd>
+    </dl>
+    <pre><%= JSON.pretty_generate(record.data) %></pre>
+    <p class="muted">Restorable from <%= link_to "Records", admin_records_collection_path(c.name) %> until purged.</p>
+  <% else %>
+    <p class="muted">No live record <code><%= args["key"] %></code> in <%= c.name %>; allowing this would fail.</p>
+  <% end %>
+<% when "collection_delete" %>
+  <% c = context[:collection] %>
+  <dl class="facts">
+    <dt>Would retract</dt><dd><%= link_to c.name, admin_records_collection_path(c.name) %> and all <strong><%= context[:count] %></strong> records in it</dd>
+    <dt>Last written</dt><dd><%= context[:last] ? "#{time_ago_in_words(context[:last])} ago" : "never" %></dd>
+    <dt>Holds</dt><dd><%= c.description %></dd>
+  </dl>
+  <p class="muted">Restorable from Records until purged; the name stays taken until then.</p>
+<% end %>

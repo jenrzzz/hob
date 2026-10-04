@@ -183,9 +183,14 @@ bin/rails "hob:upkeep:run[airing]"            # now, as if due; "hob:upkeep:run[
 bin/rails "hob:schedules:set[upkeep-airing]" ENABLED=0   # leave one alone
 ```
 
-**Limits.** The workspace image has one Ruby (hob's); an app pinned to
-another may not install, and the implementer refuses rather than guess.
-Tests that need services beyond Postgres will fail in the sandbox, and
+**Limits.** The workspace image (`agent-workspace-hob`, in the infra
+repo) carries what the household's apps declare in their Dockerfiles and
+CI: one Ruby (hob's, with no version manager, so an app's `.ruby-version`
+is ignored and only a Gemfile `ruby` line could refuse it), Node 22,
+Python 3.12 and 3.14, PostgreSQL 16 with pgvector, libvips, ImageMagick,
+ffmpeg, the sqlite3 CLI, and Chromium for system specs. A new app that
+needs more (Redis, MySQL, another system library) fails in the sandbox
+until the image has it, and the implementer refuses rather than guess;
 those PRs wait for a person. The sandbox's GitHub token needs push and
 merge on every repo discovery finds. Branch protection that requires a
 review stops the merge; the PR waits, which is the point of it.

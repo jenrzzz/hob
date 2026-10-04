@@ -20,6 +20,13 @@ final class Session {
     /// The navigation stack; a tapped notification replaces it with its item.
     var path: [Route] = []
 
+    /// Set once `RootView`'s `NavigationStack` has appeared. A route opened
+    /// before then — the whole point of a cold launch from a notification —
+    /// is held here instead of touching `path`, which can crash pushing into
+    /// a stack that SwiftUI has not yet attached to the view hierarchy.
+    private var navigationReady = false
+    private var pendingRoute: Route?
+
     // Push
     var deviceToken: String?
     var registeredDevice: DeviceRecord?
@@ -72,6 +79,7 @@ final class Session {
         requests = []
         registeredDevice = nil
         path = []
+        pendingRoute = nil
     }
 
     // MARK: Inbox
@@ -92,6 +100,16 @@ final class Session {
         }
     }
 
+    /// Decided petitions and requests from the last `days`, for the History
+    /// screen — kept apart from `petitions`/`requests`, which are the live
+    /// inbox and would otherwise be clobbered by a History-driven refetch.
+    func history(days: Int = 30) async throws -> (petitions: [Petition], requests: [SentinelRequest]) {
+        guard let client else { throw HobClient.Failure(status: 0, message: "Not connected.") }
+        async let petitions = client.petitions(days: days)
+        async let requests = client.requests(days: days)
+        return (try await petitions, try await requests)
+    }
+
     /// Petitions and requests a person has to look at, newest first.
     var needsPerson: [InboxItem] {
         (petitions.filter(\.needsPerson).map(InboxItem.petition) + requests.filter(\.needsPerson).map(InboxItem.request))
@@ -105,9 +123,27 @@ final class Session {
             .map { $0 }
     }
 
+    /// A tap on a notification or a `hob://` link: not signed in is a no-op
+    /// (there is no inbox to open into), and before the stack exists yet the
+    /// route waits for `navigationStackAppeared()`.
     func open(_ route: Route) {
+        guard isConfigured else { return }
+        guard navigationReady else {
+            pendingRoute = route
+            return
+        }
         path = [route]
         Task { await refresh() }
+    }
+
+    /// `RootView`'s `NavigationStack` has appeared: open whatever route a
+    /// notification tap brought along before it existed (a cold launch).
+    func navigationStackAppeared() {
+        navigationReady = true
+        if let route = pendingRoute {
+            pendingRoute = nil
+            open(route)
+        }
     }
 
     func petition(_ id: String) async throws -> Petition {

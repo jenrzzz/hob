@@ -37,6 +37,9 @@ struct InboxView: View {
         }
         .navigationTitle("Hob")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                NavigationLink { HistoryView() } label: { Image(systemName: "clock.arrow.circlepath") }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showSettings = true } label: { Image(systemName: "gearshape") }
             }

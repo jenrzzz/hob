@@ -6,7 +6,8 @@ module V1
     #   → 201 the petition: status granted|pending|building|proposed|denied,
     #     with the capability granted or proposed and the rationale.
     # GET  /v1/sentinel/petitions/:id?wait=25   poll (or long-poll) until it settles
-    # GET  /v1/sentinel/petitions?status=&agent= agents see their own; people see all
+    # GET  /v1/sentinel/petitions?status=&agent=&days= agents see their own; people see all.
+    #   days widens the window beyond the default most-recent-100 cap, for history.
     # POST /v1/sentinel/petitions/:id/decide { decision: grant|build|deny, capability?, effect?,
     #                                          constraints?, limits?, guidance?, spec?, rationale }  people only
     class PetitionsController < ApplicationController
@@ -29,9 +30,11 @@ module V1
       end
 
       def index
-        rows = scope.recent.includes(:principal).limit(100)
+        rows = scope.recent.includes(:principal)
         rows = rows.where(status: params[:status]) if params[:status].present?
         rows = rows.where(principal: Principal.find_by!(name: params[:agent])) if params[:agent].present?
+        rows = rows.since(params[:days].to_i.days.ago) if params[:days].present?
+        rows = rows.limit(100) unless params[:days].present?
         render json: rows.map { |r| serialize(r) }
       end
 

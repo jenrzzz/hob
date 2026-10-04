@@ -55,6 +55,29 @@ class PetitionsControllerTest < ActionDispatch::IntegrationTest
     assert body["review"].present?
   end
 
+  test "?days widens the window past the default recent cap, for history" do
+    charter!(@muse, "review")
+    steward_says("grant", capability: "hob.usage", effect: "allow", rationale: "own spend")
+    travel_to 10.days.ago do
+      post "/v1/sentinel/petitions", params: { want: "old spend", capability: "hob.usage", reason: "budget" },
+           headers: agent_auth, as: :json
+    end
+    old_id = body["id"]
+
+    steward_says("grant", capability: "hob.usage", effect: "allow", rationale: "own spend")
+    post "/v1/sentinel/petitions", params: { want: "recent spend", capability: "hob.usage", reason: "budget" },
+         headers: agent_auth, as: :json
+    recent_id = body["id"]
+
+    get "/v1/sentinel/petitions", params: { days: 3 }, headers: auth
+    ids = body.map { |p| p["id"] }
+    assert_includes ids, recent_id
+    assert_not_includes ids, old_id
+
+    get "/v1/sentinel/petitions", params: { days: 30 }, headers: auth
+    assert_includes body.map { |p| p["id"] }, old_id
+  end
+
   test "a bad petition is 422; no charter is a denial on the record" do
     post "/v1/sentinel/petitions", params: { capability: "hob.usage" }, headers: agent_auth, as: :json
     assert_response :unprocessable_entity

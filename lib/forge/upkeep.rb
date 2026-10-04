@@ -33,7 +33,10 @@ module Forge
       "Bash(npm install:*)", "Bash(npm update:*)", "Bash(npm outdated:*)", "Bash(npm ci:*)", "Bash(npm test:*)", "Bash(npm run:*)",
       "Bash(npx:*)", "Bash(uv lock:*)", "Bash(uv sync:*)", "Bash(uv run:*)", "Bash(uv pip list:*)", "Bash(uv tree:*)",
       "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git show:*)",
-      "Bash(ls:*)", "Bash(cat:*)", "Bash(grep:*)", "Bash(rg:*)", "Bash(sed -n:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(wc:*)"
+      "Bash(ls:*)", "Bash(cat:*)", "Bash(grep:*)", "Bash(rg:*)", "Bash(sed -n:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(wc:*)",
+      "Bash(ruby -v)", "Bash(ruby --version)", "Bash(bundle -v)", "Bash(bundle --version)", "Bash(bundle list:*)",
+      "Bash(gem list:*)", "Bash(node -v)", "Bash(node --version)", "Bash(npm -v)", "Bash(npm ls:*)", "Bash(uv --version)",
+      "Bash(python3 --version)"
     ].freeze
     CO_AUTHOR = "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>".freeze
 
@@ -444,6 +447,19 @@ module Forge
         If the repo cannot be upgraded safely from here (it will not install, its tests cannot
         run in this sandbox, or the work needs a person's decision), write why to
         `.forge/REFUSED.md` and stop without committing.
+
+        ## Commands
+
+        Read files with your Read, Glob, and Grep tools. Your shell runs only these commands,
+        matched against the start of the whole line (`…` takes any arguments):
+
+        #{commands_allowed}
+
+        Run each on its own, from the repo root where you start: no `cd`, `&&`, `;`, pipes, or
+        `VAR=value` prefixes, any of which keeps the line from matching. A command that comes back
+        "requires approval" is only one not on this list; nobody can approve it, and it says
+        nothing about whether the tool works here. Use a listed command instead, and never refuse
+        on the strength of a refused command alone.
       COMMON
       if scope == "minor"
         <<~BRIEF
@@ -488,6 +504,11 @@ module Forge
           upgraded, what changed in the code and why, and what to check by hand after deploying.
         BRIEF
       end
+    end
+
+    # The shell commands @claude_args allow, for the brief: "`bundle update …`".
+    def commands_allowed
+      @claude_args.filter_map { |a| a[/\ABash\((.+)\)\z/, 1] }.map { |c| "`#{c.sub(/:\*\z/, ' …')}`" }.join(", ")
     end
 
     def pr_body(outcome, changes, tests, majors_available)

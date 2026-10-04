@@ -105,6 +105,10 @@ class ForgeUpkeepTest < ActiveSupport::TestCase
     brief = @commands.find { |argv, _, _| argv.first == "claude" }[2]
     assert_match(/bundle update --minor --strict/, brief)
     assert_match(/\.forge\/MAJORS.md/, brief)
+    assert_match(/`bundle update …`, `bundle install …`/, brief, "the brief lists what the shell runs")
+    assert_match(/`bin\/rails test`, `bin\/rails test …`/, brief)
+    assert_match(/no `cd`, `&&`/, brief)
+    assert_match(/never refuse\s+on the strength of a refused command alone/, brief)
     assert_includes @commands.find { |argv, _, _| argv.first == "claude" }[0], "Bash(npm update:*)"
     refute File.exist?(@clone), "the clone is cleaned up"
   end
@@ -291,6 +295,12 @@ class ForgeUpkeepTest < ActiveSupport::TestCase
     assert_nil u.direct_dependencies("uv.lock", "")
     refute Forge::Upkeep.major?("0.27.0", "0.28.1", zero: false)
     assert Forge::Upkeep.major?("0.27.0", "1.0.0", zero: false)
+  end
+
+  test "the brief lists exactly the commands an override allows" do
+    brief = upkeep(claude_args: [ "--allowedTools", "Read", "Bash(make test)", "Bash(npm ci:*)" ]).brief
+    assert_match(/^`make test`, `npm ci …`$/, brief)
+    refute_match(/bundle update …/, brief)
   end
 
   test "lockfile parsers and the major rule" do

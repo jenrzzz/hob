@@ -39,6 +39,7 @@ class ForgeUpkeepTest < ActiveSupport::TestCase
 
   def runner
     lambda do |argv, chdir:, stdin: nil|
+      raise Errno::ENOENT, chdir unless File.directory?(chdir) # as Open3 does, in a fresh workspace
       @commands << [ argv, chdir, stdin ]
       line = argv.join(" ")
       case line

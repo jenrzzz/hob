@@ -93,6 +93,7 @@ module Forge
     # -> { "repo", "scope", "status", "pull_request"?, "merged", "review"?, "tests", "changes", "dependabot", "summary", "cost", "notify" }
     # status: current (nothing to do) | merged | review (a PR waits for a person)
     def call
+      FileUtils.mkdir_p(workdir) # gh runs in it before the clone does; a fresh workspace has none
       dependabot = scope == "minor" ? merge_dependabot : []
       clone
       outcome = implement

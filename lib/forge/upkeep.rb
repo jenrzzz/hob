@@ -54,12 +54,15 @@ module Forge
     end
 
     # A major: the first segment moved, or, below 1.0, the second (0.x
-    # minors break, by semver's own rule). A downgrade counts too.
-    def self.major?(from, to)
+    # minors break, by semver's own rule). A downgrade counts too. zero:
+    # false drops the 0.x rule, for what the app does not depend on itself:
+    # Ruby's default gems and the like sit below 1.0 for years and move a
+    # minor most months.
+    def self.major?(from, to, zero: true)
       a = segments(from)
       b = segments(to)
       return true if a.empty? || b.empty?
-      return a[0] != b[0] if a[0].positive? || b[0].positive?
+      return a[0] != b[0] if a[0].positive? || b[0].positive? || !zero
 
       a[1].to_i != b[1].to_i
     end
@@ -254,19 +257,25 @@ module Forge
       "uv.lock" => :toml_lock, "poetry.lock" => :toml_lock
     }.freeze
 
-    # Every version that moved in a lockfile this branch changed.
+    # Every version that moved in a lockfile this branch changed. The 0.x
+    # rule holds for the app's direct dependencies only, and for all of them
+    # where the lockfile does not say which those are.
     # -> [{ "file", "name", "from", "to", "major" }]
     def lockfile_changes(changed)
       changed.select { |f| LOCKFILES.key?(File.basename(f)) }.flat_map do |file|
         parser = LOCKFILES[File.basename(file)]
-        before = send(parser, git(%w[show], "#{base_ref}:#{file}")[1].to_s)
-        after = send(parser, read(file))
+        old_text = git(%w[show], "#{base_ref}:#{file}")[1].to_s
+        new_text = read(file)
+        before = send(parser, old_text)
+        after = send(parser, new_text)
+        direct = direct_dependencies(file, old_text, new_text)
         (before.keys | after.keys).filter_map do |name|
           from = before[name]
           to = after[name]
           next if from == to || from.nil? || to.nil? # added or removed: a transitive reshuffle, not an upgrade
 
-          { "file" => file, "name" => name, "from" => from, "to" => to, "major" => Upkeep.major?(from, to) }
+          major = Upkeep.major?(from, to, zero: direct.nil? || direct.include?(name))
+          { "file" => file, "name" => name, "from" => from, "to" => to, "major" => major }
         end
       end
     end
@@ -489,6 +498,20 @@ module Forge
 
     def toml_lock(text)
       text.scan(/^\[\[package\]\]\s*\nname = "([^"]+)"\s*\nversion = "([^"]+)"/).to_h
+    end
+
+    # The names the app depends on itself, before or after; nil when the
+    # lockfile does not say (uv.lock and poetry.lock, without a TOML parser).
+    def direct_dependencies(file, *texts)
+      case File.basename(file)
+      when "Gemfile.lock"
+        texts.flat_map { |t| t[/^DEPENDENCIES\n(.*?)(?:\n\n|\z)/m, 1].to_s.scan(/^  ([^\s(!]+)/).flatten }
+      when "package-lock.json"
+        texts.flat_map do |t|
+          root = ((JSON.parse(t)["packages"] rescue nil) || {})[""] || {}
+          %w[dependencies devDependencies optionalDependencies peerDependencies].flat_map { |k| (root[k] || {}).keys }
+        end
+      end
     end
 
     # --- plumbing ------------------------------------------------------------

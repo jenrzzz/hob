@@ -148,9 +148,12 @@ a brief for the scope, then decides for itself what happens next:
   refreshes the PR. It **merges** only when every one of these holds:
   only lockfiles changed (`Gemfile.lock`, `package-lock.json`, `uv.lock`,
   `poetry.lock`); no version in them crossed a major (below 1.0, a minor
-  counts); its own test run passed; and no GitHub check failed (pending
-  ones are waited on for half an hour). Otherwise the PR waits, with the
-  reasons in the mission's result.
+  counts for what the app depends on itself: the `Gemfile`'s gems, or
+  `package.json`'s packages, and every Python one, since the forge cannot
+  tell those apart; a transitive `reline` 0.6 → 0.7 does not hold a PR);
+  its own test run passed; and no GitHub check failed (pending ones are
+  waited on for half an hour). Otherwise the PR waits, with the reasons in
+  the mission's result.
 - **major.** One framework, runtime, or major upgrade, with the code
   changes it needs, on `upkeep/major`. Never merged by the forge.
 

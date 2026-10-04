@@ -214,6 +214,32 @@ class ForgeUpkeepTest < ActiveSupport::TestCase
     assert_empty u.test_plan
   end
 
+  test "below 1.0 a minor holds the PR only for what the app depends on itself" do
+    old = OLD_GEMS.sub("    pg (1.5.9)\n", "    pg (1.5.9)\n    hob (0.1.1)\n    reline (0.6.3)\n") +
+          "\nDEPENDENCIES\n  hob (~> 0.1)\n  pg\n  rails (~> 8.1)\n"
+    @files["Gemfile.lock"] = old
+    @edits = { "Gemfile.lock" => old.sub("reline (0.6.3)", "reline (0.7.0)") }
+    result = upkeep.call
+    assert_equal "merged", result["status"], "reline is not the app's own: #{result['review'].inspect}"
+    assert_equal [ [ "reline", false ] ], result["changes"].map { |c| c.values_at("name", "major") }
+
+    @edits = { "Gemfile.lock" => old.sub("reline (0.6.3)", "reline (0.7.0)").sub("hob (0.1.1)", "hob (0.3.0)") }
+    result = upkeep.call
+    assert_equal "review", result["status"]
+    assert_equal [ "major versions: hob 0.1.1 → 0.3.0" ], result["review"]
+  end
+
+  test "direct dependencies from each lockfile, or nil where it does not say" do
+    u = upkeep
+    gems = "GEM\n  specs:\n    pg (1.5.9)\n\nDEPENDENCIES\n  debug\n  pg (~> 1.1)\n  hob!\n\nBUNDLED WITH\n   2.6.9\n"
+    assert_equal %w[debug pg hob], u.direct_dependencies("Gemfile.lock", gems).uniq
+    lock = { "packages" => { "" => { "dependencies" => { "vite" => "^7" }, "devDependencies" => { "@types/node" => "^22" } } } }.to_json
+    assert_equal %w[vite @types/node], u.direct_dependencies("web/package-lock.json", lock)
+    assert_nil u.direct_dependencies("uv.lock", "")
+    refute Forge::Upkeep.major?("0.27.0", "0.28.1", zero: false)
+    assert Forge::Upkeep.major?("0.27.0", "1.0.0", zero: false)
+  end
+
   test "lockfile parsers and the major rule" do
     u = upkeep
     assert_equal({ "nokogiri" => "1.18.1", "pg" => "1.5.9", "rails" => "8.1.3", "zeitwerk" => "2.7.0" }, u.gemfile_lock(OLD_GEMS))

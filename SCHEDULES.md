@@ -123,8 +123,13 @@ many apps it backs, gets two hob-owned schedules for the forge:
 | `upkeep-<repo>` | weekly, 2 to 5am on the repo's own weekday | `minor` |
 | `upkeep-<repo>-major` | monthly, 3am on the repo's own day | `major` |
 
-Discovery owns the payload (repo, branch); a person owns the timing and
-the switch, so a retimed or disabled schedule stays that way. A repo
+A schedule is known by the repo and scope in its payload, not by its
+name. Where two repos would share a name (`alice/site` and `bob/site`,
+or `x`'s major and `x-major`'s minor), the newcomer's carries its owner,
+`upkeep-<owner>-<repo>`, and failing that the repo's checksum too; a
+schedule that already has a name keeps it. Discovery owns the payload
+(repo, branch); a person owns the timing and the switch, so a retimed or
+disabled schedule stays that way. A repo
 that leaves Coolify has its schedules disabled, not deleted.
 
 **The work.** A `forge.upkeep` mission (`{ kind, repo, branch, scope }`,
@@ -164,7 +169,7 @@ run, the Dependabot PRs merged, and the majors waiting.
 
 ```sh
 bin/rails hob:upkeep:discover                 # DRY=1 to only show
-bin/rails "hob:upkeep:run[airing]"            # now, as if due; "hob:upkeep:run[airing,major]"
+bin/rails "hob:upkeep:run[airing]"            # now, as if due; "hob:upkeep:run[jenrzzz/airing,major]"
 bin/rails "hob:schedules:set[upkeep-airing]" ENABLED=0   # leave one alone
 ```
 

@@ -10,8 +10,10 @@ require "zlib"
 #   upkeep-<repo>-major   monthly, scope major: one framework, runtime, or
 #                         major upgrade, always a PR for a person
 #
-# Times are spread across the week and month by the repo's name, in the
-# small hours of HOB_TIME_ZONE. Discovery owns the payload; a person owns
+# A schedule is known by what it keeps (the repo and scope in its
+# payload), not by its name, which is upkeep-<name> unless another repo
+# shares it, then upkeep-<owner>-<name>. Times are spread across the week
+# and month by the repo's name, in the small hours of HOB_TIME_ZONE. Discovery owns the payload; a person owns
 # the timing and whether it is on: a retimed or disabled schedule stays
 # that way. A repo that leaves Coolify has its schedules disabled, not
 # deleted.
@@ -57,7 +59,7 @@ module Upkeep
     Schedule.transaction do
       found.each do |repo, branch|
         %w[minor major].each do |scope|
-          schedule = Schedule.find_or_initialize_by(created_by: nil, name: schedule_name(repo, scope))
+          schedule = schedule_for(repo, scope) || Schedule.new(created_by: nil, name: name_for(repo, scope, found.keys))
           fresh = schedule.new_record?
           schedule.assign_attributes(
             assignee: worker, realm: "household", priority: -1,
@@ -76,8 +78,8 @@ module Upkeep
         end
       end
 
-      Schedule.where(created_by: nil, enabled: true).where("name LIKE ?", "#{PREFIX}%").find_each do |schedule|
-        next if schedule.payload["kind"] != KIND || found.key?(schedule.payload["repo"])
+      schedules.where(enabled: true).find_each do |schedule|
+        next if found.key?(schedule.payload["repo"])
 
         report.disabled << schedule.name
         schedule.update!(enabled: false, description: "#{schedule.payload['repo']} is no longer on Coolify") unless dry_run
@@ -86,9 +88,45 @@ module Upkeep
     report
   end
 
-  def schedule_name(repo, scope)
-    base = "#{PREFIX}#{repo.split('/').last.downcase.gsub(/[^a-z0-9._-]/, '-')}"
-    scope == "major" ? "#{base}-major" : base
+  # hob's own upkeep schedules.
+  def schedules
+    Schedule.where(created_by: nil).where("payload->>'kind' = ?", KIND)
+  end
+
+  # The upkeep schedule for a repo and scope: "owner/name", or a bare name
+  # when only one repo goes by it. nil when there is none.
+  def schedule_for(repo, scope)
+    rows = schedules.where("payload->>'scope' = ?", scope)
+    return rows.find_by("payload->>'repo' = ?", repo) if repo.include?("/")
+
+    matches = rows.select { |s| s.payload["repo"].to_s.split("/").last.casecmp?(repo) }
+    raise ArgumentError, "#{repo} is more than one repo (#{matches.map { |s| s.payload['repo'] }.sort.join(', ')}); say owner/name" if matches.size > 1
+
+    matches.first
+  end
+
+  # A new schedule's name: upkeep-<name>, then upkeep-<owner>-<name>, then
+  # that ending in the repo's checksum, whichever is the first no other repo
+  # could get (alice/site and bob/site; x's major and x-major's minor) and
+  # no schedule of hob's already has.
+  def name_for(repo, scope, repos)
+    others = repos.reject { |other| other == repo }.product(%w[minor major], [ false, true ])
+                  .map { |other, sc, owner| schedule_name(other, sc, owner: owner) }
+    [ {}, { owner: true }, { owner: true, checksum: true } ]
+      .map { |opts| schedule_name(repo, scope, **opts) }
+      .find { |name| others.exclude?(name) && !Schedule.exists?(created_by: nil, name: name) } ||
+      schedule_name(repo, scope, owner: true, checksum: true)
+  end
+
+  # Within Schedule::NAME's 64 characters; a longer one is cut and ends in
+  # the repo's checksum, so it stays its own.
+  def schedule_name(repo, scope, owner: false, checksum: false)
+    owner_name, name = repo.split("/")
+    base = (owner ? "#{owner_name}-#{name}" : name).downcase.gsub(/[^a-z0-9._-]/, "-")
+    suffix = scope == "major" ? "-major" : ""
+    room = 64 - PREFIX.size - suffix.size
+    base = "#{base[0, room - 9]}-#{format('%08x', Zlib.crc32(repo))}" if checksum || base.size > room
+    "#{PREFIX}#{base}#{suffix}"
   end
 
   # Spread by the repo's name: minor weekly between 2 and 5am on its own

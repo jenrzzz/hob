@@ -851,12 +851,15 @@ namespace :hob do
       end
     end
 
-    desc "Run a repo's upkeep now: bin/rails \"hob:upkeep:run[hob]\" or \"hob:upkeep:run[hob,major]\""
+    desc "Run a repo's upkeep now: bin/rails \"hob:upkeep:run[hob]\" or \"hob:upkeep:run[jenrzzz/hob,major]\""
     task :run, [ :repo, :scope ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:upkeep:run[repo,minor|major]\"" if args[:repo].blank?
 
-      repo = args[:repo].include?("/") ? args[:repo] : "#{Upkeep.owners.first}/#{args[:repo]}"
-      Rake::Task["hob:schedules:fire"].invoke(Upkeep.schedule_name(repo, args[:scope].presence || "minor"))
+      scope = args[:scope].presence || "minor"
+      name = Clearance.with("intimate") { Upkeep.schedule_for(args[:repo], scope)&.name }
+      abort "no #{scope} upkeep schedule for #{args[:repo]}; bin/rails hob:upkeep:discover" if name.nil?
+
+      Rake::Task["hob:schedules:fire"].invoke(name)
     end
   end
 end

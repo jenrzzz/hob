@@ -84,6 +84,45 @@ class UpkeepTest < ActiveSupport::TestCase
     ENV.delete("HOB_UPKEEP_OWNERS")
   end
 
+  test "repos that share a name get their owner in it, and each keeps its own schedule" do
+    ENV["HOB_UPKEEP_OWNERS"] = "jenrzzz,tabitha"
+    @coolify.apps << { "name" => "tabitha-hob", "git_repository" => "tabitha/hob", "git_branch" => "main" }
+    @coolify.apps << { "name" => "airing-major", "git_repository" => "jenrzzz/airing-major", "git_branch" => "main" }
+
+    assert_equal %w[upkeep-airing upkeep-airing-major-major upkeep-jenrzzz-airing-82316a82-major upkeep-jenrzzz-airing-major-db3a374a
+                    upkeep-jenrzzz-hob upkeep-jenrzzz-hob-major upkeep-tabitha-hob upkeep-tabitha-hob-major],
+                 discover.created.sort
+    assert_equal "tabitha/hob", Schedule.find_by!(name: "upkeep-tabitha-hob").payload["repo"]
+    assert_equal "jenrzzz/hob", Schedule.find_by!(name: "upkeep-jenrzzz-hob").payload["repo"]
+    assert_empty discover.updated, "rediscovery leaves both alone"
+    assert_equal "upkeep-tabitha-hob-major", Upkeep.schedule_for("tabitha/hob", "major").name
+    assert_raises(ArgumentError) { Upkeep.schedule_for("hob", "minor") }
+  ensure
+    ENV.delete("HOB_UPKEEP_OWNERS")
+  end
+
+  test "a schedule is known by its repo, so one that already has the plain name keeps it" do
+    discover
+    ENV["HOB_UPKEEP_OWNERS"] = "jenrzzz,tabitha"
+    @coolify.apps << { "name" => "tabitha-hob", "git_repository" => "tabitha/hob", "git_branch" => "main" }
+
+    report = discover
+    assert_equal %w[upkeep-tabitha-hob upkeep-tabitha-hob-major], report.created.sort
+    assert_empty report.updated
+    assert_equal "jenrzzz/hob", Schedule.find_by!(name: "upkeep-hob").payload["repo"]
+    assert_equal "upkeep-hob", Upkeep.schedule_for("jenrzzz/hob", "minor").name
+  ensure
+    ENV.delete("HOB_UPKEEP_OWNERS")
+  end
+
+  test "a long name fits Schedule::NAME and stays its own" do
+    a = Upkeep.schedule_name("jenrzzz/#{'a' * 80}", "major")
+    b = Upkeep.schedule_name("jenrzzz/#{'a' * 81}", "major")
+    assert_match Schedule::NAME, a
+    refute_equal a, b
+    assert a.end_with?("-major")
+  end
+
   test "no forge, no discovery" do
     @forge.update!(name: "retired")
     assert_raises(ArgumentError) { discover }

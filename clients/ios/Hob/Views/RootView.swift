@@ -15,6 +15,7 @@ struct RootView: View {
                         }
                     }
             }
+            .task { session.navigationStackAppeared() }
             .onOpenURL { url in
                 // hob://petition/<id>, hob://request/<id>
                 if url.scheme == "hob", let kind = url.host, let id = url.pathComponents.dropFirst().first,

@@ -34,8 +34,8 @@ struct HobClient: Sendable {
 
     // MARK: Sentinel
 
-    func petitions(status: String? = nil) async throws -> [Petition] {
-        try await get("/v1/sentinel/petitions", query: status.map { [URLQueryItem(name: "status", value: $0)] } ?? [])
+    func petitions(status: String? = nil, days: Int? = nil) async throws -> [Petition] {
+        try await get("/v1/sentinel/petitions", query: historyQuery(status: status, days: days))
     }
 
     func petition(_ id: String) async throws -> Petition {
@@ -46,8 +46,8 @@ struct HobClient: Sendable {
         try await post("/v1/sentinel/petitions/\(id)/decide", body: decision)
     }
 
-    func requests(status: String? = nil) async throws -> [SentinelRequest] {
-        try await get("/v1/sentinel/requests", query: status.map { [URLQueryItem(name: "status", value: $0)] } ?? [])
+    func requests(status: String? = nil, days: Int? = nil) async throws -> [SentinelRequest] {
+        try await get("/v1/sentinel/requests", query: historyQuery(status: status, days: days))
     }
 
     func request(_ id: String) async throws -> SentinelRequest {
@@ -81,6 +81,13 @@ struct HobClient: Sendable {
     }
 
     // MARK: HTTP
+
+    private func historyQuery(status: String?, days: Int?) -> [URLQueryItem] {
+        var items: [URLQueryItem] = []
+        if let status { items.append(URLQueryItem(name: "status", value: status)) }
+        if let days { items.append(URLQueryItem(name: "days", value: String(days))) }
+        return items
+    }
 
     private struct Empty: Encodable {}
 

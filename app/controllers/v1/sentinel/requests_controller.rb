@@ -7,7 +7,8 @@ module V1
     #     with result or rationale. Decided inline; pending means a person
     #     has to look.
     # GET  /v1/sentinel/requests/:id?wait=25   poll (or long-poll) for the outcome
-    # GET  /v1/sentinel/requests?status=&agent=  agents see their own; people see all
+    # GET  /v1/sentinel/requests?status=&agent=&days=  agents see their own; people see all.
+    #   days widens the window beyond the default most-recent-100 cap, for history.
     # POST /v1/sentinel/requests/:id/decide { decision: allow|deny, rationale }  people only
     class RequestsController < ApplicationController
       self.agent_actions = %i[index show create]
@@ -31,9 +32,11 @@ module V1
       end
 
       def index
-        rows = scope.recent.includes(:capability, :principal).limit(100)
+        rows = scope.recent.includes(:capability, :principal)
         rows = rows.where(status: params[:status]) if params[:status].present?
         rows = rows.where(principal: Principal.find_by!(name: params[:agent])) if params[:agent].present?
+        rows = rows.since(params[:days].to_i.days.ago) if params[:days].present?
+        rows = rows.limit(100) unless params[:days].present?
         render json: rows.map { |r| serialize(r) }
       end
 

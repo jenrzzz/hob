@@ -38,6 +38,7 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: Hob/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     # Push Notifications capability. Xcode's automatic signing adds it to the
     # App ID; the value is rewritten to `production` for distribution builds.
     # Needs a paid developer account — free Apple IDs can't sign for push.

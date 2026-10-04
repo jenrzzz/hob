@@ -100,6 +100,25 @@ class SentinelRequestsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "?days widens the window past the default recent cap, for history" do
+    policy!(@muse, "hob.usage", "allow")
+    travel_to 10.days.ago do
+      post "/v1/sentinel/requests", params: { capability: "hob.usage" }, headers: agent_auth, as: :json
+    end
+    old_id = body["id"]
+
+    post "/v1/sentinel/requests", params: { capability: "hob.usage" }, headers: agent_auth, as: :json
+    recent_id = body["id"]
+
+    get "/v1/sentinel/requests", params: { days: 3 }, headers: auth
+    ids = body.map { |r| r["id"] }
+    assert_includes ids, recent_id
+    assert_not_includes ids, old_id
+
+    get "/v1/sentinel/requests", params: { days: 30 }, headers: auth
+    assert_includes body.map { |r| r["id"] }, old_id
+  end
+
   test "an agent cannot see another agent's requests" do
     other, other_token = agent("other")
     policy!(other, "hob.usage", "allow")

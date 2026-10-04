@@ -65,6 +65,10 @@ class ForgeUpkeepTest < ActiveSupport::TestCase
       when /\Agit rev-parse --abbrev-ref HEAD/ then [ 0, "main\n", "" ]
       when /\Agit show origin\/main:(\S+)/ then [ 0, @files.fetch(Regexp.last_match(1), ""), "" ]
       when /\Abin\/rails test/ then @answers.fetch("test", [ 0, "10 runs, 0 failures\n", "" ])
+      when /\Abundle install/ then @answers.fetch("bundle install", [ 0, "", "" ])
+      when /\Abundle outdated --strict --filter-minor --filter-patch --parseable/ then @answers.fetch("bundle outdated", [ 0, "", "" ])
+      when /\Anpm outdated --json/ then @answers.fetch("npm outdated", [ 0, "{}", "" ])
+      when /\Auv lock --upgrade --dry-run/ then @answers.fetch("uv lock", [ 0, "", "Resolved 2 packages in 182ms\n" ])
       else [ 0, "", "" ]
       end
     end
@@ -141,6 +145,55 @@ class ForgeUpkeepTest < ActiveSupport::TestCase
     refute result["notify"]
     refute ran?(/\Agit push/)
     refute ran?(/\Agh pr create/)
+    assert ran?(/\Abundle outdated --strict/), "the forge asks bundler itself"
+    assert_equal "Bumped what moved.", result["implementer"]
+  end
+
+  test "nothing moved, yet bundler has newer releases in range: a failure, not current" do
+    @edits = {}
+    @answers["bundle outdated"] = [ 1, "rails (newest 8.1.4, installed 8.1.3.1, requested ~> 8.1.3)\n" \
+                                       "pg (newest 1.6.0, installed 1.5.9)\n", "" ]
+    error = assert_raises(Forge::Error) { upkeep.call }
+    assert_match(/nothing changed, yet 2 dependencies have a newer release within range: rails 8.1.3.1 → 8.1.4, pg 1.5.9 → 1.6.0/,
+                 error.message)
+    assert_match(/the implementer said: Bumped what moved\./, error.message)
+    refute ran?(/\Agit push/)
+    refute File.exist?(@clone), "the clone is cleaned up"
+  end
+
+  test "nothing moved because the bundle would not install: a failure that says why" do
+    @edits = {}
+    @answers["bundle install"] = [ 1, "", "asdf: No preset version installed for command ruby 4.0.6\n" ]
+    error = assert_raises(Forge::Error) { upkeep.call }
+    assert_match(/bundle install failed: asdf: No preset version installed for command ruby 4.0.6/, error.message)
+    refute ran?(/\Abundle outdated/)
+  end
+
+  test "nothing moved in an npm app: npm's own wanted versions decide" do
+    @edits = {}
+    @files = { "package.json" => { "dependencies" => { "vite" => "^8.1.0" } }.to_json, "package-lock.json" => "{}" }
+    @answers["npm outdated"] = [ 1, { "vite" => { "current" => "8.1.0", "wanted" => "8.2.1", "latest" => "9.0.0" },
+                                     "svelte" => { "current" => "5.56.4", "wanted" => "5.56.4", "latest" => "6.0.0" } }.to_json, "" ]
+    error = assert_raises(Forge::Error) { upkeep.call }
+    assert_match(/1 dependency has a newer release within range: vite 8.1.0 → 8.2.1\b/, error.message)
+    assert ran?(/\Anpm ci --ignore-scripts/)
+
+    @answers["npm outdated"] = [ 1, { "svelte" => { "current" => "5.56.4", "wanted" => "5.56.4", "latest" => "6.0.0" } }.to_json, "" ]
+    assert_equal "current", upkeep.call["status"], "only a major waiting: current"
+  end
+
+  test "nothing moved in a uv app: uv's dry run decides, majors aside" do
+    @edits = {}
+    @files = { "pyproject.toml" => "[project]\nname = \"t\"\n", "uv.lock" => "" }
+    @answers["uv lock"] = [ 0, "", "Resolved 3 packages in 182ms\nUpdate idna v3.6 -> v3.20\nUpdate httpx v0.27.0 -> v1.0.0\n" ]
+    assert_match(/1 dependency has a newer release within range: idna 3.6 → 3.20\b/, assert_raises(Forge::Error) { upkeep.call }.message)
+  end
+
+  test "a major run that changed nothing does not ask" do
+    @edits = {}
+    @answers["bundle outdated"] = [ 1, "rails (newest 8.1.4, installed 8.1.3.1)\n", "" ]
+    assert_equal "current", upkeep(payload(scope: "major")).call["status"]
+    refute ran?(/\Abundle outdated/)
   end
 
   test "waits out pending checks, merges on pass, leaves the PR on failure" do

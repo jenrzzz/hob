@@ -107,6 +107,12 @@ module Forge
       commit_leftovers(outcome)
       changed = changed_files
       if changed.empty?
+        stale = scope == "minor" ? still_outdated(outcome) : []
+        if stale.any?
+          cleanup
+          raise Error, "nothing changed, yet #{stale.size} dependenc#{stale.size == 1 ? 'y has' : 'ies have'} a newer release " \
+                       "within range: #{stale.first(8).join(', ')}#{' ...' if stale.size > 8}#{said(outcome)}"
+        end
         say "nothing to upgrade"
         cleanup
         return result("current", outcome, dependabot: dependabot, majors_available: majors_available,
@@ -202,6 +208,57 @@ module Forge
 
     def base_ref
       "origin/#{base}"
+    end
+
+    # A minor run that changed nothing is current only if the stack's own
+    # tools agree: an implementer that could not work (a Ruby the sandbox
+    # lacks, a bundle that would not resolve) and stopped without refusing
+    # must not pass for a repo with nothing to do. A check that cannot run
+    # fails the mission too. -> ["rails 8.1.3.1 → 8.1.4"]
+    def still_outdated(outcome)
+      found = []
+      if file?("Gemfile.lock")
+        check!(outcome, %w[bundle install --quiet])
+        status, out, err = run(%w[bundle outdated --strict --filter-minor --filter-patch --parseable], chdir: dir)
+        lines = out.scan(/^(\S+) \(newest ([^,]+), installed ([^,)]+)/)
+        raise Error, "could not check the bundle: #{excerpt(err + out, 1000)}#{said(outcome)}" if !status.zero? && lines.empty?
+
+        found += lines.map { |name, newest, installed| "#{name} #{installed} → #{newest}" }
+      end
+      if file?("package-lock.json")
+        check!(outcome, %w[npm ci --ignore-scripts])
+        _status, out, err = run(%w[npm outdated --json], chdir: dir)
+        data = out.strip.empty? ? {} : (JSON.parse(out) rescue nil)
+        raise Error, "could not check the npm packages: #{excerpt(err + out, 1000)}#{said(outcome)}" unless data.is_a?(Hash)
+
+        data.each do |name, info|
+          (info.is_a?(Array) ? info : [ info ]).each do |i|
+            next if i["current"].nil? || i["wanted"].nil? || i["current"] == i["wanted"]
+
+            found << "#{name} #{i['current']} → #{i['wanted']}"
+          end
+        end
+      end
+      if file?("uv.lock")
+        status, out, err = run(%w[uv lock --upgrade --dry-run], chdir: dir)
+        raise Error, "could not check uv.lock: #{excerpt(err + out, 1000)}#{said(outcome)}" unless status.zero?
+
+        found += (err + out).scan(/^\s*Update (\S+) v(\S+) -> v(\S+)/)
+                            .reject { |_, from, to| Upkeep.major?(from, to) }
+                            .map { |name, from, to| "#{name} #{from} → #{to}" }
+      end
+      found.uniq
+    end
+
+    def check!(outcome, argv)
+      status, out, err = run(argv, chdir: dir)
+      raise Error, "#{argv.first(2).join(' ')} failed: #{excerpt((out + err).lines.last(20).join, 1000)}#{said(outcome)}" unless status.zero?
+    end
+
+    # What the implementer said, for a failure's message.
+    def said(outcome)
+      text = outcome["result"].to_s.strip
+      text.empty? ? "" : "\nthe implementer said: #{excerpt(text, 1500)}"
     end
 
     # The repo's own tests, chosen from what is there, not by the implementer.
@@ -475,7 +532,8 @@ module Forge
         "repo" => repo, "scope" => scope, "status" => status, "pull_request" => url, "merged" => merged,
         "review" => review, "tests" => tests, "changes" => changes, "dependabot" => dependabot,
         "majors_available" => majors_available.empty? ? nil : majors_available,
-        "summary" => summary, "cost" => outcome["total_cost_usd"], "notify" => status == "review"
+        "summary" => summary, "implementer" => (excerpt(outcome["result"].to_s.strip) unless outcome["result"].to_s.strip.empty?),
+        "cost" => outcome["total_cost_usd"], "notify" => status == "review"
       }.compact
     end
 

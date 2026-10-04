@@ -153,7 +153,13 @@ a brief for the scope, then decides for itself what happens next:
   tell those apart; a transitive `reline` 0.6 → 0.7 does not hold a PR);
   its own test run passed; and no GitHub check failed (pending ones are
   waited on for half an hour). Otherwise the PR waits, with the reasons in
-  the mission's result.
+  the mission's result. A run that changes nothing is `current` only if the
+  stack's own tools agree (`bundle outdated`, `npm outdated`, `uv lock
+  --upgrade --dry-run`, within the app's requirements and majors); if
+  they find something newer, or cannot run (a Ruby the sandbox lacks),
+  the mission fails with what they said and what the implementer said, so
+  an implementer that gave up quietly does not pass for a repo with
+  nothing to do.
 - **major.** One framework, runtime, or major upgrade, with the code
   changes it needs, on `upkeep/major`. Never merged by the forge.
 
@@ -168,7 +174,8 @@ complete only if the worker sets `notify` in its result. Upkeep sets it
 for a PR left for review, not for one it merged or a repo already
 current. The result carries the repo, status (`current`, `merged`,
 `review`), the PR, why it needs review, what moved, the forge's test
-run, the Dependabot PRs merged, and the majors waiting.
+run, the Dependabot PRs merged, the majors waiting, and what the
+implementer said.
 
 ```sh
 bin/rails hob:upkeep:discover                 # DRY=1 to only show

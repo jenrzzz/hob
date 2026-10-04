@@ -57,12 +57,15 @@ module Push
   # lines joined with spaces or nothing, or the whole thing quoted. OpenSSL
   # rejects all of those ("invalid curve name": it fell back to reading the
   # text as a curve), so rebuild the PEM from the markers and the base64
-  # between them. Text without markers is returned as is.
+  # between them. Coolify's non-literal variables escape a backslash once
+  # more on the way to the container, so "\n" can arrive as "\\n": escapes
+  # of any depth are undone, and only the base64 alphabet survives into the
+  # body. Text without markers is returned as is.
   def normalize_pem(text)
-    pem = text.to_s.strip.gsub("\\n", "\n")
+    pem = text.to_s.strip.gsub(/\\+r/, "").gsub(/\\+n/, "\n")
     pem = pem[1..-2] if pem.length > 1 && %w[" '].include?(pem[0]) && pem.end_with?(pem[0])
     match = pem.match(/-----BEGIN ([A-Z ]+)-----(.*?)-----END \1-----/m) or return pem
-    body = match[2].gsub(/\s+/, "")
+    body = match[2].delete("^A-Za-z0-9+/=")
     "-----BEGIN #{match[1]}-----\n#{body.scan(/.{1,64}/).join("\n")}\n-----END #{match[1]}-----\n"
   end
 
@@ -79,7 +82,16 @@ module Push
     end
     parsed
   rescue OpenSSL::PKey::PKeyError => e
-    raise NotConfigured, "APNS_KEY is not a PEM private key (#{e.message.strip}); paste the whole .p8, newlines escaped as \\n or intact"
+    raise NotConfigured, "APNS_KEY is not a PEM private key (#{e.message.strip}; #{key_shape}); paste the whole .p8, newlines escaped as \\n or intact"
+  end
+
+  # What the raw APNS_KEY looks like, never what it says: enough to tell a
+  # truncated, doubled or mangled paste apart in a log line.
+  def key_shape
+    raw = ENV["APNS_KEY_PATH"].present? ? "" : ENV["APNS_KEY"].to_s
+    body = raw.match(/-----BEGIN [A-Z ]+-----(.*?)-----END [A-Z ]+-----/m)&.[](1)
+    "#{raw.length} chars, #{raw.count("\n")} newlines, #{raw.count("\\")} backslashes, #{raw.count(%q("'))} quotes, " +
+      (body ? "#{body.delete("^A-Za-z0-9+/=").length}-char body" : "no BEGIN/END markers")
   end
 
   # Every phone every person has registered. Returns how many accepted.

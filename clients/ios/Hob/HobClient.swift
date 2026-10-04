@@ -106,11 +106,14 @@ struct HobClient: Sendable {
         return request
     }
 
+    private struct ErrorBody: Decodable { var error: String? }
+
     private func send<T: Decodable>(_ request: URLRequest) async throws -> T {
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            let message = (try? JSONDecoder().decode([String: String].self, from: data))?["error"]
+            // Not [String: String]: an error body may carry other fields (ping's `sent: false`).
+            let message = (try? JSONDecoder().decode(ErrorBody.self, from: data))?.error
             throw Failure(status: status, message: message ?? "hob answered HTTP \(status)")
         }
         // Some replies are wrapped in hob's own error shape with a 2xx (a refused completion); not ours.

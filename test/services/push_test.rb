@@ -78,7 +78,8 @@ class PushTest < ActiveSupport::TestCase
     Push.transport = nil
     {
       "intact" => pem, "escaped" => pem.gsub("\n", "\\n"), "joined" => pem.delete("\n"), "spaced" => pem.tr("\n", " "),
-      "quoted" => %Q("#{pem.tr("\n", " ")}"), "crlf" => pem.gsub("\n", "\r\n"), "indented" => pem.gsub(/^/, "  ")
+      "quoted" => %Q("#{pem.tr("\n", " ")}"), "crlf" => pem.gsub("\n", "\r\n"), "indented" => pem.gsub(/^/, "  "),
+      "escaped twice" => pem.gsub("\n", "\\\\n"), "escaped crlf" => pem.gsub("\n", "\\r\\n")
     }.each do |shape, text|
       ENV["APNS_KEY"] = text
       assert_equal pem, Push.key, shape
@@ -88,6 +89,7 @@ class PushTest < ActiveSupport::TestCase
     ENV["APNS_KEY"] = "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----"
     error = assert_raises(Push::NotConfigured) { Push.signing_key }
     assert_match(/APNS_KEY is not a PEM private key/, error.message)
+    assert_match(/2 newlines, 0 backslashes, 0 quotes, 3-char body/, error.message, "says what the key looks like")
     error = assert_raises(Push::NotConfigured) { Push.deliver!(phone, title: "t", body: "b") }
     assert_match(/APNS_KEY is not a PEM private key/, error.message, "the real transport checks the key before dialing Apple")
 

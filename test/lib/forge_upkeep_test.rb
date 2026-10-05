@@ -297,6 +297,23 @@ class ForgeUpkeepTest < ActiveSupport::TestCase
     assert Forge::Upkeep.major?("0.27.0", "1.0.0", zero: false)
   end
 
+  test "a failed run keeps the runner's own account of what failed, above the warnings" do
+    out = "Randomized with seed 4\n" + (1..300).map { |i| "/usr/local/bundle/gems/x.rb:#{i}: warning: noise\n" }.join +
+          "Failures:\n  1) Flipbook resume ages out\n     # /usr/local/bundle/gems/rack/urlmap.rb:76:in 'call'\n" +
+          "Finished in 3 minutes\n3238 examples, 1 failure, 22 pending\n\nFailed examples:\n\n" +
+          "rspec ./spec/system/flipbook_resume_spec.rb:93 # Flipbook resume ages out\n" +
+          (1..50).map { |i| "/usr/local/bundle/gems/y.rb:#{i}: warning: more noise\n" }.join
+    excerpt = upkeep.failure_excerpt(out)
+    assert_match(/\A3238 examples, 1 failure, 22 pending\nrspec .\/spec\/system\/flipbook_resume_spec.rb:93/, excerpt)
+    assert_match(/1\) Flipbook resume ages out/, excerpt)
+    refute_match(/warning: |urlmap/, excerpt)
+
+    minitest = "Error:\nFooTest#test_bar:\nbin/rails test test/foo_test.rb:12\n\n81 runs, 387 assertions, 0 failures, 1 errors, 0 skips\n"
+    assert_match(/\Abin\/rails test test\/foo_test.rb:12\n81 runs/, upkeep.failure_excerpt(minitest))
+    pytest = "FAILED tests/test_app.py::test_x - assert 1 == 2\n==== 1 failed, 94 passed in 2.9s ====\n"
+    assert_match(/\AFAILED tests\/test_app.py::test_x/, upkeep.failure_excerpt(pytest))
+  end
+
   test "the brief lists exactly the commands an override allows" do
     brief = upkeep(claude_args: [ "--allowedTools", "Read", "Bash(make test)", "Bash(npm ci:*)" ]).brief
     assert_match(/^`make test`, `npm ci …`$/, brief)

@@ -275,11 +275,29 @@ module Forge
         say "running #{label}"
         status, out, err = run(argv, chdir: dir)
         entry = { "command" => label, "ok" => status.zero? }
-        entry["output"] = excerpt((out + err).lines.last(30).join, 1500) unless status.zero?
+        entry["output"] = failure_excerpt(out + err) unless status.zero?
         commands << entry
         break unless status.zero?
       end
       { "status" => commands.all? { |c| c["ok"] } ? "passed" : "failed", "commands" => commands }
+    end
+
+    # What a failed step said, for a person: the runner's own account of what
+    # failed (rspec's rerun lines and count, minitest's, pytest's) and then
+    # the end of the output, without the interpreter warnings that otherwise
+    # fill it.
+    SUMMARY_LINE = Regexp.union(
+      /^rspec \.\/\S+/, /^\d+ examples?, \d+ failures?/,                         # rspec
+      /^bin\/rails test \S+:\d+/, /^\d+ runs, \d+ assertions, \d+ failures, \d+ errors/, # minitest
+      /^(?:FAILED|ERROR) \S+/, /^=+ .*\b(?:failed|error)/                          # pytest
+    )
+    NOISE_LINE = /: warning: |^\s*# \/usr\/local\/bundle\//
+
+    def failure_excerpt(text)
+      lines = text.lines
+      summary = lines.grep(SUMMARY_LINE).uniq.first(40).join
+      tail = lines.grep_v(NOISE_LINE).last(30).join
+      [ (excerpt(summary, 2500) unless summary.empty?), excerpt(tail, 1500) ].compact.join("\n...\n")
     end
 
     # [[argv, label]] in order: setup steps, then the tests, per stack.

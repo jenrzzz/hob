@@ -55,7 +55,7 @@ RUN bundle exec bootsnap precompile -j 1 app/ lib/
 
 
 # Final stage for app image
-FROM base
+FROM base AS app
 
 # Run and own only the runtime files as a non-root user for security
 RUN groupadd --system --gid 1000 rails && \
@@ -72,3 +72,12 @@ ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 # Start server via Thruster by default, this can be overwritten at runtime
 EXPOSE 80
 CMD ["./bin/thrust", "./bin/rails", "server"]
+
+# hob's clock (SCHEDULES.md): Solid Queue's worker, dispatcher, and scheduler,
+# in its own container beside the web one. Coolify's hob-jobs app builds this
+# stage (Docker Build Stage Target: jobs) with the web app's environment.
+FROM app AS jobs
+CMD ["./bin/jobs"]
+
+# The web server, and what a build with no target gets.
+FROM app

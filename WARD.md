@@ -251,7 +251,7 @@ Not realm-scoped: one class of data, read by people and by a
 
 1. **The clock.** Settled: hob has one ([SCHEDULES.md](SCHEDULES.md)).
    The sweep is `WardSweepJob`, the weekly audit is the `ward-exposure`
-   schedule, and the Coolify scheduled task goes.
+   schedule, and the Coolify scheduled task is gone (2026-10-06).
 2. **Structured audit output.** The worker posts text lines and hob
    fingerprints them; that is enough because `audit.py`'s WARN/FAIL/ERROR
    messages are stable per subject. A `--json` mode in `audit.py` with an

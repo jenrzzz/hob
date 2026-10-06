@@ -193,6 +193,23 @@ class ForgeUpkeepTest < ActiveSupport::TestCase
     assert_match(/1 dependency has a newer release within range: idna 3.6 → 3.20\b/, assert_raises(Forge::Error) { upkeep.call }.message)
   end
 
+  test "a repo with no dependency manifest is current at once: no implementer, nobody told" do
+    @files = { "index.html" => "<h1>museum</h1>", "Dockerfile" => "FROM caddy:2-alpine\n", "assets/ruffle/package.json" => "{}" }
+    %w[minor major].each do |scope|
+      @commands.clear
+      result = upkeep(payload(scope: scope)).call
+      assert_equal [ "current", false ], result.values_at("status", "notify"), scope
+      assert_match(/no dependency manifest/, result["summary"])
+      refute ran?(/\Aclaude/), "#{scope}: no implementer run"
+      refute ran?(/\Agit push/)
+      refute File.exist?(@clone), "the clone is cleaned up"
+    end
+  end
+
+  test "the major brief says nothing behind is no refusal" do
+    assert_match(/If nothing is behind by a major version, commit nothing and write no refusal/, upkeep(payload(scope: "major")).brief)
+  end
+
   test "a major run that changed nothing does not ask" do
     @edits = {}
     @answers["bundle outdated"] = [ 1, "rails (newest 8.1.4, installed 8.1.3.1)\n", "" ]

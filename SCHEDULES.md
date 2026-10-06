@@ -163,6 +163,13 @@ a brief for the scope, then decides for itself what happens next:
 - **major.** One framework, runtime, or major upgrade, with the code
   changes it needs, on `upkeep/major`. Never merged by the forge.
 
+A repo with no dependency manifest at its root (`Gemfile`,
+`package.json`, `pyproject.toml`, `requirements.txt`, `uv.lock`,
+`poetry.lock`), a static site or a bare Dockerfile, is `current` at
+once, with no implementer run and nothing to hear about; and a major run
+that finds nothing behind commits nothing and is `current` too, not a
+refusal.
+
 Each scope has one branch per repo, rebuilt from the base and
 force-pushed on every run, so an unmerged PR is refreshed in place, not
 joined by another. A merge to an app's branch is a deploy: Coolify

@@ -286,7 +286,7 @@ bin/rails "hob:ward:setup[ward]"                    # the worker's key, shown on
 bin/rails hob:ward:status                           # checks, open and acknowledged findings, the latest triage
 bin/rails "hob:ward:ack[<id>]" NOTE='reviewed: intentional' UNTIL=2026-12-01
 bin/rails "hob:ward:note[cadance]" BODY='8888 is nordlynx; auth required on it'
-bin/rails hob:ward:sweep                            # hourly, as a Coolify scheduled task on the hob app
+bin/rails hob:ward:sweep                            # by hand; WardSweepJob runs it hourly (hob-jobs)
 bin/rails "hob:sentinel:policy[butler,ward.status,allow]"   # let an agent ask how the house stands
 ```
 

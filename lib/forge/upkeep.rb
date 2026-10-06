@@ -102,6 +102,13 @@ module Forge
       FileUtils.mkdir_p(workdir) # gh runs in it before the clone does; a fresh workspace has none
       dependabot = scope == "minor" ? merge_dependabot : []
       clone
+      unless MANIFESTS.any? { |name| file?(name) }
+        # A static site or a bare Dockerfile: nothing a package manager keeps,
+        # so nothing to upgrade, and nobody needs to hear about it.
+        say "no dependency manifest"
+        cleanup
+        return result("current", {}, dependabot: dependabot, summary: "#{repo}: current (no dependency manifest)")
+      end
       outcome = implement
       refused = File.join(dir, ".forge", "REFUSED.md")
       raise Refused, "the implementer refused: #{File.read(refused).strip}" if File.exist?(refused)
@@ -330,6 +337,9 @@ module Forge
 
     # --- what changed --------------------------------------------------------
 
+    # What a stack the forge can upgrade leaves at the repo's root.
+    MANIFESTS = %w[Gemfile package.json pyproject.toml requirements.txt uv.lock poetry.lock].freeze
+
     LOCKFILES = {
       "Gemfile.lock" => :gemfile_lock, "package-lock.json" => :package_lock,
       "uv.lock" => :toml_lock, "poetry.lock" => :toml_lock
@@ -517,6 +527,8 @@ module Forge
           3. The tests must pass at the end. If they cannot without a decision a person should
              make, write that to `.forge/REFUSED.md` instead.
           4. List the other majors still waiting in `.forge/MAJORS.md`, one line each.
+          5. If nothing is behind by a major version, commit nothing and write no refusal: the
+             forge reports the repo current, which is the answer, not a failure.
 
           This branch is always reviewed by a person. Reply with a summary for them: what you
           upgraded, what changed in the code and why, and what to check by hand after deploying.

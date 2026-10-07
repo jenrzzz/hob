@@ -5,7 +5,7 @@ module Admin
     helper_method :existing_grant, :records_context
 
     def index
-      @requests = SentinelRequest.pending.recent.includes(:capability, :principal)
+      @requests = SentinelRequest.pending.recent.includes(:capability, :principal, :authorization_claim)
       @petitions = Petition.where(status: %w[pending failed]).recent.includes(:principal)
       @recent_requests = SentinelRequest.where.not(status: "pending").recent.includes(:capability, :principal, :decider).limit(15)
       @recent_petitions = Petition.where.not(status: %w[pending failed]).recent.includes(:principal, :decider).limit(15)
@@ -57,7 +57,8 @@ module Admin
 
     def decide_request
       row = ::Sentinel.decide!(SentinelRequest.find(params[:id]), decision: params.expect(:decision),
-                               decider: current_person, rationale: params[:rationale].presence)
+                               decider: current_person, rationale: params[:rationale].presence,
+                               fabricated: params[:fabricated] == "1")
       redirect_to admin_sentinel_path, notice: "Request #{row.id} (#{row.capability.name} for #{row.principal.name}): #{row.status}." \
                                                "#{row.error.present? ? " #{row.error}" : ''}"
     rescue Gateway::Invalid, ActionController::ParameterMissing => e

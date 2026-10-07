@@ -429,13 +429,15 @@ namespace :hob do
       end
     end
 
-    desc "Decide a pending request as a person. bin/rails \"hob:sentinel:decide[<id>,allow|deny,jenner]\" RATIONALE='...'"
+    desc "Decide a pending request as a person. bin/rails \"hob:sentinel:decide[<id>,allow|deny,jenner]\" RATIONALE='...' " \
+         "FABRICATED=1 (with deny: a spot-checked claim's quote was never said; the agent freezes)"
     task :decide, [ :id, :decision, :principal ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:sentinel:decide[id,allow|deny,principal=jenner]\"" if args[:id].blank? || args[:decision].blank?
 
       Clearance.with("intimate") do
         decider = Principal.find_by!(name: args[:principal].presence || "jenner")
-        row = Sentinel.decide!(SentinelRequest.find(args[:id]), decision: args[:decision], decider: decider, rationale: ENV["RATIONALE"])
+        row = Sentinel.decide!(SentinelRequest.find(args[:id]), decision: args[:decision], decider: decider, rationale: ENV["RATIONALE"],
+                               fabricated: ENV["FABRICATED"] == "1")
         puts "#{row.id}: #{row.status}#{row.error && " (#{row.error})"}"
       end
     end

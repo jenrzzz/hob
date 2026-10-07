@@ -7,6 +7,7 @@ class Principal < ApplicationRecord
   has_many :devices, dependent: :destroy
   has_many :sentinel_policies, dependent: :destroy
   has_many :sentinel_requests, dependent: :restrict_with_exception
+  has_many :authorization_claims, dependent: :restrict_with_exception
   has_many :petitions, dependent: :restrict_with_exception
   has_many :missions, foreign_key: :assignee_id, inverse_of: :assignee, dependent: :restrict_with_exception
   has_many :sent_agent_messages, class_name: "AgentMessage", foreign_key: :sender_id, inverse_of: :sender,
@@ -36,5 +37,42 @@ class Principal < ApplicationRecord
   # agents being gated and not the surfaces the agents act through.
   def trusted?
     kind == "human"
+  end
+
+  # Trust consequences of a failed spot-check (SENTINEL.md, "User-
+  # authorization claims"): every one of this agent's requests is denied at
+  # the gate until a person reviews the incident and clears it. Named apart
+  # from Ruby's own freeze/frozen? (ActiveRecord relies on those for record
+  # mutability) so this never collides with them.
+  def capabilities_frozen?
+    capabilities_frozen_at.present?
+  end
+
+  def freeze_capabilities!(reason:)
+    update!(capabilities_frozen_at: Time.current, capabilities_freeze_reason: reason.to_s.truncate(2000))
+  end
+
+  def unfreeze_capabilities!
+    update!(capabilities_frozen_at: nil, capabilities_freeze_reason: nil)
+  end
+
+  # The next `count` claim-backed requests are spot-checked regardless of
+  # the random rate, after a claim failed its rubric or its spot-check
+  # (Sentinel::Claims). Never lowers what is already owed. Both are single
+  # UPDATEs, so concurrent requests can't read the same count and write
+  # back a stale one.
+  def start_claim_scrutiny!(count)
+    self.class.where(id: id).update_all([ "claim_scrutiny_remaining = GREATEST(claim_scrutiny_remaining, ?)", count ])
+    self.claim_scrutiny_remaining = self.class.where(id: id).pick(:claim_scrutiny_remaining)
+    clear_attribute_change(:claim_scrutiny_remaining)
+  end
+
+  # Spends one owed check. -> true if one was owed (and is now spent).
+  def consume_claim_scrutiny!
+    spent = self.class.where(id: id).where("claim_scrutiny_remaining > 0")
+                .update_all("claim_scrutiny_remaining = claim_scrutiny_remaining - 1")
+    self.claim_scrutiny_remaining = self.class.where(id: id).pick(:claim_scrutiny_remaining)
+    clear_attribute_change(:claim_scrutiny_remaining)
+    spent.positive?
   end
 end

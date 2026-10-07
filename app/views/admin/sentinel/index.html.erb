@@ -29,6 +29,11 @@
       <%= f.text_field :rationale, placeholder: "why (optional)", "aria-label": "Rationale" %>
       <%= f.button "Allow", name: "decision", value: "allow", class: "primary" %>
       <%= f.button "Deny", name: "decision", value: "deny", class: "danger" %>
+      <% if r.authorization_claim&.spot_checked? %>
+        <%= f.button "I never said that", name: "decision", value: "deny", class: "danger",
+              formaction: admin_decide_sentinel_request_path(r, fabricated: 1),
+              title: "Deny, and say #{r.principal.name} made up the quote: its capabilities freeze until someone unfreezes it" %>
+      <% end %>
     <% end %>
   </section>
 <% end %>

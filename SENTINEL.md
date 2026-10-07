@@ -238,7 +238,7 @@ Decided inline. `status` is the answer:
 | status | meaning |
 |---|---|
 | `completed` | allowed and done; `result` is the outcome |
-| `denied` | `decided_by` says by what: policy, realm, constraint, limit, reviewer, human |
+| `denied` | `decided_by` says by what: policy, realm, constraint, limit, reviewer, claim, human |
 | `pending` | a person has to look (`confirm`, or the reviewer escalated) |
 | `executing` | allowed; a poll-venue mission is doing the work |
 | `failed` | allowed, but execution failed; `error` says why |
@@ -261,6 +261,95 @@ The same requests can arrive over MCP. `POST /v1/sentinel/mcp` serves an
 agent's key as an MCP server, and each `tools/call` there is a
 `Sentinel.submit!`. Coding agents (Claude Code, Codex, musecode) use it to
 reach the board ([CLAUDE_CODE.md](CLAUDE_CODE.md), *Agents*).
+
+### User-authorization claims
+
+A `confirm` rule always holds a request for a person — the one answer the
+household member themself has to give. An agent that already got that
+answer in chat shouldn't have to make them tap again, but the sentinel
+cannot read the chat and cannot cryptographically verify a quote, so it
+takes a claim instead and treats it the way it treats everything an agent
+says about itself: untrusted, on the record, and checked. The design is
+deterrence plus audit plus spot-checks — a fabricated claim is
+attributable, logged, and eventually caught, not structurally prevented.
+
+```
+POST /v1/sentinel/requests { capability, arguments, ...,
+  user_authorization: { quote, quoted_at, context, interpretation, action_ref } }
+```
+
+`quote` is the exact verbatim message; `quoted_at` an ISO timestamp;
+`context` one line on what the agent proposed just before it; `interpretation`
+what the agent believes the message authorizes, in its own words;
+`action_ref` the request (or the capability and arguments) the claim backs.
+Only `skipsy` and `marley` (`Sentinel::Claims::KNOWN_AGENTS`) may claim at
+all; a claim missing a field, dated more than the freshness window ago (60
+minutes), dated in the future, or from any other agent is **rejected
+outright** — logged, and the request proceeds exactly as if none were sent.
+A claim never reaches a capability whose handler says `requires_person`,
+even under a `confirm` rule naming it exactly: that guarantee holds against
+an admin's own `allow` rule, so it certainly holds against a chat quote.
+
+A claim that passes intake is judged by **the rubric**
+(`Sentinel::Claims::Rubric`, an LLM under the `sentinel-reviewer` role) on
+five checks, all of which must hold:
+
+| check | asks |
+|---|---|
+| authorization | does the quote, read plainly, authorize this action? |
+| specificity | vague enthusiasm ("nice", "sweet") is not authorization; the quote must name the action or be an unambiguous reply to a concrete proposal of it |
+| recency and order | does the quote read as coming after the proposal, in reply to it? |
+| scope match | does the interpretation stay inside what the quote says — "try it again" authorizes one retry, not a standing grant |
+| stakes proportionality | a destructive, irreversible, money-moving, or capability-granting action needs an explicit, specific quote |
+
+Any check failing **escalates to a person, exactly as today** — the claim
+bought nothing, and the next `Sentinel::Claims.elevated_scrutiny_count`
+(default 20) claim-backed requests from that agent are spot-checked
+regardless of stakes or the random rate (raising what is owed, never
+lowering it). A judge that cannot be reached or declines fails closed to
+escalate, never to allow, and counts against hob, not the agent: no
+scrutiny is armed.
+
+A claim that passes every check **lets the request skip the tap** — unless
+a spot-check fires, reusing the very same pending-request flow a `confirm`
+rule already uses (`ask_person!`, the admin page, the companion app's
+Allow/Deny): the rationale quotes the claim back, and the person's tap
+settles both the request and the claim. A spot-check fires:
+
+| when | rate |
+|---|---|
+| the capability is on the high-stakes list | always (`Sentinel::Claims.high_stakes_capabilities`; default: `mail.send`, `mail.reply`, `budget.transaction.create`, `budget.transaction.update`, `hob.mission.create`, `hob.schedule.create`, `hob.schedule.cancel`, `calendar.push`, `todo.drop`) |
+| the agent is under elevated scrutiny | always, counting down `claim_scrutiny_remaining` (a high-stakes request, checked anyway, spends none of it) |
+| neither of the above | randomly (`Sentinel::Claims.spot_check_rate`; default 5%) |
+
+All four — the rate, the high-stakes list, the freshness window, and the
+elevated-scrutiny count — are env-configured
+(`HOB_CLAIM_SPOT_CHECK_RATE`, `HOB_CLAIM_HIGH_STAKES_CAPABILITIES`,
+`HOB_CLAIM_FRESHNESS_MINUTES`, `HOB_CLAIM_ELEVATED_SCRUTINY_COUNT`).
+
+**Trust consequences.** Denying a spot-checked request is not, by itself,
+saying the quote was made up: the person may have said it and changed
+their mind. A plain deny logs the claim `declined` and nothing else
+happens. Only a deny that says the quote was never said — "I never said
+that" on `/admin/sentinel`, `fabricated: true` on
+`POST /v1/sentinel/requests/:id/decide`, `FABRICATED=1` on
+`hob:sentinel:decide` — logs the claim `fabricated` with the quote and who
+said so, freezes the agent's capabilities (every new request denied at the
+gate, whatever it asks for, and its requests already pending can be denied
+but not allowed), and re-arms scrutiny. A person has to clear it
+explicitly: `principal.unfreeze_capabilities!`, or Unfreeze on its card at
+`/admin` (`POST /admin/principals/:id/unfreeze`). Allowed, the claim is
+logged `confirmed` and nothing else happens. Either way, who settled it and
+when go in the claim's `spot_check`.
+
+Every claim is logged exactly once in `authorization_claims`, whatever came
+of it — `rejected`, `unused` (intake passed but the rule's effect was never
+`confirm`), `insufficient`, `backed`, `spot_checked`, `confirmed`,
+`declined`, or `fabricated` — append-only, never deleted, like
+`sentinel_requests`, and realm-scoped by the request's realm, so a quote is
+no more visible than the request it backs. An agent attaches a claim as
+`user_authorization` on `POST /v1/sentinel/requests`, or, over MCP, as the
+`user_authorization` argument every tool offers a known claimant.
 
 ### Missions
 
@@ -504,6 +593,12 @@ sentinel_requests  ulid, principal (agent), capability, arguments, reason, surfa
 missions           ulid, assignee, created_by?, title, brief, payload, priority, realm,
                    status, attempts, lease_token, leased_at, lease_expires_at,
                    result, error, sentinel_request_id?                           [RLS]
+authorization_claims  ulid, principal (agent), sentinel_request, quote, quoted_at, context,
+                   interpretation, action_ref, realm, status, rejection_reason?, rubric,
+                   spot_check, decided_at    the user-authorization claims a request carried,
+                   and the decision each one drove — never deleted               [RLS]
+principals.capabilities_frozen_at/_reason   set by a fabricated claim (Trust consequences);
+                   every request denied at the gate until a person clears it
 petitions          ulid, principal (agent), want, capability_name?, arguments, reason, surface,
                    realm, on_mission_id?, status, action, decided_by, rationale, decider?,
                    review, effect, spec, sentinel_policy_id?, mission_id?, pull_request?,

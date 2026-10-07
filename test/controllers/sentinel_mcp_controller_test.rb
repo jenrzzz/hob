@@ -32,6 +32,11 @@ class SentinelMcpControllerTest < ActionDispatch::IntegrationTest
     JSON.parse(result["content"].first["text"])
   end
 
+  def body_tool(name, token: @claude_token)
+    rpc("tools/list", token: token)
+    body["result"]["tools"].find { |tool| tool["name"] == name }
+  end
+
   def tool_names(token: @claude_token)
     rpc("tools/list", token: token)
     body["result"]["tools"].map { |tool| tool["name"] }
@@ -77,6 +82,22 @@ class SentinelMcpControllerTest < ActionDispatch::IntegrationTest
     assert_equal "handing off", request.reason
     refute request.arguments.key?("reason"), "hob.board.post refuses fields it does not know"
     assert_equal "completed", request.status
+  end
+
+  test "a known claimant's tools take user_authorization, which goes to the sentinel and not to the handler" do
+    refute body_tool("hob_board_post")["inputSchema"]["properties"].key?("user_authorization"), "claude-code can't claim"
+
+    _skipsy, skipsy_token = agent("skipsy")
+    assert body_tool("hob_board_post", token: skipsy_token)["inputSchema"]["properties"]["user_authorization"]
+
+    quote = { quote: "yes post it", quoted_at: 1.minute.ago.utc.iso8601, context: "I offered to post the handoff",
+              interpretation: "post this one handoff", action_ref: "hob.board.post" }
+    answered("hob_board_post", { title: "handoff", body: "over to you", user_authorization: quote }, token: skipsy_token)
+    request = SentinelRequest.recent.first
+    assert_equal "completed", request.status
+    refute request.arguments.key?("user_authorization")
+    assert_equal "unused", request.authorization_claim.status, "an allow rule has nothing for a claim to skip"
+    assert_equal "yes post it", request.authorization_claim.quote
   end
 
   test "a handoff: one agent opens a thread, another reads it and answers, each under its own name" do

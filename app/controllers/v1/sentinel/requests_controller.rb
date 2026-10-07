@@ -2,14 +2,20 @@ module V1
   module Sentinel
     # The door for external agents.
     #
-    # POST /v1/sentinel/requests { capability, arguments, reason?, mission? }
+    # POST /v1/sentinel/requests { capability, arguments, reason?, mission?,
+    #   user_authorization?: { quote, quoted_at, context, interpretation, action_ref } }
     #   → 201 the request: status completed|denied|pending|executing|failed,
     #     with result or rationale. Decided inline; pending means a person
-    #     has to look.
+    #     has to look. user_authorization (SENTINEL.md, "User-authorization
+    #     claims") only ever matters to a `confirm`-effect rule, and only from
+    #     a known agent with a fresh, complete quote — otherwise it is logged
+    #     and ignored, same as not sending one.
     # GET  /v1/sentinel/requests/:id?wait=25   poll (or long-poll) for the outcome
     # GET  /v1/sentinel/requests?status=&agent=&days=  agents see their own; people see all.
     #   days widens the window beyond the default most-recent-100 cap, for history.
-    # POST /v1/sentinel/requests/:id/decide { decision: allow|deny, rationale }  people only
+    # POST /v1/sentinel/requests/:id/decide { decision: allow|deny, rationale, fabricated? }  people only
+    #   fabricated: true with deny, on a spot-checked claim, says the person
+    #   never said the quoted message, and the agent freezes. Deny alone doesn't.
     class RequestsController < ApplicationController
       self.agent_actions = %i[index show create]
 
@@ -18,7 +24,8 @@ module V1
       def create
         request_row = ::Sentinel.submit!(
           agent: Current.principal, capability: params.require(:capability), arguments: hash_param(:arguments) || {},
-          reason: params[:reason].presence, on_mission: params[:mission].presence
+          reason: params[:reason].presence, on_mission: params[:mission].presence,
+          user_authorization: user_authorization_param
         )
         render json: serialize(request_row), status: :created
       end
@@ -42,11 +49,19 @@ module V1
 
       def decide
         row = ::Sentinel.decide!(SentinelRequest.find(params[:id]), decision: params.require(:decision),
-                                 decider: Current.principal, rationale: params[:rationale].presence)
+                                 decider: Current.principal, rationale: params[:rationale].presence,
+                                 fabricated: ActiveModel::Type::Boolean.new.cast(params[:fabricated]) || false)
         render json: serialize(row)
       end
 
       private
+
+      # An object goes through as a hash; anything else (a bare string) goes
+      # through as itself, for Claims::Intake to log as rejected.
+      def user_authorization_param
+        value = params[:user_authorization]
+        value.respond_to?(:permit!) ? hash_param(:user_authorization) : value.presence
+      end
 
       def scope
         Current.principal.agent? ? Current.principal.sentinel_requests : SentinelRequest.all

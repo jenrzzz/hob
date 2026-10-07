@@ -131,6 +131,37 @@ class SentinelRequestsControllerTest < ActionDispatch::IntegrationTest
     get "/v1/sentinel/requests", params: { agent: "other" }, headers: auth
     assert_equal [ id ], body.map { |r| r["id"] }
   end
+
+  test "user_authorization: a known agent's claim can let a confirm rule skip the person's tap" do
+    ENV["HOB_CLAIM_SPOT_CHECK_RATE"] = "0"
+    skipsy, skipsy_token = agent("skipsy")
+    policy!(skipsy, "hob.usage", "confirm")
+    @fake.reply('{"authorization": true, "specificity": true, "recency_and_order": true, ' \
+                '"scope_match": true, "stakes_proportionality": true, "rationale": "clear yes"}')
+
+    post "/v1/sentinel/requests", params: {
+      capability: "hob.usage",
+      user_authorization: { quote: "yes, check my usage", quoted_at: 5.minutes.ago.utc.iso8601,
+                            context: "I offered to check your spend", interpretation: "authorized reading usage",
+                            action_ref: "hob.usage" }
+    }, headers: { "Authorization" => "Bearer #{skipsy_token}" }, as: :json
+    assert_response :created
+    assert_equal "completed", body["status"]
+    assert_equal "claim", body["decided_by"]
+    assert_equal "backed", AuthorizationClaim.last.status
+  ensure
+    ENV.delete("HOB_CLAIM_SPOT_CHECK_RATE")
+  end
+
+  test "user_authorization that isn't an object is logged as rejected, not a 500" do
+    skipsy, skipsy_token = agent("skipsy")
+    policy!(skipsy, "hob.usage", "confirm")
+    post "/v1/sentinel/requests", params: { capability: "hob.usage", user_authorization: "user said yes" },
+                                  headers: { "Authorization" => "Bearer #{skipsy_token}" }, as: :json
+    assert_response :created
+    assert_equal "pending", body["status"]
+    assert_equal "rejected", AuthorizationClaim.last.status
+  end
 end
 
 class SentinelPoliciesControllerTest < ActionDispatch::IntegrationTest

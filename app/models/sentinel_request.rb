@@ -9,11 +9,12 @@
 class SentinelRequest < ApplicationRecord
   STATUSES = %w[pending executing completed failed denied].freeze
   DECISIONS = %w[allow deny escalate].freeze
-  DECIDERS = %w[policy limit constraint realm reviewer human].freeze
+  DECIDERS = %w[policy limit constraint realm reviewer claim human].freeze
 
   belongs_to :principal
   belongs_to :capability
   belongs_to :decider, class_name: "Principal", optional: true
+  has_one :authorization_claim
 
   validates :status, inclusion: { in: STATUSES }
   validates :decision, inclusion: { in: DECISIONS }, allow_nil: true

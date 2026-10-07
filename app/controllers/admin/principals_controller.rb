@@ -15,5 +15,13 @@ module Admin
         redirect_to admin_root_path, alert: @principal.errors.full_messages.to_sentence
       end
     end
+
+    # A person's explicit review after a failed spot-check froze an agent
+    # (SENTINEL.md, "Trust consequences"): nothing lifts a freeze on its own.
+    def unfreeze
+      principal = Principal.find(params[:id])
+      principal.unfreeze_capabilities!
+      redirect_to admin_root_path(anchor: "principal-#{principal.id}"), notice: "Unfroze #{principal.name}."
+    end
   end
 end

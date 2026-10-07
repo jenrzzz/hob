@@ -3,13 +3,26 @@ module Sentinel
   # resolved rule's effect, its argument constraints, its limits, then — for
   # `review` — the reviewer. Fails closed: no rule means deny.
   class Gate
-    def initialize(request)
+    def initialize(request, user_authorization: nil)
       @request = request
       @agent = request.principal
       @capability = request.capability
+      @claim = user_authorization
+      @claim_consumed = false
     end
 
     def evaluate
+      verdict = resolve
+      Claims.log_unused!(request: @request, raw: @claim) if @claim.present? && !@claim_consumed
+      verdict
+    end
+
+    private
+
+    def resolve
+      if @agent.capabilities_frozen?
+        return deny("claim", "#{@agent.name}'s capabilities are frozen pending review: #{@agent.capabilities_freeze_reason}")
+      end
       if Realm.rank_of(@request.realm) < @capability.realm_rank
         return deny("realm", "#{@capability.name} needs #{@capability.realm} clearance; the agent has #{@request.realm}")
       end
@@ -32,12 +45,19 @@ module Sentinel
 
       case rule.effect
       when "allow" then Verdict.new(decision: "allow", decided_by: "policy", rationale: rule_label(rule))
-      when "confirm" then Verdict.new(decision: "escalate", decided_by: "policy", rationale: "#{rule_label(rule)}: a person must confirm")
+      when "confirm"
+        # requires_person? is the one guarantee nothing but a person
+        # loosens (it holds even against an admin's own `allow` rule,
+        # above) — an unverifiable chat quote certainly doesn't get to.
+        if @claim.present? && !@capability.requires_person?
+          @claim_consumed = true
+          Claims.decide(request: @request, rule: rule, raw: @claim)
+        else
+          Verdict.new(decision: "escalate", decided_by: "policy", rationale: "#{rule_label(rule)}: a person must confirm")
+        end
       when "review" then Reviewer.new(@request, rule).call
       end
     end
-
-    private
 
     def deny(by, rationale)
       Verdict.new(decision: "deny", decided_by: by, rationale: rationale)

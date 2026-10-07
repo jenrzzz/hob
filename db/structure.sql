@@ -95,6 +95,32 @@ CREATE TABLE public.ar_internal_metadata (
 
 
 --
+-- Name: authorization_claims; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.authorization_claims (
+    id character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    sentinel_request_id character varying NOT NULL,
+    quote text,
+    quoted_at timestamp(6) without time zone,
+    context text,
+    interpretation text,
+    action_ref character varying,
+    realm character varying NOT NULL,
+    status character varying DEFAULT 'rejected'::character varying NOT NULL,
+    rejection_reason text,
+    rubric jsonb DEFAULT '{}'::jsonb NOT NULL,
+    spot_check jsonb DEFAULT '{}'::jsonb NOT NULL,
+    decided_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.authorization_claims FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: board_posts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -651,7 +677,10 @@ CREATE TABLE public.principals (
     updated_at timestamp(6) without time zone NOT NULL,
     channel character varying,
     accepts_lower_messages boolean DEFAULT false NOT NULL,
-    oidc_subject character varying
+    oidc_subject character varying,
+    capabilities_frozen_at timestamp(6) without time zone,
+    capabilities_freeze_reason text,
+    claim_scrutiny_remaining integer DEFAULT 0 NOT NULL
 );
 
 
@@ -1251,6 +1280,14 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 
 --
+-- Name: authorization_claims authorization_claims_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.authorization_claims
+    ADD CONSTRAINT authorization_claims_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: board_posts board_posts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1632,6 +1669,34 @@ CREATE INDEX index_api_keys_on_principal_id ON public.api_keys USING btree (prin
 --
 
 CREATE UNIQUE INDEX index_api_keys_on_token_digest ON public.api_keys USING btree (token_digest);
+
+
+--
+-- Name: index_authorization_claims_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_authorization_claims_on_principal_id ON public.authorization_claims USING btree (principal_id);
+
+
+--
+-- Name: index_authorization_claims_on_principal_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_authorization_claims_on_principal_id_and_created_at ON public.authorization_claims USING btree (principal_id, created_at);
+
+
+--
+-- Name: index_authorization_claims_on_sentinel_request_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_authorization_claims_on_sentinel_request_id ON public.authorization_claims USING btree (sentinel_request_id);
+
+
+--
+-- Name: index_authorization_claims_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_authorization_claims_on_status ON public.authorization_claims USING btree (status);
 
 
 --
@@ -2619,6 +2684,14 @@ ALTER TABLE ONLY public.petitions
 
 
 --
+-- Name: authorization_claims fk_rails_cc0ae52300; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.authorization_claims
+    ADD CONSTRAINT fk_rails_cc0ae52300 FOREIGN KEY (sentinel_request_id) REFERENCES public.sentinel_requests(id);
+
+
+--
 -- Name: mail_backends fk_rails_d33b645a89; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2640,6 +2713,14 @@ ALTER TABLE ONLY public.text_backends
 
 ALTER TABLE ONLY public.browse_sessions
     ADD CONSTRAINT fk_rails_d8df5fc7b2 FOREIGN KEY (browser_id) REFERENCES public.browsers(id);
+
+
+--
+-- Name: authorization_claims fk_rails_dadeefcd8a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.authorization_claims
+    ADD CONSTRAINT fk_rails_dadeefcd8a FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -2707,6 +2788,12 @@ ALTER TABLE ONLY public.missions
 
 
 --
+-- Name: authorization_claims; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.authorization_claims ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: board_posts; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2771,6 +2858,15 @@ ALTER TABLE public.petitions ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.prompt_snapshots ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: authorization_claims realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.authorization_claims USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (authorization_claims.realm)::text)) <= public.app_clearance_rank()));
+
 
 --
 -- Name: board_posts realm_visibility; Type: POLICY; Schema: public; Owner: -
@@ -2983,6 +3079,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261007140000'),
 ('20261007130000'),
 ('20261007120000'),
 ('20261006120000'),

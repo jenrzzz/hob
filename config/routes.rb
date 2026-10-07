@@ -15,6 +15,7 @@ Rails.application.routes.draw do
     resources :principals, only: :create do
       resources :keys, only: :create
     end
+    post "principals/:id/unfreeze", to: "principals#unfreeze", as: :unfreeze_principal
     get "sentinel", to: "sentinel#index"
     post "sentinel/requests/:id/decide", to: "sentinel#decide_request", as: :decide_sentinel_request
     post "sentinel/petitions/:id/decide", to: "sentinel#decide_petition", as: :decide_sentinel_petition

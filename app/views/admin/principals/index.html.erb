@@ -7,7 +7,14 @@
       <span class="tag"><%= principal.kind %></span>
       <span class="tag">up to <%= principal.max_clearance %></span>
       <% if principal.oidc_subject %><span class="tag">can sign in</span><% end %>
+      <% if principal.capabilities_frozen? %><span class="tag">frozen</span><% end %>
     </div>
+
+    <% if principal.capabilities_frozen? %>
+      <p class="muted">Frozen since <%= time_ago_in_words(principal.capabilities_frozen_at) %> ago: <%= principal.capabilities_freeze_reason %></p>
+      <%= button_to "Unfreeze", admin_unfreeze_principal_path(principal), class: "primary", form_class: "inline",
+            form: { onsubmit: "return confirm('Unfreeze #{j principal.name}? Every capability it held before is back at once.')" } %>
+    <% end %>
 
     <% if principal.api_keys.any? %>
       <div class="table-wrap">

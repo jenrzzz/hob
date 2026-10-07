@@ -54,6 +54,20 @@ class AdminControllerTest < ActionDispatch::IntegrationTest
     assert_select ".flash.alert", /taken/
   end
 
+  test "unfreezing an agent after a failed spot-check" do
+    admin_sign_in
+    skipsy, = agent("skipsy")
+    skipsy.freeze_capabilities!(reason: "fabricated claim: \"sure go for it\"")
+
+    get "/admin"
+    assert_select "#principal-#{skipsy.id} .tag", "frozen"
+    assert_select "#principal-#{skipsy.id}", /fabricated claim/
+
+    post "/admin/principals/#{skipsy.id}/unfreeze"
+    assert_redirected_to "/admin#principal-#{skipsy.id}"
+    refute skipsy.reload.capabilities_frozen?
+  end
+
   test "an unlinked subject is refused and told how to link" do
     admin_sign_in("sub-stranger")
     assert_response :forbidden

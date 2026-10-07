@@ -21,6 +21,21 @@ module Mcp
       "description" => "Why you are asking, in a sentence. hob's sentinel reads it when it reviews the request."
     }.freeze
 
+    # A claim that the person already said yes in chat (SENTINEL.md, "User-
+    # authorization claims"), offered only to agents allowed to make one,
+    # and taken off the arguments like REASON, to go to the sentinel as
+    # Sentinel.submit!'s user_authorization.
+    USER_AUTHORIZATION = "user_authorization"
+    USER_AUTHORIZATION_PROPERTY = {
+      "type" => "object",
+      "description" => "Only when the person already authorized this exact action in chat: their message verbatim " \
+                       "(quote), when they sent it (quoted_at, ISO 8601), what you proposed just before (context), what you " \
+                       "take it to authorize (interpretation), and the action it supports (action_ref). It is logged, " \
+                       "judged, and sometimes put back to the person to confirm; a made-up quote freezes you.",
+      "required" => Sentinel::Claims::REQUIRED_FIELDS,
+      "properties" => Sentinel::Claims::REQUIRED_FIELDS.index_with { { "type" => "string" } }
+    }.freeze
+
     REQUEST_TOOL = {
       "name" => "sentinel_request",
       "description" => "Look up one of your own earlier requests by id: its status (pending, executing, completed, " \
@@ -55,13 +70,17 @@ module Mcp
     end
 
     def tools(agent, clearance)
-      capabilities(agent, clearance).map { |name, capability| as_json(name, capability) } + [ REQUEST_TOOL ]
+      claimant = Sentinel::Claims::KNOWN_AGENTS.include?(agent.name)
+      capabilities(agent, clearance).map { |name, capability| as_json(name, capability, claimant: claimant) } + [ REQUEST_TOOL ]
     end
 
-    def as_json(name, capability)
+    def as_json(name, capability, claimant: false)
       schema = capability.input_schema.presence || { "type" => "object" }
       unless schema.dig("properties", REASON)
         schema = schema.merge("properties" => (schema["properties"] || {}).merge(REASON => REASON_PROPERTY))
+      end
+      if claimant && !capability.input_schema&.dig("properties", USER_AUTHORIZATION)
+        schema = schema.merge("properties" => schema["properties"].merge(USER_AUTHORIZATION => USER_AUTHORIZATION_PROPERTY))
       end
       {
         "name" => name, "title" => capability.name, "description" => capability.description, "inputSchema" => schema,
@@ -77,7 +96,9 @@ module Mcp
 
       capability = capabilities(agent, clearance)[name.to_s] or raise UnknownTool, "no tool named #{name.to_s.inspect}"
       reason = capability.input_schema&.dig("properties", REASON) ? nil : arguments.delete(REASON)
-      request = Sentinel.submit!(agent: agent, capability: capability.name, arguments: arguments, reason: reason)
+      claim = capability.input_schema&.dig("properties", USER_AUTHORIZATION) ? nil : arguments.delete(USER_AUTHORIZATION)
+      request = Sentinel.submit!(agent: agent, capability: capability.name, arguments: arguments, reason: reason,
+                                 user_authorization: claim)
       outcome(request)
     end
 

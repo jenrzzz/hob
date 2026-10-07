@@ -15,7 +15,13 @@ module Sentinel
 
   # An agent's ask, decided and (when allowed) executed, in one call. Always
   # returns the request; read `status` for what happened.
-  def submit!(agent:, capability:, arguments: {}, reason: nil, on_mission: nil)
+  #
+  # user_authorization (SENTINEL.md, "User-authorization claims"): an agent
+  # may attach { quote, quoted_at, context, interpretation, action_ref },
+  # claiming the household member already authorized this in chat. Only a
+  # rule resolving to `confirm` ever consults it; everywhere else it is
+  # logged and otherwise ignored.
+  def submit!(agent:, capability:, arguments: {}, reason: nil, on_mission: nil, user_authorization: nil)
     raise Invalid, "only agents ask the sentinel" unless agent.agent?
 
     cap = Capability.enabled.find_by(name: capability.to_s)
@@ -26,7 +32,7 @@ module Sentinel
       reason: reason.presence, surface: Current.surface, realm: Current.clearance,
       on_mission_id: on_mission.presence
     )
-    verdict = Gate.new(request).evaluate
+    verdict = Gate.new(request, user_authorization: user_authorization).evaluate
     request.decide!(decision: verdict.decision, decided_by: verdict.decided_by, rationale: verdict.rationale,
                     review: verdict.review)
     Executor.run!(request) if request.decision == "allow"
@@ -47,14 +53,29 @@ module Sentinel
     base ? "#{base.chomp('/')}/admin/sentinel" : "bin/rails hob:sentinel:pending"
   end
 
-  # A person settles a pending request.
-  def decide!(request, decision:, decider:, rationale: nil)
+  # A person settles a pending request. When it was pending because a claim
+  # was spot-checked (SENTINEL.md), the same tap also settles the claim:
+  # allow confirms it, deny declines it, and deny with fabricated: true
+  # says the person never said that — fabrication, and the agent's
+  # capabilities freeze. A frozen agent's pending requests can still be
+  # denied, but not allowed until a person unfreezes it.
+  def decide!(request, decision:, decider:, rationale: nil, fabricated: false)
     raise Invalid, "only people decide sentinel requests" unless decider.trusted?
     raise Invalid, "request #{request.id} is #{request.status}, not pending" unless request.pending?
     raise Invalid, "decision must be allow or deny" unless %w[allow deny].include?(decision.to_s)
 
+    claim = request.authorization_claim
+    if fabricated
+      raise Invalid, "only a spot-checked claim can be called fabricated" unless claim&.spot_checked?
+      raise Invalid, "a fabricated claim can't be allowed" if decision.to_s == "allow"
+    end
+    if decision.to_s == "allow" && request.principal.capabilities_frozen?
+      raise Invalid, "#{request.principal.name}'s capabilities are frozen pending review; unfreeze it before allowing its requests"
+    end
+
     request.decide!(decision: decision.to_s, decided_by: "human", rationale: rationale.presence, decider: decider)
     Executor.run!(request) if request.decision == "allow"
+    Claims.resolve_spot_check!(claim, decision: decision.to_s, decider: decider, fabricated: fabricated) if claim&.spot_checked?
     request
   end
 

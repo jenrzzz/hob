@@ -87,6 +87,15 @@ module HobWorld
     CalendarBackend.create!(name: name, kind: kind, realm: realm, principal: owner, config: defaults.merge(config.stringify_keys))
   end
 
+  # A mail backend row (MAIL.md). There is no fake kind: the adapters are
+  # pointed at FakeJmap (test/support/fake_jmap.rb) through
+  # Email::Backends::Base.transport.
+  def mail_backend(name = "jenner-fastmail", kind: "fastmail", realm: "personal", owner: @principal, **config)
+    defaults = { "key_env" => "HOB_TEST_JMAP_TOKEN" }
+    defaults["url"] = "https://jmap.example.test/session" if kind == "jmap"
+    MailBackend.create!(name: name, kind: kind, realm: realm, principal: owner, config: defaults.merge(config.stringify_keys))
+  end
+
   # A browser row (BROWSE.md). The default kind is the in-memory Fake,
   # whose pages live in Browse::Backends::Fake.site(name) until Fake.reset!.
   def browser(name = "mini", realm: "personal", kind: "fake", owner: @principal, **attrs)

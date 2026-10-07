@@ -192,6 +192,74 @@ namespace :hob do
     end
   end
 
+  # Mail backends (MAIL.md): the household's mail accounts.
+  namespace :mail do
+    desc "Register (or update) a mail backend (MAIL.md): bin/rails \"hob:mail:backend[jenner-fastmail,fastmail,personal]\" " \
+         "KEY_ENV=FASTMAIL_API_TOKEN (or KEY=<the token>). Any kind: OWNER=jenner MAILBOXES=Household,Receipts READ_ONLY=1 " \
+         "URL=<a JMAP session URL; jmap only> ENABLED=0"
+    task :backend, [ :name, :kind, :realm ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:mail:backend[name,kind=fastmail|jmap,realm=personal]\" KEY_ENV= | KEY=" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = MailBackend.find_or_initialize_by(name: args[:name])
+        row.kind = args[:kind].presence || row.kind || "fastmail"
+        row.realm = args[:realm].presence || row.realm || "personal"
+        row.principal = Principal.find_by!(name: ENV["OWNER"]) if ENV["OWNER"].present?
+        row.principal ||= Principal.find_by!(name: "jenner")
+        config = row.config.dup
+        config = config.except("key", "key_env").merge("key" => ENV["KEY"]) if ENV["KEY"].present?
+        config = config.except("key", "key_env").merge("key_env" => ENV["KEY_ENV"]) if ENV["KEY_ENV"].present?
+        config["url"] = ENV["URL"].presence if ENV.key?("URL")
+        config["mailboxes"] = ENV["MAILBOXES"].split(",").map(&:strip).compact_blank.presence if ENV.key?("MAILBOXES")
+        config["read_only"] = (ENV["READ_ONLY"] == "1" || nil) if ENV.key?("READ_ONLY")
+        row.config = config.compact
+        row.enabled = ENV["ENABLED"] != "0" if ENV.key?("ENABLED")
+        created = row.new_record?
+        row.save!
+        puts "#{row.name}: #{created ? 'registered' : 'updated'}; #{row.kind}, realm #{row.realm}, owner #{row.principal.name}" \
+             "#{row.confined? ? ", only #{row.config['mailboxes'].join(', ')}" : ''}#{row.read_only? ? ', read-only' : ''}" \
+             "#{row.enabled? ? '' : ', disabled'}"
+        puts "  #{row.config['key_env']} is not set in this environment" if row.config["key_env"].present? && ENV[row.config["key_env"]].blank?
+        puts "check it: bin/rails \"hob:mail:check[#{row.name}]\""
+      end
+    end
+
+    desc "List mail backends and whether each answers"
+    task backends: :environment do
+      Clearance.with("intimate") do
+        rows = MailBackend.includes(:principal).order(:name)
+        puts "no mail backends; bin/rails \"hob:mail:backend[name,fastmail,realm]\" KEY_ENV=" if rows.empty?
+        rows.each do |row|
+          state = "disabled" unless row.enabled?
+          state ||= begin
+            row.adapter.check && "reachable"
+          rescue Email::Error => e
+            "unreachable: #{e.message}"
+          end
+          puts "#{row.name.ljust(24)} #{row.kind.ljust(9)} #{row.realm.ljust(10)} #{row.principal.name.ljust(10)} " \
+               "#{(row.read_only? ? 'read-only' : 'read-write').ljust(10)} #{state}"
+        end
+      end
+    end
+
+    desc "Ask one mail backend how it is: the account, its mailboxes, and whether it can send: bin/rails \"hob:mail:check[jenner-fastmail]\""
+    task :check, [ :name ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:mail:check[name]\"" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = MailBackend.find_by!(name: args[:name])
+        begin
+          status = row.adapter.check
+          puts "#{row.name}: reachable"
+          status.except("reachable").each { |name, value| puts "  #{name}: #{value.is_a?(String) ? value : value.to_json}" }
+          row.adapter.mailboxes.each { |mailbox| puts "    #{mailbox['path']}#{mailbox['role'] ? " (#{mailbox['role']})" : ''}" }
+        rescue Email::Error => e
+          abort "#{row.name}: #{e.class.name.demodulize.downcase}: #{e.message}"
+        end
+      end
+    end
+  end
+
   desc "Mint a key for an existing principal, shown once: bin/rails \"hob:key[jenner,phone]\" for the companion app " \
        "(clients/ios); the clearance defaults to the principal's own"
   task :key, [ :principal, :surface, :clearance ] => :environment do |_task, args|

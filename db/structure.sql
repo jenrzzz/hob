@@ -418,6 +418,25 @@ CREATE TABLE public.guidance_changes (
 
 
 --
+-- Name: mail_backends; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mail_backends (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    kind character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.mail_backends FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: message_nodes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1300,6 +1319,14 @@ ALTER TABLE ONLY public.guidance_changes
 
 
 --
+-- Name: mail_backends mail_backends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mail_backends
+    ADD CONSTRAINT mail_backends_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: message_nodes message_nodes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1749,6 +1776,20 @@ CREATE INDEX index_guidance_changes_on_sentinel_policy_id ON public.guidance_cha
 --
 
 CREATE INDEX index_guidance_changes_on_sentinel_policy_id_and_created_at ON public.guidance_changes USING btree (sentinel_policy_id, created_at);
+
+
+--
+-- Name: index_mail_backends_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_mail_backends_on_name ON public.mail_backends USING btree (name);
+
+
+--
+-- Name: index_mail_backends_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_mail_backends_on_principal_id ON public.mail_backends USING btree (principal_id);
 
 
 --
@@ -2475,6 +2516,14 @@ ALTER TABLE ONLY public.petitions
 
 
 --
+-- Name: mail_backends fk_rails_d33b645a89; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mail_backends
+    ADD CONSTRAINT fk_rails_d33b645a89 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: browse_sessions fk_rails_d8df5fc7b2; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2583,6 +2632,12 @@ ALTER TABLE public.calendar_backends ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: mail_backends; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mail_backends ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: message_nodes; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2658,6 +2713,15 @@ CREATE POLICY realm_visibility ON public.calendar_backends USING ((( SELECT real
 CREATE POLICY realm_visibility ON public.conversations USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (conversations.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: mail_backends realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.mail_backends USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (mail_backends.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -2793,6 +2857,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261006120000'),
 ('20261006000000'),
 ('20261003060000'),
 ('20261001202000'),

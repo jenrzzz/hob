@@ -7,7 +7,7 @@ full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 [SENTINEL.md](SENTINEL.md) for how outside agents get in,
 [TODOS.md](TODOS.md) for the household's todos,
 [BUDGET.md](BUDGET.md) for its budget, [CALENDARS.md](CALENDARS.md) for its
-calendars, [RECORDS.md](RECORDS.md) for what
+calendars, [MAIL.md](MAIL.md) for its mail, [RECORDS.md](RECORDS.md) for what
 its agents keep, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure,
 [SCHEDULES.md](SCHEDULES.md) for its clock,
@@ -255,6 +255,26 @@ bin/rails "hob:calendar:backend[jenner-fastmail,fastmail,personal]" USERNAME=jen
 bin/rails "hob:calendar:check[jenner-fastmail]"            # the calendars it sees
 bin/rails "hob:calendar:backend[kids-ics,ics,household]" URL_ENV=KIDS_ICS_URL
 bin/rails "hob:sentinel:policy[muse,calendar.*,allow]"     # calendar.calendars, calendar.events
+```
+
+## Mail
+
+And again for mail ([MAIL.md](MAIL.md)), reading and writing: one
+normalized contract for mailboxes and messages, and a *backend* row per
+account. The kind is `fastmail` (JMAP, with an API token); `jmap` takes
+any other JMAP server. Agents can search the inbox and archive, read a
+message, poll for what arrived since a cursor they keep, make mailboxes,
+and file messages (move, or label); they can send and reply only with a
+person's approval, every time. A row can be confined to some mailboxes
+(`MAILBOXES=`) or made `READ_ONLY=1`, which is how part of a personal
+account is shared with household agents.
+
+```sh
+export FASTMAIL_API_TOKEN=...                              # a Fastmail API token: Email, plus Email submission to send
+bin/rails "hob:mail:backend[jenner-fastmail,fastmail,personal]" KEY_ENV=FASTMAIL_API_TOKEN
+bin/rails "hob:mail:check[jenner-fastmail]"                # whether it can send, and its mailboxes
+bin/rails "hob:mail:backend[house-mail,fastmail,household]" KEY_ENV=FASTMAIL_API_TOKEN MAILBOXES=Household
+bin/rails "hob:sentinel:policy[skipsy,mail.*,allow]"       # mail.send and mail.reply still wait for a person
 ```
 
 ## Meals: mise

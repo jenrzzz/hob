@@ -197,6 +197,22 @@ a bug. A `personal` request sees both backends, and the family chat then
 appears under both names; ask for one backend by name when that matters.
 A send outside a scoped key's chats is `Forbidden`, said by herald.
 
+### Changing a key
+
+What a herald key may do and see can change without rotating it, so
+nothing using it has to be given a new one: add a chat to the family key,
+or take `send` away from it. That is `/admin/herald_keys`, which lists a
+herald's keys as herald has them and edits one's permissions and scope
+through herald's admin-only `PATCH /v1/keys/:name`. The scope is replaced
+whole; an empty one is "every chat", and the form makes you say so. Each
+change is written to `herald_key_changes` (who, when, which key, before
+and after, why) and to herald's own audit log under the admin's name.
+
+It takes `HERALD_ADMIN_TOKEN`, set in both herald's environment and hob's:
+one household-admin credential, separate from every backend row's key and
+never stored in one. A key from `text_backends` cannot change a key,
+however much it may do.
+
 ## herald and Messages
 
 herald runs on the Mac mini, in the login session, as a launchd agent
@@ -222,6 +238,7 @@ Its API is its own document ([herald/API.md](../herald/API.md)); the
 | poll | `GET /v1/changes?since=&from_me=false&limit=100`; the cursor is herald's |
 | send | `POST /v1/messages { chat | to, text }`: 201 is `sent`, 202 is `pending` |
 | check | `GET /v1/status`: macOS, the database's counts, Contacts, the key and its scope |
+| keys (admin) | `GET /v1/keys`, `PATCH /v1/keys/:name { permissions, scope }`, with `HERALD_ADMIN_TOKEN`, not the row's key |
 | errors | 404 → NotFound; 400, 409, 422 → Invalid; 401, 403 → Forbidden; 503, 5xx, refused connections, timeouts → Unavailable |
 
 ### Setting one up
@@ -230,10 +247,11 @@ Its API is its own document ([herald/API.md](../herald/API.md)); the
 # on the mini (herald/README.md)
 bin/herald key add hob --permissions read,send
 bin/herald key add hob-family --permissions read,send --chat "any;+;chat8273..."
+(umask 077; openssl rand -base64 24 > ~/.config/herald/admin.token)   # for /admin/herald_keys
 HERALD_BIND=127.0.0.1,100.90.105.100 bin/herald install    # then: Full Disk Access for Herald.app
 
 # on the hob box
-export HERALD_KEY=hrd_... HERALD_FAMILY_KEY=hrd_...
+export HERALD_KEY=hrd_... HERALD_FAMILY_KEY=hrd_... HERALD_ADMIN_TOKEN=...   # the last from the mini's admin.token
 bin/rails "hob:texts:backend[jenner-messages,herald,http://mini.tailnet.ts.net:8379,personal]" \
   KEY_ENV=HERALD_KEY OWNER=jenner ADDR=100.90.105.100
 bin/rails "hob:texts:backend[family-texts,herald,http://mini.tailnet.ts.net:8379,household]" \

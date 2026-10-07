@@ -2,6 +2,8 @@
 # in-memory chats and messages: what Texts::Backends::Herald.transport is
 # pointed at in tests. It serves /v1/chats, /v1/messages (GET and POST),
 # /v1/changes, and /v1/status, honours the bearer key, and keeps every call.
+# /v1/keys (GET, and PATCH /v1/keys/:name) takes ADMIN_TOKEN instead, and
+# answers from `keys`.
 # A response pushed with `respond` is served first; `pending` makes a send
 # answer 202.
 class FakeHerald
@@ -13,8 +15,9 @@ class FakeHerald
   end
 
   KEY = "hrd_test".freeze
+  ADMIN_TOKEN = "herald-admin-secret".freeze
 
-  attr_reader :calls, :chats, :messages, :sent
+  attr_reader :calls, :chats, :messages, :sent, :keys
   attr_accessor :pending
 
   def initialize
@@ -24,6 +27,7 @@ class FakeHerald
     @messages = []
     @sent = []
     @seq = 1000
+    @keys = {}
   end
 
   def to_proc
@@ -41,6 +45,10 @@ class FakeHerald
                    "unread" => unread }
   end
 
+  def key(name, permissions: %w[read send], scope: nil)
+    @keys[name] = { "name" => name, "permissions" => permissions, "scope" => scope, "created_at" => "2026-10-01T12:00:00Z", "updated_at" => nil }
+  end
+
   def message(chat, text, at:, from: nil, read: true, **extra)
     @seq += 1
     sender = from && { "handle" => from, "name" => extra.delete(:name) }
@@ -53,6 +61,7 @@ class FakeHerald
   def call(verb, url, body, headers)
     @calls << (call = Call.new(verb, url, body, headers))
     return encode(*@queued.shift) if @queued.any?
+    return encode(*admin(call)) if call.path.start_with?("/v1/keys")
     return encode(401, error("unauthorized", "send a herald key")) unless headers["Authorization"] == "Bearer #{KEY}"
 
     encode(*route(call))
@@ -71,6 +80,20 @@ class FakeHerald
                "contacts" => { "people" => 3 }, "key" => { "name" => "hob", "permissions" => %w[read send], "scope" => nil } } ]
     else [ 404, error("not_found", "no such endpoint") ]
     end
+  end
+
+  def admin(call)
+    return [ 401, error("unauthorized", "keys are managed with HERALD_ADMIN_TOKEN") ] unless call.headers["Authorization"] == "Bearer #{ADMIN_TOKEN}"
+    return [ 200, { "keys" => @keys.values } ] if call.verb == "GET" && call.path == "/v1/keys"
+
+    name = URI.decode_uri_component(call.path.delete_prefix("/v1/keys/"))
+    key = @keys[name] or return [ 404, error("not_found", "no key named #{name}", kind: "key") ]
+    return [ 200, key ] if call.verb == "GET"
+
+    fields = call.json
+    return [ 422, error("invalid", "unknown permission #{(fields['permissions'] - %w[read send]).join(', ')}") ] if (fields["permissions"] - %w[read send]).any?
+
+    [ 200, key.merge!(fields.slice("permissions", "scope"), "updated_at" => "2026-10-07T12:00:00Z") ]
   end
 
   def listed_chats(query)

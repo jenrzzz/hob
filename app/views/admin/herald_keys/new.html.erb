@@ -1,0 +1,98 @@
+<h1>Herald keys</h1>
+<p class="muted">
+  Change what a herald key may do (read, send) and which chats and people it may see, without rotating its
+  token (herald's admin-only <code>/v1/keys</code>, TEXTS.md). Pick a herald to see its keys as herald has them
+  now, and edit one. The scope is replaced whole: list every chat and handle the key should keep. Leave both
+  empty and check "every chat" to remove a key's scope entirely.
+</p>
+
+<section class="card">
+  <% if @backends.empty? %>
+    <p class="muted">No herald text backends registered yet (TEXTS.md, "Setting one up").</p>
+  <% else %>
+    <p class="muted" style="margin-bottom: 12px">
+      Show the keys on:
+      <% @backends.each_with_index do |b, i| %><%= ", " if i.positive? %><%= link_to b.name, admin_herald_keys_path(backend: b.name) %><% end %>
+    </p>
+    <% if @load_error %><div class="flash alert"><%= @load_error %></div><% end %>
+    <% if @keys %>
+      <% if @keys.empty? %>
+        <p class="muted">herald has no keys.</p>
+      <% else %>
+        <div class="table-wrap" style="margin-bottom: 16px">
+          <table>
+            <tr><th>Key</th><th>Permissions</th><th>Scope</th><th>Changed</th><th></th></tr>
+            <% @keys.each do |key| %>
+              <tr>
+                <td><code><%= key["name"] %></code></td>
+                <td><%= Array(key["permissions"]).join(", ") %></td>
+                <td>
+                  <% if key["scope"].blank? %>
+                    every chat
+                  <% else %>
+                    <% key["scope"].each do |kind, values| %><div><span class="muted"><%= kind %>:</span> <%= values.join(", ") %></div><% end %>
+                  <% end %>
+                </td>
+                <td class="muted"><%= key["updated_at"] || key["created_at"] %></td>
+                <td><%= link_to "edit", admin_herald_keys_path(backend: @backend_name, key_name: key["name"]) %></td>
+              </tr>
+            <% end %>
+          </table>
+        </div>
+      <% end %>
+    <% end %>
+    <%= form_with url: admin_herald_keys_path, method: :post do |f| %>
+      <div class="row">
+        <label>
+          Herald
+          <%= f.select :backend, @backends.map { |b| [ "#{b.name} (#{URI(b.url).host})", b.name ] }, { selected: @backend_name }, { "aria-label": "Herald" } %>
+        </label>
+        <label>
+          Key name
+          <%= f.text_field :key_name, value: @key_name, placeholder: "hob-family", "aria-label": "Key name" %>
+        </label>
+        <% Admin::HeraldKeysController::PERMISSIONS.each do |permission| %>
+          <label><%= check_box_tag "permissions[]", permission, @permissions.include?(permission), id: "permission_#{permission}" %> <%= permission %></label>
+        <% end %>
+      </div>
+      <div class="row" style="align-items: flex-start">
+        <label style="flex: 1">
+          Chats, one per line (id or identifier)
+          <%= f.text_area :chats, value: @chats_raw, rows: 4, style: "width: 100%", placeholder: "any;+;chat8273...", "aria-label": "Chats" %>
+        </label>
+        <label style="flex: 1">
+          Handles, one per line (a person's phone number or address)
+          <%= f.text_area :handles, value: @handles_raw, rows: 4, style: "width: 100%", placeholder: "+15551234567", "aria-label": "Handles" %>
+        </label>
+      </div>
+      <div class="row">
+        <label><%= f.check_box :unscoped, checked: @unscoped %> every chat (remove the scope)</label>
+        <%= f.text_field :rationale, placeholder: "why (optional)", "aria-label": "Rationale" %>
+        <%= f.submit "Save" %>
+      </div>
+    <% end %>
+  <% end %>
+</section>
+
+<h1 style="margin-top: 32px">Recent changes</h1>
+<% if @history.empty? %>
+  <p class="muted">No herald key changes recorded yet.</p>
+<% else %>
+  <section class="card">
+    <div class="table-wrap">
+      <table>
+        <tr><th>When</th><th>Herald</th><th>Key</th><th>By</th><th>Before → after</th><th>Why</th></tr>
+        <% @history.each do |h| %>
+          <tr>
+            <td title="<%= h.created_at.utc.iso8601 %>"><%= time_ago_in_words(h.created_at) %> ago</td>
+            <td><%= h.text_backend&.name %></td>
+            <td><code><%= h.key_name %></code></td>
+            <td><%= h.decider&.name %></td>
+            <td><span class="muted"><%= h.key_before ? describe_key(h.key_before) : "(unknown)" %></span> → <%= describe_key(h.key_after) %></td>
+            <td><%= h.rationale %></td>
+          </tr>
+        <% end %>
+      </table>
+    </div>
+  </section>
+<% end %>

@@ -418,6 +418,23 @@ CREATE TABLE public.guidance_changes (
 
 
 --
+-- Name: herald_key_changes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.herald_key_changes (
+    id character varying NOT NULL,
+    text_backend_id character varying NOT NULL,
+    key_name character varying NOT NULL,
+    decider_id bigint NOT NULL,
+    key_before jsonb,
+    key_after jsonb NOT NULL,
+    rationale text,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: mail_backends; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1338,6 +1355,14 @@ ALTER TABLE ONLY public.guidance_changes
 
 
 --
+-- Name: herald_key_changes herald_key_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.herald_key_changes
+    ADD CONSTRAINT herald_key_changes_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: mail_backends mail_backends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1558,6 +1583,13 @@ ALTER TABLE ONLY public.ward_runs
 --
 
 CREATE INDEX idx_on_browser_id_key_name_created_at_febc83505f ON public.gofer_key_changes USING btree (browser_id, key_name, created_at);
+
+
+--
+-- Name: idx_on_text_backend_id_key_name_created_at_64862c4f81; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_text_backend_id_key_name_created_at_64862c4f81 ON public.herald_key_changes USING btree (text_backend_id, key_name, created_at);
 
 
 --
@@ -1803,6 +1835,20 @@ CREATE INDEX index_guidance_changes_on_sentinel_policy_id ON public.guidance_cha
 --
 
 CREATE INDEX index_guidance_changes_on_sentinel_policy_id_and_created_at ON public.guidance_changes USING btree (sentinel_policy_id, created_at);
+
+
+--
+-- Name: index_herald_key_changes_on_decider_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_herald_key_changes_on_decider_id ON public.herald_key_changes USING btree (decider_id);
+
+
+--
+-- Name: index_herald_key_changes_on_text_backend_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_herald_key_changes_on_text_backend_id ON public.herald_key_changes USING btree (text_backend_id);
 
 
 --
@@ -2269,6 +2315,14 @@ ALTER TABLE ONLY public.sentinel_policies
 
 
 --
+-- Name: herald_key_changes fk_rails_094891a8ed; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.herald_key_changes
+    ADD CONSTRAINT fk_rails_094891a8ed FOREIGN KEY (decider_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: record_collections fk_rails_110107042c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2330,6 +2384,14 @@ ALTER TABLE ONLY public.calendar_contributors
 
 ALTER TABLE ONLY public.sign_in_grants
     ADD CONSTRAINT fk_rails_2fe08944e5 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: herald_key_changes fk_rails_315f3085c8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.herald_key_changes
+    ADD CONSTRAINT fk_rails_315f3085c8 FOREIGN KEY (text_backend_id) REFERENCES public.text_backends(id);
 
 
 --
@@ -2921,6 +2983,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261007130000'),
 ('20261007120000'),
 ('20261006120000'),
 ('20261006000000'),

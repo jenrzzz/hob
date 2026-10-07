@@ -14,7 +14,9 @@ module Texts
     # The bearer key is the backend row's (TextBackend#key). A key herald has
     # *scoped* to some chats or people sees only those, and may send only to
     # them; that is how one family group chat is shared with household
-    # agents (TEXTS.md).
+    # agents (TEXTS.md). `keys`, `key`, and `update_key` are the admin
+    # exception: they read and change herald's keys with HERALD_ADMIN_TOKEN,
+    # never backend.key.
     class Herald < Base
       # Tests inject a lambda (verb, url, body, headers) -> [status, body]
       # here, as they do with Todos::Backends::Omnifocus.transport, so nothing
@@ -90,6 +92,24 @@ module Texts
           "contacts" => status["contacts"], "herald_key" => status["key"], "now" => status["now"] }.compact
       end
 
+      # GET /v1/keys and /v1/keys/:name (herald's API.md, "Keys (admin)"):
+      # every key's name, permissions, and scope, never a token.
+      def keys(admin_token:)
+        Array(admin_request("GET", "/v1/keys", admin_token: admin_token)["keys"])
+      end
+
+      def key(name, admin_token:)
+        admin_request("GET", "/v1/keys/#{escape(name)}", admin_token: admin_token)
+      end
+
+      # PATCH /v1/keys/:name: replaces a key's permissions and scope (nil:
+      # every chat) without rotating its token. `actor` is herald's own
+      # X-Admin-Actor audit field.
+      def update_key(name, permissions:, scope:, admin_token:, actor: nil)
+        admin_request("PATCH", "/v1/keys/#{escape(name)}", { "permissions" => permissions, "scope" => scope },
+                      admin_token: admin_token, actor: actor)
+      end
+
       private
 
       # --- herald → hob ---
@@ -145,6 +165,26 @@ module Texts
         return [ status.to_i, data ] if status.to_s.start_with?("2")
 
         raise error_for(status.to_i, data)
+      end
+
+      # The household admin's credential, a different one from any row's key.
+      def admin_request(verb, path, body = nil, admin_token:, actor: nil)
+        raise Texts::Unavailable, "HERALD_ADMIN_TOKEN is not set in hob's environment" if admin_token.blank?
+
+        headers = { "Authorization" => "Bearer #{admin_token}", "Accept" => "application/json" }
+        headers["Content-Type"] = "application/json" if body
+        headers["X-Admin-Actor"] = actor if actor.present?
+        status, response = deliver(verb, "#{backend.url}#{path}", body && JSON.generate(body), headers)
+        data = parse(response)
+        return data if status.to_s.start_with?("2")
+
+        raise Texts::Forbidden, "herald refused the admin token (HTTP #{status})" if [ 401, 403 ].include?(status.to_i)
+
+        raise error_for(status.to_i, data)
+      end
+
+      def escape(segment)
+        ERB::Util.url_encode(segment.to_s)
       end
 
       def key_hint

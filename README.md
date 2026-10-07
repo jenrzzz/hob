@@ -101,6 +101,14 @@ last saw as the "before". Needs `GOFER_ADMIN_TOKEN` in hob's own
 environment — a credential separate from any browser row's own key, never
 sent to the browser.
 
+`/admin/herald_keys` changes a herald key's permissions (read, send) and
+scope (chats, people) without rotating its token (TEXTS.md, "Changing a
+key"). Picking a herald lists its keys as herald has them now, and "edit"
+prefills the form from one. Every accepted change is logged
+(`HeraldKeyChange`), with herald's own answer as the "before". Needs
+`HERALD_ADMIN_TOKEN` in hob's own environment, separate from every text
+backend's key.
+
 The companion app (clients/ios) signs in through the same page: it opens
 `/app/sign_in` in a browser sheet, you confirm, and it trades a one-time
 code for a key of its own (`app:<device>`) at `POST /v1/app_sessions`.

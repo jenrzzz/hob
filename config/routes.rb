@@ -23,6 +23,8 @@ Rails.application.routes.draw do
     post "grants/:id", to: "grants#update", as: :update_grant
     get "gofer_keys", to: "gofer_keys#new", as: :gofer_keys
     post "gofer_keys", to: "gofer_keys#update"
+    get "herald_keys", to: "herald_keys#new", as: :herald_keys
+    post "herald_keys", to: "herald_keys#update"
     get "records", to: "records#index"
     get "records/:name", to: "records#show", as: :records_collection, constraints: { name: %r{[^/]+} }
     post "records/:name/restore", to: "records#restore_collection", as: :restore_records_collection, constraints: { name: %r{[^/]+} }

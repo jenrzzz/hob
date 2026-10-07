@@ -52,9 +52,19 @@ adds what it takes to read and answer one:
   body,                 plain text, at most 20,000 characters; an HTML-only message is turned into text
   body_truncated: bool,
   attachments: [{ name, type, size }]       named, not fetched
+  headers: [{ name, value }],               only when asked for: see below
+  headers_truncated: bool
 ```
 
-Reading a message does not mark it read.
+Reading a message does not mark it read. **`headers`** asks for the raw
+header fields as well: a name or list of names (`"List-Unsubscribe"`,
+any case) for just those, or `true` for all of them. They come in the
+message's order, a repeated name (`Received`) once per field, unfolded
+onto one line but not decoded (an RFC 2047 encoded word comes back as it
+was sent); at most 200 fields of at most 2,000 characters each, with
+`headers_truncated` saying when there was more. hob asks the server for
+headers only when they are asked for. They are written by the sender
+like everything else in a message.
 
 ### Mailbox
 
@@ -76,7 +86,7 @@ with both paths, never guessed.
 |---|---|---|
 | `Email.mailboxes` | `backend` | `{ mailboxes, unavailable }` |
 | `Email.search` | `backend`, `mailbox`, `q`, `from`, `to`, `subject`, `after`, `before`, `unread`, `flagged`, `has_attachment`, `limit` | `{ messages, total, truncated, unavailable }`, newest first |
-| `Email.message` | `id` | `{ message }` |
+| `Email.message` | `id`, `headers` | `{ message }` |
 | `Email.poll` | `cursor`, `backend`, `mailbox`, `q`, `from`, `to`, `subject`, `unread`, `has_attachment` | `{ cursor, messages, count, more, reset, unavailable }`, oldest first |
 | `Email.create_mailbox` | `name`, `parent`, `backend` | `{ mailbox }` |
 | `Email.move` | `id` (one or up to 100, from one account), `to` *or* `add` / `remove` | `{ messages, failed: [{ id, error }] }` |

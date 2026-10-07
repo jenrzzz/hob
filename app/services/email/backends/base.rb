@@ -14,7 +14,8 @@ module Email
     #   mailboxes                               → [mailbox]
     #   search(filter, limit)                   → { "messages" => [summary], "total" => n }, newest first; each
     #                                             summary carries "_received" (a Time) the façade merges by
-    #   message(id)                             → message: a summary with its body, headers, and attachments
+    #   message(id, headers:)                   → message: a summary with its body, headers, and attachments; with
+    #                                             headers (:all, or lowercase names), its raw header fields too
     #   poll(state, mailbox)                    → { "state", "messages" => [summary], "more", "reset" }; a nil
     #                                             state is a first look: the state now, and no messages
     #   create_mailbox(name, parent)            → mailbox

@@ -40,6 +40,8 @@ module Email
       MAX_BODY_BYTES = 256 * 1024 # of each body part asked of the server
       MAX_QUOTE = 10_000
       MAX_REFERENCES = 20
+      MAX_HEADERS = 200          # header fields handed out from one message
+      MAX_HEADER_VALUE = 2_000   # characters of each
       MAX_TEXT = 500
       UTC_DATE = "%Y-%m-%dT%H:%M:%SZ".freeze
 
@@ -71,11 +73,14 @@ module Email
         { "messages" => answers["g"]["list"].map { |email| summary(email) }, "total" => answers["q"]["total"] }
       end
 
-      def message(id)
-        email = emails([ id ], FULL, body: true).first
+      # `headers`: nil for none, :all, or the (lowercase) names wanted.
+      def message(id, headers: nil)
+        email = emails([ id ], headers ? FULL + [ "headers" ] : FULL, body: true).first
         raise Email::NotFound, "#{backend.name} has no message #{prefixed(id).inspect}" unless email && visible_email?(email)
 
-        full(email)
+        message = full(email)
+        message.merge!(header_fields(email, headers)) if headers
+        message
       end
 
       # What arrived since `state`: messages created on the account since
@@ -469,6 +474,19 @@ module Email
           "body" => text, "body_truncated" => truncated,
           "attachments" => Array(email["attachments"]).map { |part| { "name" => part["name"], "type" => part["type"], "size" => part["size"] } }
         )
+      end
+
+      # The raw header fields, in the message's order (a name can repeat:
+      # Received does), unfolded, and not decoded: an RFC 2047 encoded word
+      # comes back as it was sent. Only the names asked for, unless :all.
+      def header_fields(email, wanted)
+        fields = Array(email["headers"]).select { |field| field.is_a?(Hash) && field["name"].is_a?(String) }
+        fields = fields.select { |field| wanted.include?(field["name"].downcase) } unless wanted == :all
+        shown = fields.first(MAX_HEADERS).map do |field|
+          { "name" => field["name"], "value" => field["value"].to_s.gsub(/\r?\n[ \t]+/, " ").strip.first(MAX_HEADER_VALUE) }
+        end
+        truncated = fields.size > MAX_HEADERS || fields.first(MAX_HEADERS).any? { |field| field["value"].to_s.length > MAX_HEADER_VALUE }
+        { "headers" => shown, "headers_truncated" => truncated }
       end
 
       # The message's text: its plain parts, or its HTML ones as text when

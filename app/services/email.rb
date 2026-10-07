@@ -8,7 +8,7 @@
 #
 #   Email.mailboxes                                          → { "mailboxes" => [...], "unavailable" => [...] }
 #   Email.search("q" => "reservation", "after" => "2026-09-21")  → { "messages" => [...], ... }
-#   Email.message("jenner-fastmail:M123")                    → { "message" => {...} }
+#   Email.message("id" => "jenner-fastmail:M123", "headers" => ["List-Unsubscribe"])  → { "message" => {...} }
 #   Email.poll("cursor" => cursor, "from" => "school.org")   → { "cursor" => ..., "messages" => [...], ... }
 #   Email.create_mailbox / move / send_message / reply
 #
@@ -31,6 +31,9 @@ module Email
   MOVE_ARGUMENTS = %w[id to add remove].freeze
   SEND_ARGUMENTS = %w[backend from to cc bcc subject body].freeze
   REPLY_ARGUMENTS = %w[id from body reply_all cc bcc quote].freeze
+  MESSAGE_ARGUMENTS = %w[id headers].freeze
+  MAX_HEADER_NAMES = 50
+  HEADER_NAME = /\A[!-9;-~]+\z/ # RFC 5322: printable ASCII, no colon
   DEFAULT_LIMIT = 25
   MAX_LIMIT = 100
   MAX_IDS = 100
@@ -86,10 +89,14 @@ module Email
       "truncated" => total > [ found.size, limit ].min, "unavailable" => unavailable }
   end
 
-  # One message, with its text, headers, and what is attached.
-  def message(id)
-    name, native = parse_id(string!(id, "id"))
-    { "message" => shown(backend!(name).adapter.message(native)) }
+  # One message, with its text, headers, and what is attached. `headers`
+  # adds its raw header fields: true for all of them, or a name or list of
+  # names (any case) for just those. A bare id is the same as { "id" => id }.
+  def message(arguments)
+    arguments = { "id" => arguments } if arguments.is_a?(String)
+    arguments = known!(arguments, MESSAGE_ARGUMENTS, "argument")
+    name, native = parse_id(string!(arguments["id"], "id"))
+    { "message" => shown(backend!(name).adapter.message(native, headers: header_names!(arguments["headers"]))) }
   end
 
   # What arrived since the cursor, oldest first. Without a cursor, a first
@@ -341,6 +348,22 @@ module Email
     raise Invalid, "#{what}: #{item.inspect} is not an email address" unless email.match?(ADDRESS)
 
     { "name" => name&.first(MAX_NAME), "email" => email }.compact
+  end
+
+  # -> nil (no headers), :all, or the lowercase names wanted.
+  def header_names!(value)
+    return nil if value.nil? || value == false
+    return :all if value == true
+
+    names = value.is_a?(Array) ? value : [ value ]
+    raise Invalid, "headers is true, or a header name or list of them, got #{value.inspect}" if names.empty?
+    raise Invalid, "at most #{MAX_HEADER_NAMES} header names; ask for all with headers: true" if names.size > MAX_HEADER_NAMES
+
+    names.map do |item|
+      raise Invalid, "headers: #{item.inspect} is not a header name (like List-Unsubscribe)" unless item.is_a?(String) && item.strip.match?(HEADER_NAME)
+
+      item.strip.downcase
+    end.uniq
   end
 
   def recipients!(list)

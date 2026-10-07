@@ -59,12 +59,13 @@ class FakeJmap
   # A message on the account. `body` is its text; `html: true` makes that
   # its only (HTML) part.
   def email(id, subject:, from: "Ana Ruiz <ana@example.test>", to: [ ME ], cc: [], folders: [ "mb-inbox" ], received: "2026-10-05T16:00:00Z",
-            body: "", html: false, keywords: {}, reply_to: [], message_id: "<#{id}@example.test>", references: [], attachments: [])
+            body: "", html: false, keywords: {}, reply_to: [], message_id: "<#{id}@example.test>", references: [], attachments: [], headers: [])
     stored = {
       "id" => id, "threadId" => "t-#{id}", "mailboxIds" => Array(folders).index_with(true),
       "keywords" => keywords, "from" => addresses(from), "to" => addresses(to), "cc" => addresses(cc), "bcc" => [],
       "replyTo" => addresses(reply_to), "subject" => subject, "preview" => body.to_s.first(80), "receivedAt" => received,
       "sentAt" => received, "size" => 1000 + body.to_s.size, "hasAttachment" => attachments.any?, "messageId" => [ message_id.delete("<>") ],
+      "_headers" => [ { "name" => "Received", "value" => " from mx1.example.test" }, { "name" => "Subject", "value" => " #{subject}" }, *headers ],
       "inReplyTo" => nil, "references" => references.presence, "attachments" => attachments, "_body" => body, "_html" => html
     }
     created(stored)
@@ -219,6 +220,7 @@ class FakeJmap
       shown = email.reject { |key, _| key.start_with?("_") }
       shown["textBody"] = [ { "partId" => "1", "type" => email["_html"] ? "text/html" : "text/plain" } ]
       shown["bodyValues"] = arguments["fetchTextBodyValues"] ? { "1" => { "value" => email["_body"], "isTruncated" => false } } : {}
+      shown["headers"] = email["_headers"] || [] if Array(arguments["properties"]).include?("headers")
       shown
     end
     { "accountId" => ACCOUNT, "state" => @state.to_s, "list" => list, "notFound" => ids - list.map { |e| e["id"] } }

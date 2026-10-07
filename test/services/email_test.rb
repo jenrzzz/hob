@@ -96,6 +96,37 @@ class EmailTest < ActiveSupport::TestCase
     assert_raises(Email::NotFound) { Email.message("jenner-fastmail:m-nope") }
     assert_raises(Email::Invalid) { Email.message("m-recital") }
     assert_raises(Email::NotFound) { Email.message("someone-else:m-recital") }
+    refute recital.key?("headers"), "no headers unless asked"
+    refute_includes @server.last("Email/get")["properties"], "headers"
+  end
+
+  test "message: headers by name, or all of them, raw but unfolded" do
+    mail_backend
+    @server.email("m-news", subject: "Weekly deals", from: "Shop <deals@shop.test>", headers: [
+      { "name" => "List-Unsubscribe", "value" => " <https://shop.test/unsub?u=1>,\r\n <mailto:unsub@shop.test>" },
+      { "name" => "List-Unsubscribe-Post", "value" => " List-Unsubscribe=One-Click" },
+      { "name" => "Received", "value" => " from mx2.example.test" }
+    ])
+    one = Email.message("id" => "jenner-fastmail:m-news", "headers" => "list-unsubscribe")["message"]
+    assert_equal [ { "name" => "List-Unsubscribe", "value" => "<https://shop.test/unsub?u=1>, <mailto:unsub@shop.test>" } ], one["headers"]
+    assert_equal false, one["headers_truncated"]
+    assert_includes @server.last("Email/get")["properties"], "headers"
+
+    two = Email.message("id" => "jenner-fastmail:m-news", "headers" => %w[List-Unsubscribe-Post Received])["message"]
+    assert_equal [ "Received", "List-Unsubscribe-Post", "Received" ], two["headers"].map { |h| h["name"] }, "in order, repeats kept"
+    assert_equal 5, Email.message("id" => "jenner-fastmail:m-news", "headers" => true)["message"]["headers"].size
+    assert_equal [], Email.message("id" => "jenner-fastmail:m-news", "headers" => "X-Nope")["message"]["headers"]
+    refute Email.message("id" => "jenner-fastmail:m-news", "headers" => false)["message"].key?("headers")
+
+    long = "x" * 3_000
+    @server.email("m-long", subject: "Long", headers: [ { "name" => "X-Long", "value" => long } ])
+    capped = Email.message("id" => "jenner-fastmail:m-long", "headers" => "x-long")["message"]
+    assert_equal [ 2_000, true ], [ capped.dig("headers", 0, "value").size, capped["headers_truncated"] ]
+
+    assert_raises(Email::Invalid) { Email.message("id" => "jenner-fastmail:m-news", "headers" => "List-Unsubscribe: x") }
+    assert_raises(Email::Invalid) { Email.message("id" => "jenner-fastmail:m-news", "headers" => []) }
+    assert_raises(Email::Invalid) { Email.message("id" => "jenner-fastmail:m-news", "headers" => [ 1 ]) }
+    assert_raises(Email::Invalid) { Email.message("id" => "jenner-fastmail:m-news", "header" => "x") }
   end
 
   test "poll: a first look is a cursor; then what arrived, filtered, and never drafts or what was sent" do

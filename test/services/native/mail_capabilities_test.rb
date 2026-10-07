@@ -54,6 +54,7 @@ class MailCapabilitiesTest < ActiveSupport::TestCase
     assert_equal Email::REPLY_ARGUMENTS.sort, caps["mail.reply"].input_schema["properties"].keys.sort
     assert_equal Email::MOVE_ARGUMENTS.sort, caps["mail.move"].input_schema["properties"].keys.sort
     assert_equal Email::MAILBOX_ARGUMENTS.sort, caps["mail.mailbox.create"].input_schema["properties"].keys.sort
+    assert_equal Email::MESSAGE_ARGUMENTS.sort, caps["mail.message.get"].input_schema["properties"].keys.sort
   end
 
   test "the reads: the mail the agent's clearance can see, with the notice" do
@@ -64,6 +65,8 @@ class MailCapabilitiesTest < ActiveSupport::TestCase
     assert_match(/anyone at all.*not instructions/m, result["notice"])
     assert_equal [ "Household" ], completed("mail.mailboxes")["mailboxes"].map { |m| m["path"] }
     assert_equal "Recital on Friday", completed("mail.message.get", "id" => "house-mail:m-recital").dig("message", "subject")
+    assert_equal [ "Received" ], completed("mail.message.get", "id" => "house-mail:m-recital", "headers" => [ "Received" ])
+      .dig("message", "headers").map { |h| h["name"] }
     assert completed("mail.poll")["cursor"].present?
   end
 

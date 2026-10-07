@@ -132,6 +132,12 @@ GEM
     http-2 (1.2.3)
     i18n (1.15.2)
       concurrent-ruby (~> 1.0)
+    icalendar (2.12.5)
+      base64
+      ice_cube (~> 0.16)
+      logger
+      ostruct
+    ice_cube (0.17.0)
     io-console (0.9.4)
     irb (1.18.0)
       pp (>= 0.6.0)
@@ -323,6 +329,8 @@ GEM
     regexp_parser (2.12.0)
     reline (0.7.0)
       io-console (~> 0.5)
+    rrule (0.8.0)
+      activesupport (>= 2.3)
     rubocop (1.88.2)
       json (~> 2.3)
       language_server-protocol (~> 3.17.0.2)
@@ -440,6 +448,7 @@ DEPENDENCIES
   bundler-audit
   debug
   fugit (~> 1.11)
+  icalendar (~> 2.12)
   json_schemer (~> 2.5)
   kamal
   omniauth (~> 2.1)
@@ -449,6 +458,7 @@ DEPENDENCIES
   puma (>= 5.0)
   rack-cors
   rails (~> 8.1.4)
+  rrule (~> 0.8)
   rubocop-rails-omakase
   ruby_llm (= 2.0.0)
   sentry-rails
@@ -507,6 +517,8 @@ CHECKSUMS
   hashie (5.1.0) sha256=c266471896f323c446ea8207f8ffac985d2718df0a0ba98651a3057096ca3870
   http-2 (1.2.3) sha256=f4e3a7000e9a8ab97595f09eac44c6ec10a2aa438360758124df0ca5bcb280d4
   i18n (1.15.2) sha256=00f9eb62412fe593b2a65a97daa75300d37abb8f7202ec748e94b6d46a9dd1b5
+  icalendar (2.12.5) sha256=bda963d46bb08d9de1366eff05308c1e60a178532422fcc11d60360f84f58156
+  ice_cube (0.17.0) sha256=32deb45dda4b4acc53505c2f581f6d32b5afc04d29b9004769944a0df5a5fcbe
   io-console (0.9.4) sha256=a403304f32928ee85e56d457b4612ca43f2703b561a3258844992bd24085fbb1
   irb (1.18.0) sha256=de9454a0703a54704b9811a5ef31a60c86949fbf4013fcf244fabc7c775248e3
   json (2.21.2) sha256=1f1d3b7cf2b3ba1a69beca0bb6db13d5438b80bff3cd54cdaaa620b9b07c1c6a
@@ -577,6 +589,7 @@ CHECKSUMS
   rdoc (8.0.0) sha256=03bf8c08a9639658855a0cfd77c0abca8325c227693f7f33f82957811348c469
   regexp_parser (2.12.0) sha256=35a916a1d63190ab5c9009457136ae5f3c0c7512d60291d0d1378ba18ce08ebb
   reline (0.7.0) sha256=5b012d8e55dbf9d450f12bde2cf7d15ff546ae80b3f8f3b30e570d431815583d
+  rrule (0.8.0) sha256=abb19a334efe441879012de9c2f5589372a20097a63a70f5ff9d3b0b4504a4f2
   rubocop (1.88.2) sha256=8def251c90cd955feb4daa3edc0ab56893250c4ce90ef81e6c80c03f9a939bbf
   rubocop-ast (1.50.0) sha256=b9ca88300da0803ee222ad20cdb30494c0a784eed06fdc35d254b06d662788db
   rubocop-performance (1.26.1) sha256=cd19b936ff196df85829d264b522fd4f98b6c89ad271fa52744a8c11b8f71834

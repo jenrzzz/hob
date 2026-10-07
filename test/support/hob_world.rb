@@ -79,6 +79,14 @@ module HobWorld
                           config: { "plan" => plan, "key_env" => "HOB_TEST_YNAB_TOKEN" }.merge(config.stringify_keys))
   end
 
+  # A calendar backend row (CALENDARS.md). There is no fake kind: the
+  # adapters are pointed at FakeCalendars (test/support/fake_calendars.rb)
+  # through Calendars::Backends::Base.transport.
+  def calendar_backend(name = "family-ics", kind: "ics", realm: "household", owner: @principal, **config)
+    defaults = kind == "ics" ? { "url" => "https://example.test/#{name}.ics" } : { "username" => "jenner@fastmail.test", "key_env" => "HOB_TEST_CALDAV_KEY" }
+    CalendarBackend.create!(name: name, kind: kind, realm: realm, principal: owner, config: defaults.merge(config.stringify_keys))
+  end
+
   # A browser row (BROWSE.md). The default kind is the in-memory Fake,
   # whose pages live in Browse::Backends::Fake.site(name) until Fake.reset!.
   def browser(name = "mini", realm: "personal", kind: "fake", owner: @principal, **attrs)

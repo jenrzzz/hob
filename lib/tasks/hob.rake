@@ -119,6 +119,77 @@ namespace :hob do
              "last push #{events.maximum(:updated_at)&.utc&.iso8601 || 'never'}"
       end
     end
+
+    # Calendar backends (CALENDARS.md): where the household's calendars are read from.
+    desc "Register (or update) a calendar backend (CALENDARS.md). A feed: bin/rails \"hob:calendar:backend[kids-ics,ics,household]\" " \
+         "URL_ENV=KIDS_ICS_URL (or URL=<the feed>) LABEL=Kids. Fastmail: bin/rails \"hob:calendar:backend[jenner-fastmail,fastmail,personal]\" " \
+         "USERNAME=jenner@fastmail.com KEY_ENV=FASTMAIL_APP_PASSWORD (or KEY=). Any kind: OWNER=jenner CALENDARS=Family,Kids " \
+         "VISIBILITY=free_busy TIME_ZONE=America/Los_Angeles ENABLED=0"
+    task :backend, [ :name, :kind, :realm ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:calendar:backend[name,kind=ics|fastmail|caldav,realm=personal]\" URL= | URL_ENV= | USERNAME= KEY_ENV=" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = CalendarBackend.find_or_initialize_by(name: args[:name])
+        row.kind = args[:kind].presence || row.kind || "ics"
+        row.realm = args[:realm].presence || row.realm || "personal"
+        row.principal = Principal.find_by!(name: ENV["OWNER"]) if ENV["OWNER"].present?
+        row.principal ||= Principal.find_by!(name: "jenner")
+        config = row.config.dup
+        # URL is a feed's address (a secret) or a CalDAV calendar home; KEY a password. Either can come from an env var instead.
+        { "URL" => "url", "KEY" => "key" }.each do |env, key|
+          config = config.except(key, "#{key}_env").merge(key => ENV[env]) if ENV[env].present?
+          config = config.except(key, "#{key}_env").merge("#{key}_env" => ENV["#{env}_ENV"]) if ENV["#{env}_ENV"].present?
+        end
+        config["username"] = ENV["USERNAME"] if ENV["USERNAME"].present?
+        config["name"] = ENV["LABEL"].presence if ENV.key?("LABEL")
+        config["calendars"] = ENV["CALENDARS"].split(",").map(&:strip).compact_blank.presence if ENV.key?("CALENDARS")
+        config["visibility"] = ENV["VISIBILITY"].presence if ENV.key?("VISIBILITY")
+        config["time_zone"] = ENV["TIME_ZONE"].presence if ENV.key?("TIME_ZONE")
+        row.config = config.compact
+        row.enabled = ENV["ENABLED"] != "0" if ENV.key?("ENABLED")
+        created = row.new_record?
+        row.save!
+        puts "#{row.name}: #{created ? 'registered' : 'updated'}; #{row.kind}, realm #{row.realm}, owner #{row.principal.name}, " \
+             "#{row.free_busy? ? 'free/busy only' : 'with details'}, floating times in #{row.time_zone.tzinfo.name}" \
+             "#{row.config['calendars'] ? ", only #{row.config['calendars'].join(', ')}" : ''}#{row.enabled? ? '' : ', disabled'}"
+        row.config.slice("url_env", "key_env").each_value { |env| puts "  #{env} is not set in this environment" if ENV[env].blank? }
+        puts "check it: bin/rails \"hob:calendar:check[#{row.name}]\""
+      end
+    end
+
+    desc "List calendar backends and whether each answers"
+    task backends: :environment do
+      Clearance.with("intimate") do
+        rows = CalendarBackend.includes(:principal).order(:name)
+        puts "no calendar backends; bin/rails \"hob:calendar:backend[name,ics,realm]\" URL_ENV=" if rows.empty?
+        rows.each do |row|
+          state = "disabled" unless row.enabled?
+          state ||= begin
+            row.adapter.check && "reachable"
+          rescue Calendars::Error => e
+            "unreachable: #{e.message}"
+          end
+          puts "#{row.name.ljust(24)} #{row.kind.ljust(9)} #{row.realm.ljust(10)} #{row.principal.name.ljust(10)} " \
+               "#{(row.free_busy? ? 'free_busy' : 'details').ljust(9)} #{state}"
+        end
+      end
+    end
+
+    desc "Ask one calendar backend how it is, and which calendars it reaches: bin/rails \"hob:calendar:check[jenner-fastmail]\""
+    task :check, [ :name ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:calendar:check[name]\"" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = CalendarBackend.find_by!(name: args[:name])
+        begin
+          status = row.adapter.check
+          puts "#{row.name}: reachable"
+          status.except("reachable").each { |name, value| puts "  #{name}: #{value.is_a?(String) ? value : value.to_json}" }
+        rescue Calendars::Error => e
+          abort "#{row.name}: #{e.class.name.demodulize.downcase}: #{e.message}"
+        end
+      end
+    end
   end
 
   desc "Mint a key for an existing principal, shown once: bin/rails \"hob:key[jenner,phone]\" for the companion app " \

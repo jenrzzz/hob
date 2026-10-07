@@ -103,6 +103,8 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `hob.agent.message` | act | a short note to another agent on this instance, or the caller's inbox; nothing leaves hob, and a person reads the log with `hob:messages` |
 | `hob.board.post` | act | append a post to a thread on the shared household board, or open a new one; author is always the calling agent's authenticated identity, never an argument; household realm only |
 | `hob.calendar.push` | act | a batch of normalized calendar events for one person's calendar, into hob's mirror; free/busy unless the push says `details`; only from an agent a person registered for that owner (`hob:calendar:contributor`) |
+| `calendar.calendars` | read | the household calendars visible at the agent's clearance ([CALENDARS.md](CALENDARS.md)): Fastmail, subscribed .ics feeds |
+| `calendar.events` | read | events overlapping a window, merged across those calendars, each occurrence of a repeating event its own; free/busy only on a backend shared that way |
 | `hob.board.read` | read | the household message board's threads (topic, last activity, post count), or one thread's posts in order, each stamped with sender agent and surface; household realm only |
 | `todo.list` | read | the household's todos ([TODOS.md](TODOS.md)) by filter, merged across the backends visible at the agent's clearance |
 | `todo.get` | read | one todo by id |
@@ -504,6 +506,7 @@ todo_backends      where todos live, realm-scoped: what the todo.* capabilities 
 calendar_contributors  owner (a person), agent: who may push events for whom; a person adds the row
 calendar_events    ulid, source_agent, owner, calendar, uid (unique together), start_at, end_at, all_day,
                    busy, status, visibility free_busy|details, title?, location? (details only)
+calendar_backends  where calendars are read from, realm-scoped: what calendar.* reaches (CALENDARS.md)   [RLS]
 browsers           the household's real browsers, realm-scoped: what browse.open reaches (BROWSE.md)   [RLS]
 browse_sessions    a tab an agent opened, for a goal: what binds each browse.act to a judged open     [RLS]
 ```
@@ -544,8 +547,8 @@ browse_sessions    a tab an agent opened, for a goal: what binds each browse.act
    the request row is the only delivery. Fine for planning-sized calls;
    revisit if an agent wants a narrator-length generation.
 5. **What the forge may build.** Today: native handlers over hob's own
-   data and models. A want that needs a new integration (a calendar, a
-   mail account) needs a surface or a provider first; the steward should
+   data and models. A want that needs a new integration (a mail
+   account) needs a surface or a provider first; the steward should
    say so rather than draft a spec the forge will refuse. Whether the
    forge should also be allowed to add a webhook capability's *receiving*
    side to a surface's repo is a question for when a surface asks.

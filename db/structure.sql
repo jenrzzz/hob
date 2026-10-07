@@ -214,6 +214,25 @@ ALTER TABLE ONLY public.budget_backends FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: calendar_backends; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calendar_backends (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    kind character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.calendar_backends FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: calendar_contributors; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1217,6 +1236,14 @@ ALTER TABLE ONLY public.budget_backends
 
 
 --
+-- Name: calendar_backends calendar_backends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_backends
+    ADD CONSTRAINT calendar_backends_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: calendar_contributors calendar_contributors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1596,6 +1623,20 @@ CREATE UNIQUE INDEX index_budget_backends_on_name ON public.budget_backends USIN
 --
 
 CREATE INDEX index_budget_backends_on_principal_id ON public.budget_backends USING btree (principal_id);
+
+
+--
+-- Name: index_calendar_backends_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_calendar_backends_on_name ON public.calendar_backends USING btree (name);
+
+
+--
+-- Name: index_calendar_backends_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_calendar_backends_on_principal_id ON public.calendar_backends USING btree (principal_id);
 
 
 --
@@ -2394,6 +2435,14 @@ ALTER TABLE ONLY public.ward_runs
 
 
 --
+-- Name: calendar_backends fk_rails_b20cc58246; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_backends
+    ADD CONSTRAINT fk_rails_b20cc58246 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: budget_backends fk_rails_b4d50361d3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2522,6 +2571,12 @@ ALTER TABLE public.browsers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.budget_backends ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: calendar_backends; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.calendar_backends ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: conversations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2585,6 +2640,15 @@ CREATE POLICY realm_visibility ON public.browsers USING ((( SELECT realms.rank
 CREATE POLICY realm_visibility ON public.budget_backends USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (budget_backends.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: calendar_backends realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.calendar_backends USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (calendar_backends.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -2729,6 +2793,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261006000000'),
 ('20261003060000'),
 ('20261001202000'),
 ('20260929120000'),

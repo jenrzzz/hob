@@ -30,6 +30,8 @@ module Sentinel
       "board_post" => "Sentinel::Native::BoardPost",
       "board_read" => "Sentinel::Native::BoardRead",
       "calendar_push" => "Sentinel::Native::CalendarPush",
+      "calendar_calendars" => "Sentinel::Native::CalendarCalendars",
+      "calendar_events" => "Sentinel::Native::CalendarEvents",
       "budget_accounts" => "Sentinel::Native::BudgetAccounts",
       "budget_categories" => "Sentinel::Native::BudgetCategories",
       "budget_transactions" => "Sentinel::Native::BudgetTransactions",

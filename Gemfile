@@ -59,3 +59,7 @@ gem "omniauth_openid_connect", "~> 0.8.0"
 gem "omniauth-rails_csrf_protection", "~> 2.0"
 
 gem "json_schemer", "~> 2.5"
+
+gem "icalendar", "~> 2.12"
+
+gem "rrule", "~> 0.8"

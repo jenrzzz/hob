@@ -245,6 +245,8 @@ workers           id, principal_id, capabilities jsonb, last_seen, live_provider
 
 todo_backends     ulid, name, kind(omnifocus), principal_id, realm, config jsonb,
                   enabled, primary          -- where todos live; the todos stay there (TODOS.md)  [RLS]
+calendar_backends ulid, name, kind(ics|fastmail|caldav), principal_id, realm, config jsonb,
+                  enabled                   -- where calendars are read from (CALENDARS.md)        [RLS]
 
 audio_cache       key PK (msg_hash+voice+settings), url, bytes, cost
 audit_log         id, principal, action, realm_context, detail jsonb, at

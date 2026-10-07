@@ -6,7 +6,8 @@ personas, memory, tools, compute, voice. See [DESIGN.md](DESIGN.md) for the
 full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 [SENTINEL.md](SENTINEL.md) for how outside agents get in,
 [TODOS.md](TODOS.md) for the household's todos,
-[BUDGET.md](BUDGET.md) for its budget, [RECORDS.md](RECORDS.md) for what
+[BUDGET.md](BUDGET.md) for its budget, [CALENDARS.md](CALENDARS.md) for its
+calendars, [RECORDS.md](RECORDS.md) for what
 its agents keep, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure,
 [SCHEDULES.md](SCHEDULES.md) for its clock,
@@ -235,6 +236,25 @@ bin/rails hob:budget:plans KEY_ENV=YNAB_TOKEN               # the plans it sees,
 bin/rails "hob:budget:backend[house-ynab,ynab,<plan id>,household]" KEY_ENV=YNAB_TOKEN TIME_ZONE=America/Los_Angeles
 bin/rails "hob:budget:check[house-ynab]"
 bin/rails "hob:sentinel:policy[muse,budget.transactions,allow]"   # and the rest: BUDGET.md has the set
+```
+
+## Calendars
+
+The same idea again, read-only for now ([CALENDARS.md](CALENDARS.md)): one
+normalized contract for calendars and events, and a *backend* row for
+where each calendar is kept. The kinds are `ics` (a subscription URL) and
+`fastmail` (CalDAV, with an app password); `caldav` takes any other
+server's calendar home. A repeating event comes back as one event per
+occurrence, and times keep their zone. A row can be confined to some of an
+account's calendars (`CALENDARS=`) or to free/busy (`VISIBILITY=free_busy`),
+which is how part of a personal account is shared with household agents.
+
+```sh
+export FASTMAIL_APP_PASSWORD=...                           # a Fastmail app password with CalDAV access
+bin/rails "hob:calendar:backend[jenner-fastmail,fastmail,personal]" USERNAME=jenner@fastmail.com KEY_ENV=FASTMAIL_APP_PASSWORD
+bin/rails "hob:calendar:check[jenner-fastmail]"            # the calendars it sees
+bin/rails "hob:calendar:backend[kids-ics,ics,household]" URL_ENV=KIDS_ICS_URL
+bin/rails "hob:sentinel:policy[muse,calendar.*,allow]"     # calendar.calendars, calendar.events
 ```
 
 ## Meals: mise

@@ -7,7 +7,8 @@ full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 [SENTINEL.md](SENTINEL.md) for how outside agents get in,
 [TODOS.md](TODOS.md) for the household's todos,
 [BUDGET.md](BUDGET.md) for its budget, [CALENDARS.md](CALENDARS.md) for its
-calendars, [MAIL.md](MAIL.md) for its mail, [RECORDS.md](RECORDS.md) for what
+calendars, [MAIL.md](MAIL.md) for its mail, [TEXTS.md](TEXTS.md) for its
+text messages, [RECORDS.md](RECORDS.md) for what
 its agents keep, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure,
 [SCHEDULES.md](SCHEDULES.md) for its clock,
@@ -278,6 +279,30 @@ bin/rails "hob:mail:check[jenner-fastmail]"                # whether it can send
 bin/rails "hob:mail:backend[house-mail,fastmail,household]" KEY_ENV=FASTMAIL_API_TOKEN MAILBOXES=Household
 bin/rails "hob:sentinel:policy[skipsy,mail.*,allow]"       # mail.send and mail.reply still wait for a person
 ```
+
+## Texts
+
+The household's text messages ([TEXTS.md](TEXTS.md)) come from the
+Messages app on the Mac mini, by way of [herald](TEXTS.md#herald-and-messages),
+an HTTP wrapper that reads the app's database and sends by asking the app
+to, the way tally wraps OmniFocus and gofer wraps Chrome. One contract for
+chats and messages (iMessage, SMS, and RCS alike), and a *backend* row per
+herald key. Agents can list chats, read a conversation or search across
+them, and poll for what arrived since a cursor they keep; they can send
+only with a person's approval, every time. To share one family group chat
+with household agents, register a second row on the same herald with a key
+herald has *scoped* to that chat, at realm `household`.
+
+```sh
+export HERALD_KEY=... HERALD_FAMILY_KEY=...                # herald's bearer keys, in hob's environment
+bin/rails "hob:texts:backend[jenner-messages,herald,http://mini.tailnet.ts.net:8379,personal]" KEY_ENV=HERALD_KEY ADDR=100.90.105.100
+bin/rails "hob:texts:backend[family-texts,herald,http://mini.tailnet.ts.net:8379,household]" KEY_ENV=HERALD_FAMILY_KEY
+bin/rails hob:texts:backends                               # what is registered, and whether each answers
+bin/rails "hob:texts:check[family-texts]"                  # herald's status: the database, Contacts, the key's scope
+bin/rails "hob:sentinel:policy[muse,text.*,allow]"         # text.send still waits for a person
+```
+
+`OWNER=`, `KEY=`, `READ_ONLY=1`, and `ENABLED=0` are the other knobs.
 
 ## Meals: mise
 

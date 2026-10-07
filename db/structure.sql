@@ -959,6 +959,25 @@ ALTER SEQUENCE public.sign_in_grants_id_seq OWNED BY public.sign_in_grants.id;
 
 
 --
+-- Name: text_backends; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.text_backends (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    kind character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.text_backends FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: todo_backends; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1476,6 +1495,14 @@ ALTER TABLE ONLY public.sentinel_requests
 
 ALTER TABLE ONLY public.sign_in_grants
     ADD CONSTRAINT sign_in_grants_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: text_backends text_backends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.text_backends
+    ADD CONSTRAINT text_backends_pkey PRIMARY KEY (id);
 
 
 --
@@ -2129,6 +2156,20 @@ CREATE INDEX index_sign_in_grants_on_principal_id ON public.sign_in_grants USING
 
 
 --
+-- Name: index_text_backends_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_text_backends_on_name ON public.text_backends USING btree (name);
+
+
+--
+-- Name: index_text_backends_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_text_backends_on_principal_id ON public.text_backends USING btree (principal_id);
+
+
+--
 -- Name: index_todo_backends_on_name; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2524,6 +2565,14 @@ ALTER TABLE ONLY public.mail_backends
 
 
 --
+-- Name: text_backends fk_rails_d8aac112e3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.text_backends
+    ADD CONSTRAINT fk_rails_d8aac112e3 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: browse_sessions fk_rails_d8df5fc7b2; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2806,6 +2855,15 @@ CREATE POLICY realm_visibility ON public.sentinel_requests USING ((( SELECT real
 
 
 --
+-- Name: text_backends realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.text_backends USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (text_backends.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
 -- Name: todo_backends realm_visibility; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -2845,6 +2903,12 @@ ALTER TABLE public.schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: text_backends; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.text_backends ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: todo_backends; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2857,6 +2921,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261007120000'),
 ('20261006120000'),
 ('20261006000000'),
 ('20261003060000'),

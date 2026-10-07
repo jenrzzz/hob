@@ -96,6 +96,13 @@ module HobWorld
     MailBackend.create!(name: name, kind: kind, realm: realm, principal: owner, config: defaults.merge(config.stringify_keys))
   end
 
+  # A text backend row (TEXTS.md). There is no fake kind: the herald adapter
+  # is pointed at FakeHerald (test/support/fake_herald.rb) through its transport.
+  def text_backend(name = "jenner-messages", realm: "personal", owner: @principal, **config)
+    TextBackend.create!(name: name, kind: "herald", realm: realm, principal: owner,
+                        config: { "url" => "http://mini.test:8379", "key_env" => "HOB_TEST_HERALD_KEY" }.merge(config.stringify_keys))
+  end
+
   # A browser row (BROWSE.md). The default kind is the in-memory Fake,
   # whose pages live in Browse::Backends::Fake.site(name) until Fake.reset!.
   def browser(name = "mini", realm: "personal", kind: "fake", owner: @principal, **attrs)

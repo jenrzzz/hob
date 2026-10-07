@@ -12,7 +12,8 @@ its agents keep, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure,
 [SCHEDULES.md](SCHEDULES.md) for its clock,
 [BROWSE.md](BROWSE.md) for the household's browser,
-[HTTP.md](HTTP.md) for the requests hob makes to the web for an agent, and
+[HTTP.md](HTTP.md) for the requests hob makes to the web for an agent,
+[EGRESS.md](EGRESS.md) for the household's other address (a proposal), and
 [CLAUDE_CODE.md](CLAUDE_CODE.md) for how a person's own assistant gets in.
 
 ## Running

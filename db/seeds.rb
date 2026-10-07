@@ -19,47 +19,48 @@ end
 # the request rather than fall through (the question is the product).
 {
   "chat-default" => [
-    { "provider" => "anthropic", "model" => "claude-sonnet-5" },
+    { "provider" => "anthropic", "model" => "claude-sonnet-5-5" },
     { "provider" => "openai-compat", "model" => ENV.fetch("HOB_COMPAT_CHAT_MODEL", "gpt-5.2") }
   ],
   "cheap-classifier" => [
     { "provider" => "anthropic", "model" => "claude-haiku-4-5-20251001" }
   ],
-  # airing/parboil: the questioner. Adaptive thinking is explicit because
-  # opus runs without it when the parameter is omitted.
+  # airing/parboil: the questioner. Opus 5.5 always thinks (adaptive) and
+  # defaults to medium effort, so effort is pinned at high, the level the
+  # opus roles ran at before it.
   "interviewer" => [
-    { "provider" => "anthropic", "model" => "claude-opus-4-7", "strict" => true,
-      "params" => { "max_tokens" => 8192, "thinking" => { "type" => "adaptive" } } }
+    { "provider" => "anthropic", "model" => "claude-opus-5-5", "strict" => true,
+      "params" => { "max_tokens" => 8192, "thinking" => { "type" => "adaptive" }, "output_config" => { "effort" => "high" } } }
   ],
   # airing/parboil/mise: schema-constrained extraction; long outputs.
   "extractor" => [
-    { "provider" => "anthropic", "model" => "claude-sonnet-5", "params" => { "max_tokens" => 16_384 } },
+    { "provider" => "anthropic", "model" => "claude-sonnet-5-5", "params" => { "max_tokens" => 16_384 } },
     { "provider" => "openai-compat", "model" => ENV.fetch("HOB_COMPAT_CHAT_MODEL", "gpt-5.2") }
   ],
   # mise: the kitchen companions.
   "companion" => [
-    { "provider" => "anthropic", "model" => "claude-sonnet-5", "params" => { "max_tokens" => 4096 } },
+    { "provider" => "anthropic", "model" => "claude-sonnet-5-5", "params" => { "max_tokens" => 4096 } },
     { "provider" => "openai-compat", "model" => ENV.fetch("HOB_COMPAT_CHAT_MODEL", "gpt-5.2") }
   ],
   # lumen: 64k-token story generations.
   "narrator" => [
-    { "provider" => "anthropic", "model" => "claude-opus-5", "params" => { "max_tokens" => 64_000 } }
+    { "provider" => "anthropic", "model" => "claude-opus-5-5", "params" => { "max_tokens" => 64_000, "output_config" => { "effort" => "high" } } }
   ],
   # SENTINEL.md: judges external agents' requests under a rule's guidance.
   "sentinel-reviewer" => [
-    { "provider" => "anthropic", "model" => "claude-sonnet-5", "params" => { "max_tokens" => 1024 } },
+    { "provider" => "anthropic", "model" => "claude-sonnet-5-5", "params" => { "max_tokens" => 1024 } },
     { "provider" => "anthropic", "model" => "claude-haiku-4-5-20251001", "params" => { "max_tokens" => 1024 } }
   ],
   # SENTINEL.md: decides petitions for capabilities and drafts specs for the
   # forge; rare, so the strongest model is affordable.
   "sentinel-steward" => [
-    { "provider" => "anthropic", "model" => "claude-opus-5", "params" => { "max_tokens" => 8192 } },
-    { "provider" => "anthropic", "model" => "claude-sonnet-5", "params" => { "max_tokens" => 8192 } }
+    { "provider" => "anthropic", "model" => "claude-opus-5-5", "params" => { "max_tokens" => 8192, "output_config" => { "effort" => "high" } } },
+    { "provider" => "anthropic", "model" => "claude-sonnet-5-5", "params" => { "max_tokens" => 8192 } }
   ],
   # WARD.md: reads what changed in a security check's report and tells a
   # person what matters; a few calls a week.
   "ward-triage" => [
-    { "provider" => "anthropic", "model" => "claude-sonnet-5", "params" => { "max_tokens" => 2048 } },
+    { "provider" => "anthropic", "model" => "claude-sonnet-5-5", "params" => { "max_tokens" => 2048 } },
     { "provider" => "anthropic", "model" => "claude-haiku-4-5-20251001", "params" => { "max_tokens" => 2048 } }
   ]
 }.each do |role, chain|
@@ -67,17 +68,22 @@ end
 end
 
 # USD per million tokens, Anthropic list prices. Prefix rows match dated
-# ids; cache rates default to 0.1x read / 1.25x write of input. Seeds only
+# ids; cache rates default to 0.1x read / 1.25x write of input unless a third
+# value gives the read rate (Opus 5.5 reads cache at 0.05x). Seeds only
 # add missing rows: a live price is set with `hob:price` or PUT /v1/prices,
 # which also reprices the ledger. `hob:prices` lists what is still unpriced.
 {
   "claude-haiku-4-5"  => [ 1.00, 5.00 ],
   "claude-sonnet-4-6" => [ 3.00, 15.00 ],
-  "claude-sonnet-5"   => [ 3.00, 15.00 ],
+  "claude-sonnet-5"   => [ 2.00, 10.00 ],
+  "claude-sonnet-5-5" => [ 2.00, 10.00 ],
   "claude-opus-4-8"   => [ 5.00, 25.00 ],
-  "claude-opus-5"     => [ 5.00, 25.00 ]
-}.each do |model, (input, output)|
-  ModelPrice.set!(model: model, input: input, output: output, note: "seed", reprice: false) unless ModelPrice.exists?(model: model)
+  "claude-opus-5"     => [ 5.00, 25.00 ],
+  "claude-opus-5-5"   => [ 4.00, 20.00, 0.20 ]
+}.each do |model, (input, output, cache_read)|
+  next if ModelPrice.exists?(model: model)
+
+  ModelPrice.set!(model: model, input: input, output: output, cache_read: cache_read, note: "seed", reprice: false)
 end
 
 jenner = Principal.find_or_create_by!(name: "jenner") do |p|

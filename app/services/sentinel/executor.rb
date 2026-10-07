@@ -9,7 +9,7 @@ module Sentinel
 
     # Failures that answer the agent (a bad argument, a backend or webhook
     # that is away) rather than faults in hob; anything else is reported.
-    ANSWERS = [ Gateway::Error, Todos::Error, Budgets::Error, Calendars::Error, Email::Error, Records::Error, Webhook::Error, ActiveRecord::RecordNotFound, ActiveRecord::RecordInvalid, ArgumentError ].freeze
+    ANSWERS = [ Gateway::Error, Todos::Error, Budgets::Error, Calendars::Error, Email::Error, Web::Error, Records::Error, Webhook::Error, ActiveRecord::RecordNotFound, ActiveRecord::RecordInvalid, ArgumentError ].freeze
 
     def run!(request)
       capability = request.capability

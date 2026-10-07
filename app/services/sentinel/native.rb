@@ -51,6 +51,8 @@ module Sentinel
       "browse_snapshot" => "Sentinel::Native::BrowseSnapshot",
       "browse_close" => "Sentinel::Native::BrowseClose",
       "browse_sessions" => "Sentinel::Native::BrowseSessions",
+      "http_get" => "Sentinel::Native::HttpGet",
+      "http_post" => "Sentinel::Native::HttpPost",
       "records_collections" => "Sentinel::Native::RecordsCollections",
       "records_get" => "Sentinel::Native::RecordsGet",
       "records_query" => "Sentinel::Native::RecordsQuery",

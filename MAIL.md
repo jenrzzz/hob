@@ -64,7 +64,9 @@ onto one line but not decoded (an RFC 2047 encoded word comes back as it
 was sent); at most 200 fields of at most 2,000 characters each, with
 `headers_truncated` saying when there was more. hob asks the server for
 headers only when they are asked for. They are written by the sender
-like everything else in a message.
+like everything else in a message. Following a List-Unsubscribe link is
+`http.post` (or `http.get`), judged like any other request
+([HTTP.md](HTTP.md), "One-click unsubscribe").
 
 ### Mailbox
 

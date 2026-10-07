@@ -11,7 +11,8 @@ calendars, [MAIL.md](MAIL.md) for its mail, [RECORDS.md](RECORDS.md) for what
 its agents keep, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure,
 [SCHEDULES.md](SCHEDULES.md) for its clock,
-[BROWSE.md](BROWSE.md) for the household's browser, and
+[BROWSE.md](BROWSE.md) for the household's browser,
+[HTTP.md](HTTP.md) for the requests hob makes to the web for an agent, and
 [CLAUDE_CODE.md](CLAUDE_CODE.md) for how a person's own assistant gets in.
 
 ## Running
@@ -380,6 +381,25 @@ bin/rails "hob:sentinel:policy[muse,browse.*,allow]"        # steps ride on the 
 `OWNER=`, `KEY=`, `DOMAINS=amazon.com,ynab.com` (narrower than gofer's
 key), and `ENABLED=0` are the other knobs. [BROWSE.md](BROWSE.md) is the
 design.
+
+## The web
+
+For a link that only needs following, not a browser (a newsletter's
+List-Unsubscribe URL, say), an agent asks for `http.get` or `http.post`
+and hob makes the one request, so the agent's own platform does not ask a
+person to approve each connection. The rule decides whether a request
+goes; hob decides where it can: only http and https on ports 80 and 443,
+only to addresses on the public internet, never the tailnet, the LAN, or
+the box itself, checked again on every redirect.
+
+```sh
+bin/rails "hob:sentinel:policy[muse,http.*,review]" \
+  GUIDANCE="Muse may follow List-Unsubscribe links from the household's mail for lists Tessa asked to leave. Deny anything else."
+```
+
+`HOB_HTTP_DENY=amber.place,203.0.113.7` keeps hob off the household's own
+public names and addresses as well (domains, addresses, or CIDR ranges).
+[HTTP.md](HTTP.md) is the design.
 
 ## API sketch
 

@@ -1,4 +1,3 @@
-require "nokogiri"
 
 module Email
   module Backends
@@ -503,11 +502,7 @@ module Email
       end
 
       def html_text(html)
-        document = Nokogiri::HTML(html)
-        document.css("script, style, head").remove
-        document.css("br").each { |node| node.replace("\n") }
-        document.css("p, div, tr, li, h1, h2, h3, h4, h5, h6, blockquote").each { |node| node.add_next_sibling("\n") }
-        document.text.gsub(/[ \t ]+/, " ").gsub(/ *\n */, "\n").gsub(/\n{3,}/, "\n\n").strip
+        Web.html_text(html)
       end
 
       def addresses(list)

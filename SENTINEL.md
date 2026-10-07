@@ -129,6 +129,8 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `browse.snapshot` | read | the page as it is now |
 | `browse.close` | act | done with the tab |
 | `browse.sessions` | read | the agent's open sessions, and the browsers visible to it |
+| `http.get` | act | fetch one public URL from hob, following its redirects ([HTTP.md](HTTP.md)); never an address inside the household |
+| `http.post` | act | send one form, JSON, or plain body to a public URL (a one-click unsubscribe, say); its redirect is not followed |
 
 Surfaces register their own, as `webhook` rows (or `poll`, with a worker
 as assignee), and each carries the realm annotation the design's IFC gate

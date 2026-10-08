@@ -157,18 +157,28 @@ quiet: no model call, no ping.
 
 ## Capabilities
 
-Two native capabilities (SENTINEL.md), both at `personal`, granted to an
+Three native capabilities (SENTINEL.md), all at `personal`, granted to an
 agent only by a person's rule:
 
 | capability | kind | does |
 |---|---|---|
 | `ward.status` | read | the checks with their last run and staleness, the open and acknowledged findings with notes, the latest triage |
 | `ward.audit.run` | act | queue a `ward.audit` mission for the ward worker to run a check now; one at a time per check |
+| `hob.ward.portcheck` | read | one TCP connect check from ward's own network against a host and port, for an agent to verify an exposure finding without shell access |
 
 ```sh
 bin/rails "hob:sentinel:policy[butler,ward.status,allow]"
 bin/rails "hob:sentinel:policy[butler,ward.audit.run,confirm]"
+bin/rails "hob:sentinel:policy[butler,hob.ward.portcheck,allow]"
 ```
+
+`hob.ward.portcheck`'s `host` is never the agent's word: it must already be
+a literal address in **`HOB_WARD_SCAN_TARGETS`** (comma-separated), the
+household's own list of what ward scans, set alongside it rather than
+resolved by hob — so there is no DNS lookup to rebind. The inventory and
+policy the audit itself checks against still stay in the infra repo, above;
+this one list is the exception, scoped to the one capability that needs to
+dial an address itself.
 
 ## The worker
 

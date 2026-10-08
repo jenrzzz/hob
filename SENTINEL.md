@@ -124,6 +124,7 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `todo.drop` | act | abandon a todo without deleting it; agents are offered nothing that deletes |
 | `ward.status` | read | the household's security posture as the ward sees it ([WARD.md](WARD.md)): checks, staleness, open and acknowledged findings, the latest triage; `personal` tier |
 | `ward.audit.run` | act | queue a `ward.audit` mission for the ward worker to run a check now; `personal` tier |
+| `hob.ward.portcheck` | read | one TCP connect check from ward's own network against a host already in ward's scan-target inventory (`HOB_WARD_SCAN_TARGETS`) and a single port; open, closed, or filtered, with an optional short passive banner; `personal` tier |
 | `hob.capability.search` | read | keyword search over the capability catalog — name, description, kind, realm, and whether the caller may petition for each — filtered to the caller's clearance |
 | `browse.open` | act | a tab in one of the household's real browsers ([BROWSE.md](BROWSE.md)), at a URL, for a stated goal: the request policy judges |
 | `browse.act` | act | one step (click, type, navigate, read, ...) in a session the agent opened; bound to that session's goal |

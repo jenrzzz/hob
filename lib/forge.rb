@@ -121,6 +121,7 @@ module Forge
     # -> { "pull_request", "branch", "capability", "commit", "summary", "cost" }
     def call
       prepare_worktree
+      prepare_environment
       outcome = implement
       refused = File.join(dir, ".forge", "REFUSED.md")
       raise Refused, "the implementer refused: #{File.read(refused).strip}" if File.exist?(refused)
@@ -187,7 +188,11 @@ module Forge
       raise Error, "the implementer produced no commits" unless status.zero? && out.to_i.positive?
     end
 
-    def verify
+    # Gems and the test database, before the implementer starts, so the suite
+    # it is told to run can boot: a workspace image whose gems lag main's
+    # Gemfile.lock otherwise leaves it committing tests it never ran. Again
+    # before the forge's own run, which starts from the committed schema.
+    def prepare_environment
       say "preparing the test environment"
       status, = run(%w[bundle check], chdir: dir)
       unless status.zero?
@@ -198,7 +203,10 @@ module Forge
       # the seeded providers shadow the ones the tests set up with test keys.
       status, out, err = run(%w[env RAILS_ENV=test bin/rails db:test:prepare], chdir: dir)
       raise Error, "could not prepare the test database:\n#{(out + err).lines.last(20).join}" unless status.zero?
+    end
 
+    def verify
+      prepare_environment
       changed = git(%w[diff --name-only], "#{remote}/#{base}...HEAD")[1].lines.map(&:strip)
       migrate(changed.grep(%r{\Adb/migrate/})) if changed.any? { |f| f.start_with?("db/migrate/") }
 
@@ -314,7 +322,12 @@ module Forge
            the style of `test/services/sentinel_test.rb`. Cover the error paths too.
         4. Add a row to the native capabilities table in `SENTINEL.md` and to the
            "Result shapes" table in `MUSE.md`.
-        5. Run `bin/rails test` and `bin/rubocop -a`; both must pass.
+        5. Run `bin/rails test` and `bin/rubocop -a`; both must pass. The forge has
+           already installed the gems and prepared the test database. If the suite
+           still cannot boot or run, do not work around it (no editing `Gemfile.lock`,
+           no committing tests you have not seen pass): write what went wrong to
+           `.forge/REFUSED.md` and stop. This repo is on minitest 6, which has no
+           `stub`; fake collaborators by hand, as the existing tests do.
         6. Commit everything in one commit with a message of the form
            `Add #{name}: <one line>` and a body that names petition `#{petition}`, ending with
            the line `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.

@@ -91,6 +91,12 @@ class ForgeTest < ActiveSupport::TestCase
     assert_match(/> want: read the calendar/, brief)
     assert_match(/Co-Authored-By: Claude Fable 5.1/, brief)
     assert_match(/REFUSED.md/, brief)
+    assert_match(/no editing `Gemfile.lock`/, brief)
+    assert_match(/minitest 6, which has no\s+`stub`/, brief)
+
+    names_before_claude = @commands.take_while { |argv, _, _| argv.first != "claude" }.map { |argv, _, _| argv.join(" ") }
+    assert_equal [ "bundle check", "env RAILS_ENV=test bin/rails db:test:prepare" ],
+                 names_before_claude.grep(/\A(bundle|env|bin\/rails) /), "the implementer starts with gems and a test database"
 
     names_after_claude = @commands.drop_while { |argv, _, _| argv.first != "claude" }.map { |argv, _, _| argv.join(" ") }
     assert_equal [ "bundle check", "env RAILS_ENV=test bin/rails db:test:prepare", "bin/rails test" ],
@@ -204,6 +210,7 @@ class ForgeTest < ActiveSupport::TestCase
     @commands.clear
     @answers["prepare"] = [ 1, "", "could not connect to server" ]
     assert_match(/could not prepare the test database:\ncould not connect/, assert_raises(Forge::Error) { build.call }.message)
+    assert_nil @commands.find { |argv, _, _| argv.first == "claude" }, "no implementer without a test database"
     assert_nil @commands.find { |argv, _, _| argv == %w[bin/rails test] }
   end
 

@@ -17,13 +17,14 @@ class FakeJmap
 
   SESSION = "https://api.fastmail.com/jmap/session".freeze
   API = "https://api.fastmail.com/jmap/api/".freeze
+  DOWNLOAD = "https://api.fastmail.com/jmap/download/{accountId}/{blobId}/{name}?type={type}".freeze
   TOKEN = "api-token".freeze
   ACCOUNT = "u1".freeze
   MAIL = "urn:ietf:params:jmap:mail".freeze
   SUBMISSION = "urn:ietf:params:jmap:submission".freeze
   ME = { "name" => "Jenner", "email" => "jenner@fastmail.test" }.freeze
 
-  attr_reader :calls, :mailboxes, :emails, :submissions, :identities
+  attr_reader :calls, :mailboxes, :emails, :submissions, :identities, :blobs
   attr_accessor :read_only, :can_send, :refuse_send, :forgotten
 
   def initialize
@@ -31,6 +32,7 @@ class FakeJmap
     @queued = []
     @mailboxes = {}
     @emails = {}
+    @blobs = {}
     @submissions = []
     @log = [] # [state, email id], one per created email
     @state = 0
@@ -56,6 +58,11 @@ class FakeJmap
                        "unreadEmails" => 0, "myRights" => { "mayAddItems" => true } }
   end
 
+  # A blob reachable at the download URL, as an attachment's blobId names.
+  def blob(id, bytes)
+    @blobs[id] = bytes.dup.force_encoding(Encoding::BINARY)
+  end
+
   # A message on the account. `body` is its text; `html: true` makes that
   # its only (HTML) part.
   def email(id, subject:, from: "Ana Ruiz <ana@example.test>", to: [ ME ], cc: [], folders: [ "mb-inbox" ], received: "2026-10-05T16:00:00Z",
@@ -77,6 +84,10 @@ class FakeJmap
     return [ 401, "" ] unless headers["Authorization"] == "Bearer #{TOKEN}"
     return [ 200, JSON.generate(session) ] if verb == "GET" && url == SESSION
     return [ 200, JSON.generate(api(JSON.parse(body))) ] if verb == "POST" && url == API
+    if verb == "GET" && url.start_with?("https://api.fastmail.com/jmap/download/")
+      blob_id = CGI.unescape(url.delete_prefix("https://api.fastmail.com/jmap/download/").split("/")[1].to_s)
+      return @blobs.key?(blob_id) ? [ 200, @blobs[blob_id] ] : [ 404, "" ]
+    end
 
     [ 404, "" ]
   end
@@ -95,7 +106,7 @@ class FakeJmap
   def session
     accounts = { MAIL => ACCOUNT }
     accounts[SUBMISSION] = ACCOUNT if can_send
-    { "username" => ME["email"], "apiUrl" => API, "primaryAccounts" => accounts,
+    { "username" => ME["email"], "apiUrl" => API, "downloadUrl" => DOWNLOAD, "primaryAccounts" => accounts,
       "accounts" => { ACCOUNT => { "name" => ME["email"], "isReadOnly" => read_only == true } },
       "capabilities" => { "urn:ietf:params:jmap:core" => {}, MAIL => {} } }
   end

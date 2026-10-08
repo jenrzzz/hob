@@ -79,14 +79,16 @@ module Email
 
       # The wire. Whatever goes wrong on the way there is the same answer:
       # not now. Redirects are followed for GETs (a session URL may bounce),
-      # never for anything else.
-      def deliver(verb, url, body: nil, headers: {}, redirects: MAX_REDIRECTS)
-        status, response, response_headers = (self.class.transport || method(:http)).call(verb, url, body, headers)
+      # never for anything else. `max_bytes` only bounds hob's own `http`
+      # fallback; a test's injected transport answers whatever it answers.
+      def deliver(verb, url, body: nil, headers: {}, redirects: MAX_REDIRECTS, max_bytes: MAX_BYTES)
+        status, response, response_headers =
+          self.class.transport ? self.class.transport.call(verb, url, body, headers) : http(verb, url, body, headers, max_bytes)
         location = response_headers.to_h.transform_keys(&:downcase)["location"]
         if verb == "GET" && status.to_i.between?(301, 308) && location.present?
           raise Email::Unavailable, "#{backend.name}: too many redirects" if redirects.zero?
 
-          return deliver(verb, URI.join(url, location).to_s, headers: headers, redirects: redirects - 1)
+          return deliver(verb, URI.join(url, location).to_s, headers: headers, redirects: redirects - 1, max_bytes: max_bytes)
         end
         [ status.to_i, response.to_s ]
       rescue SocketError, SystemCallError, Timeout::Error, IOError, OpenSSL::SSL::SSLError, URI::InvalidURIError => e
@@ -95,8 +97,8 @@ module Email
 
       # No retries: Net::HTTP would quietly send a request a second time
       # after a read timeout, and a send sent twice is a message sent twice.
-      # The body is read up to MAX_BYTES and no further.
-      def http(verb, url, body, headers)
+      # The body is read up to `max_bytes` and no further.
+      def http(verb, url, body, headers, max_bytes = MAX_BYTES)
         uri = URI(url)
         req = Net::HTTPGenericRequest.new(verb, !body.nil?, verb != "HEAD", uri.request_uri)
         headers.each { |name, value| req[name] = value }
@@ -113,7 +115,7 @@ module Email
             buffer = +""
             response.read_body do |chunk|
               buffer << chunk
-              raise Email::Unavailable, "#{backend.name} answered with more than #{MAX_BYTES / 1024 / 1024} MB" if buffer.bytesize > MAX_BYTES
+              raise Email::Unavailable, "#{backend.name} answered with more than #{max_bytes / 1024 / 1024} MB" if buffer.bytesize > max_bytes
             end
             return [ response.code, buffer, response.to_hash.transform_values(&:first) ]
           end

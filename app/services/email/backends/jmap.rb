@@ -177,6 +177,29 @@ module Email
           "can_send" => sendable? && !read_only_account?, "read_only" => backend.read_only? || read_only_account? }
       end
 
+      # The attachments on one message, named and sized but not fetched:
+      # { id (the blobId), name, type, size, inline }.
+      def attachment_list(id)
+        email = attachment_email(id)
+        Array(email["attachments"]).map { |part| attachment_json(part) }
+      end
+
+      # One attachment's bytes, refused by its declared size before anything
+      # is fetched. -> { "bytes", "name", "type", "size" }
+      def attachment_blob(id, blob_id, max_bytes:)
+        email = attachment_email(id)
+        part = Array(email["attachments"]).find { |p| p["blobId"] == blob_id }
+        raise Email::Invalid, "#{prefixed(id)} has no attachment #{blob_id.inspect}" unless part
+        if part["size"].to_i > max_bytes.to_i
+          raise Email::Invalid, "#{part['name'] || blob_id} is #{part['size']} bytes, over the #{max_bytes} byte limit"
+        end
+
+        status, body = deliver("GET", download_url(blob_id, part["name"], part["type"]), headers: auth_headers, max_bytes: max_bytes)
+        raise status_error(status, body, "#{backend.name}'s attachment download") unless status.between?(200, 299)
+
+        { "bytes" => body, "name" => part["name"], "type" => part["type"], "size" => part["size"] }
+      end
+
       private
 
       def session_url
@@ -404,6 +427,33 @@ module Email
 
       def current_state
         api([ [ "Email/get", { "accountId" => account, "ids" => [], "properties" => [ "id" ] }, "s" ] ])["s"]["state"]
+      end
+
+      # The message's own attachments, for mail.attachment.get: the same
+      # visibility check message() makes, so an id outside the agent's
+      # clearance is not_found, not forbidden.
+      def attachment_email(id)
+        email = emails([ id ], %w[id mailboxIds attachments]).first
+        raise Email::NotFound, "#{backend.name} has no message #{prefixed(id).inspect}" unless email && visible_email?(email)
+
+        email
+      end
+
+      def attachment_json(part)
+        { "id" => part["blobId"], "filename" => part["name"], "content_type" => part["type"], "size" => part["size"],
+          "inline" => part["disposition"].to_s.casecmp?("inline") }
+      end
+
+      # JMAP's download URL template (RFC 8620 §6.2), expanded by hand: the
+      # four placeholders it defines, nothing more.
+      def download_url(blob_id, name, type)
+        template = session["downloadUrl"].to_s
+        raise Email::Unavailable, "#{backend.name}'s JMAP session offers no download URL" if template.blank?
+
+        template.gsub("{accountId}", ERB::Util.url_encode(account))
+                .gsub("{blobId}", ERB::Util.url_encode(blob_id.to_s))
+                .gsub("{type}", ERB::Util.url_encode(type.presence || "application/octet-stream"))
+                .gsub("{name}", ERB::Util.url_encode(name.presence || "attachment"))
       end
 
       def visible_email?(email)

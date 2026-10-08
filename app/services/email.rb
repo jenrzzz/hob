@@ -32,6 +32,8 @@ module Email
   SEND_ARGUMENTS = %w[backend from to cc bcc subject body].freeze
   REPLY_ARGUMENTS = %w[id from body reply_all cc bcc quote].freeze
   MESSAGE_ARGUMENTS = %w[id headers].freeze
+  ATTACHMENTS_ARGUMENTS = %w[id].freeze
+  ATTACHMENT_ARGUMENTS = %w[id attachment max_bytes].freeze
   MAX_HEADER_NAMES = 50
   HEADER_NAME = /\A[!-9;-~]+\z/ # RFC 5322: printable ASCII, no colon
   DEFAULT_LIMIT = 25
@@ -166,6 +168,27 @@ module Email
     sent = backend.adapter.send_message(to: to, cc: cc, bcc: bcc, subject: text!(arguments["subject"], "subject", MAX_SUBJECT),
                                         body: body!(arguments["body"]), from: from!(arguments["from"]))
     { "message" => shown(sent), "sent" => true }
+  end
+
+  # The attachments on one message: named and sized, not fetched. A bare id
+  # is the same as { "id" => id }.
+  def attachments(arguments)
+    arguments = { "id" => arguments } if arguments.is_a?(String)
+    arguments = known!(arguments, ATTACHMENTS_ARGUMENTS, "argument")
+    name, native = parse_id(string!(arguments["id"], "id"))
+    { "attachments" => backend!(name).adapter.attachment_list(native) }
+  end
+
+  # One attachment's bytes, refused over `max_bytes` by its declared size
+  # before anything is fetched. -> { "bytes", "name", "type", "size" }
+  def attachment(arguments)
+    arguments = known!(arguments, ATTACHMENT_ARGUMENTS, "argument")
+    name, native = parse_id(string!(arguments["id"], "id"))
+    blob_id = string!(arguments["attachment"], "attachment")
+    max_bytes = arguments["max_bytes"]
+    raise Invalid, "max_bytes must be a positive integer" unless max_bytes.is_a?(Integer) && max_bytes.positive?
+
+    backend!(name).adapter.attachment_blob(native, blob_id, max_bytes: max_bytes)
   end
 
   def reply(arguments)

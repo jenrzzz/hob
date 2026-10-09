@@ -103,7 +103,8 @@ module Email
   # look: the cursor to start from, and no messages. Keep the cursor that
   # comes back and give it next time; `more` says to ask again now, and
   # `reset` names an account whose place was lost (whatever arrived there in
-  # between is for mail.search to find).
+  # between is for mail.search to find). `reset_details` says why, one
+  # entry per account in `reset`.
   def poll(filters = {})
     filters = known!(filters, POLL_FILTERS, "filter")
     states = filters["cursor"].present? ? decode_cursor(filters["cursor"]) : {}
@@ -112,17 +113,21 @@ module Email
     visible = backends.pluck(:name)
     cursor = states.slice(*visible)
     reset = []
+    reset_details = []
     more = false
     found, unavailable = gather(name) do |backend|
       result = backend.adapter.poll(states[backend.name], mailbox)
       cursor[backend.name] = result["state"]
-      reset << backend.name if result["reset"]
+      if result["reset"]
+        reset << backend.name
+        reset_details << { "backend" => backend.name, "type" => result["reset_type"], "description" => result["reset_description"] }
+      end
       more ||= result["more"]
       result["messages"].select { |message| wanted?(message, wanted) }
     end
     found = found.sort_by { |message| [ message["_received"].to_f, message["id"] ] }
     { "cursor" => encode_cursor(cursor), "messages" => found.map { |message| shown(message) }, "count" => found.size,
-      "more" => more, "reset" => reset, "unavailable" => unavailable }
+      "more" => more, "reset" => reset, "reset_details" => reset_details, "unavailable" => unavailable }
   end
 
   def create_mailbox(arguments)

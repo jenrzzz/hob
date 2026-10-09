@@ -10,10 +10,11 @@ module Sentinel
                          "cursor each answer returns and give it next time; hob does not remember it for you. New means " \
                          "delivered to the account: not drafts, not what was sent from it, not trash or junk, and not a message " \
                          "merely moved. `more: true` means ask again now. An account in `reset` lost its place: anything that " \
-                         "arrived there since your last look is for mail.search (after:) to find. Filters match in part: " \
+                         "arrived there since your last look is for mail.search (after:) to find. `reset_details` says why, " \
+                         "one entry per reset account with its `type` and `description`. Filters match in part: " \
                          "`from` the sender's name or address, `to` a recipient's, `subject` the subject, and `q`'s words the " \
                          "subject, preview, or addresses. Returns { cursor, messages: [#{SUMMARY}], count, more, reset, " \
-                         "unavailable, notice }. Pair it with hob.schedule.create to look on a clock.",
+                         "reset_details, unavailable, notice }. Pair it with hob.schedule.create to look on a clock.",
         "kind" => "read",
         "realm" => "household",
         "input_schema" => {

@@ -161,6 +161,7 @@ class EmailTest < ActiveSupport::TestCase
     @server.forgotten = 1_000
     lost = Email.poll("cursor" => page["cursor"])
     assert_equal [ [], [ "jenner-fastmail" ] ], lost.values_at("messages", "reset")
+    assert_equal [ { "backend" => "jenner-fastmail", "type" => "cannotCalculateChanges", "description" => "" } ], lost["reset_details"]
     refute_equal page["cursor"], lost["cursor"], "a fresh place to start from"
 
     assert_raises(Email::Invalid) { Email.poll("cursor" => "not a cursor") }

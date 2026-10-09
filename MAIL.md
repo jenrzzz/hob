@@ -89,7 +89,7 @@ with both paths, never guessed.
 | `Email.mailboxes` | `backend` | `{ mailboxes, unavailable }` |
 | `Email.search` | `backend`, `mailbox`, `q`, `from`, `to`, `subject`, `after`, `before`, `unread`, `flagged`, `has_attachment`, `limit` | `{ messages, total, truncated, unavailable }`, newest first |
 | `Email.message` | `id`, `headers` | `{ message }` |
-| `Email.poll` | `cursor`, `backend`, `mailbox`, `q`, `from`, `to`, `subject`, `unread`, `has_attachment` | `{ cursor, messages, count, more, reset, unavailable }`, oldest first |
+| `Email.poll` | `cursor`, `backend`, `mailbox`, `q`, `from`, `to`, `subject`, `unread`, `has_attachment` | `{ cursor, messages, count, more, reset, reset_details, unavailable }`, oldest first |
 | `Email.create_mailbox` | `name`, `parent`, `backend` | `{ mailbox }` |
 | `Email.move` | `id` (one or up to 100, from one account), `to` *or* `add` / `remove` | `{ messages, failed: [{ id, error }] }` |
 | `Email.send_message` | `to`, `subject`, `body`; `cc`, `bcc`, `from`, `backend` | `{ message, sent }` |
@@ -117,12 +117,20 @@ matched by hob on each new message's summary: `from`, `to`, and `subject`
 in part, and `q`'s words in the subject, preview, or addresses (not the
 body; search for that). `more: true` means the server has more than one
 page (100 changes) and the caller should ask again now. An account in
-`reset` lost its place (the server no longer remembers that far back):
-its cursor starts again from now, and what arrived in between is for
-`mail.search` with `after` to find. The cursor is each account's JMAP
-state, base64'd: opaque, not secret, and useless to anyone without the
-account. An agent that wants to look on a clock pairs it with
-`hob.schedule.create`.
+`reset` lost its place: its cursor starts again from now, and what
+arrived in between is for `mail.search` with `after` to find.
+`reset_details` carries one object per account in `reset`, with
+`backend`, `type`, and `description` taken straight from the server's
+own error: JMAP's `Email/changes` answers a method-level error instead of
+a reset flag, and its `type` says why the cursor could not be used.
+`cannotCalculateChanges` means the state is still valid but too old for
+the server to diff from; `invalidArguments` means the state was never one
+the server issued (a cursor from elsewhere, or a backend the server has
+forgotten about entirely). Any other error type the server returns there
+resets too, with its own `type` and `description` carried through rather
+than dropped. The cursor is each account's JMAP state, base64'd: opaque,
+not secret, and useless to anyone without the account. An agent that
+wants to look on a clock pairs it with `hob.schedule.create`.
 
 **Move** with `to` takes a message out of every mailbox it is in and puts
 it in that one: archiving is `to: "archive"`. `add` and `remove` label

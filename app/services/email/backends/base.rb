@@ -17,7 +17,9 @@ module Email
     #   message(id, headers:)                   → message: a summary with its body, headers, and attachments; with
     #                                             headers (:all, or lowercase names), its raw header fields too
     #   poll(state, mailbox)                    → { "state", "messages" => [summary], "more", "reset" }; a nil
-    #                                             state is a first look: the state now, and no messages
+    #                                             state is a first look: the state now, and no messages. A
+    #                                             reset also carries "reset_type" and "reset_description",
+    #                                             the server's own words for why the cursor could not be used
     #   create_mailbox(name, parent)            → mailbox
     #   move(ids, to:, add:, remove:)           → { "messages" => [summary], "failed" => [{ id, error }] }
     #   send_message(to:, cc:, bcc:, subject:, body:, from:)            → summary of what was sent

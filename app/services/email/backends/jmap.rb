@@ -86,14 +86,24 @@ module Email
       # then that are not drafts, not only in drafts, sent, trash, or junk,
       # and in `mailbox` when one is named. A message moved into the inbox
       # was not created, so it is not news.
+      #
+      # Email/changes answers a method-level error, never a reset flag, so
+      # a reset is read off its `type`: cannotCalculateChanges means `state`
+      # is too old for the server to diff from; invalidArguments means the
+      # server never issued a `state` like it (a cursor from elsewhere, or
+      # one it has since forgotten entirely). Any other type reaching here
+      # is not one JMAP documents for this call, but it still means the
+      # cursor could not be used, so it resets too; its type and
+      # description ride along rather than being swallowed.
       def poll(state, mailbox)
         target = mailbox && mailbox!(mailbox)
         return { "state" => current_state, "messages" => [], "more" => false, "reset" => false } if state.nil?
 
         answers = api([ [ "Email/changes", { "accountId" => account, "sinceState" => state, "maxChanges" => MAX_CHANGES }, "c" ],
                         [ "Email/get", { "accountId" => account, "#ids" => ref("c", "Email/changes", "/created"), "properties" => SUMMARY }, "g" ] ])
-        if answers.error("c")&.dig("type").in?(%w[cannotCalculateChanges invalidArguments])
-          return { "state" => current_state, "messages" => [], "more" => false, "reset" => true }
+        if (error = answers.error("c"))
+          return { "state" => current_state, "messages" => [], "more" => false, "reset" => true,
+                   "reset_type" => error["type"].to_s, "reset_description" => error["description"].to_s }
         end
 
         changes = answers["c"]

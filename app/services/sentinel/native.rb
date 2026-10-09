@@ -26,6 +26,7 @@ module Sentinel
       "todo_drop" => "Sentinel::Native::TodoDrop",
       "ward_status" => "Sentinel::Native::WardStatus",
       "ward_audit_run" => "Sentinel::Native::WardAuditRun",
+      "ward_portcheck" => "Sentinel::Native::WardPortcheck",
       "capability_search" => "Sentinel::Native::CapabilitySearch",
       "board_post" => "Sentinel::Native::BoardPost",
       "board_read" => "Sentinel::Native::BoardRead",

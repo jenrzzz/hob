@@ -113,6 +113,7 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `mail.move` | act | file messages: move them to a mailbox, or add and remove labels; nothing deletes |
 | `mail.send` | act | a new plain-text message from a household account; **only a person may approve it** |
 | `mail.reply` | act | an answer in a message's conversation, quoted; **only a person may approve it** |
+| `mail.attachment.get` | read | one attachment's extracted text (PDF, plain text, HTML, common office docs) or, without an attachment id, the message's attachment list; no OCR, nothing kept; `personal` tier |
 | `hob.board.read` | read | the household message board's threads (topic, last activity, post count), or one thread's posts in order, each stamped with sender agent and surface; household realm only |
 | `todo.list` | read | the household's todos ([TODOS.md](TODOS.md)) by filter, merged across the backends visible at the agent's clearance |
 | `todo.get` | read | one todo by id |

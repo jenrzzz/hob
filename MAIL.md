@@ -275,6 +275,7 @@ bin/rails "hob:sentinel:policy[skipsy,mail.*,allow]"   # sends and replies still
 | `mail.move` | act | file messages: move them, or add and remove labels |
 | `mail.send` | act, **a person approves** | a new message, as plain text |
 | `mail.reply` | act, **a person approves** | an answer in the conversation, quoted |
+| `mail.attachment.get` | read, `personal` tier | one attachment's extracted text, or the message's attachment list |
 
 Each capability's realm is `household`: the floor to *ask*. What an agent
 can actually reach is decided by backend realm, because the sentinel
@@ -314,10 +315,11 @@ to look in the sent mailbox before sending again.
    question with a constraint-shaped answer: `{ "to": { "in": [...] } }`
    on a `confirm` rule would still ask a person, so it needs its own
    effect.
-2. **Attachments.** Named but never fetched or sent. Reading one is a
-   blob download (`downloadUrl`) of what is often a PDF, and then a
-   question of what an agent should do with it; sending one is an upload
-   first. Neither is needed yet.
+2. **Attachments.** Named and, since `mail.attachment.get`, readable: a
+   `downloadUrl` blob fetch, capped at 25 MB and checked against the
+   attachment's declared size before anything moves, then hob's own local
+   extraction (PDF, plain text, HTML, docx, odt) — no OCR, and the bytes
+   never leave hob. Sending one is still an upload first; not needed yet.
 3. **Threads.** `thread_id` comes back but nothing takes it. "The whole
    conversation" is `Thread/get` and an `Email/get`, one capability's
    worth.

@@ -38,14 +38,15 @@ class MailCapabilitiesTest < ActiveSupport::TestCase
     request.result
   end
 
-  test "sync! registers four reads and four acts at household, with closed schemas; a person approves every send" do
+  test "sync! registers four reads and four acts at household, plus mail.attachment.get at personal, with closed schemas; a person approves every send" do
     caps = Capability.where("name LIKE 'mail.%'").index_by(&:name)
-    assert_equal (READS + ACTS).sort, caps.keys.sort
-    caps.each_value do |cap|
+    assert_equal (READS + ACTS + %w[mail.attachment.get]).sort, caps.keys.sort
+    (READS + ACTS).each do |name|
+      cap = caps[name]
       assert cap.native?
-      assert_equal [ READS.include?(cap.name) ? "read" : "act", "household", false ],
-                   [ cap.kind, cap.realm, cap.input_schema["additionalProperties"] ], cap.name
-      assert cap.description.length > 80, "#{cap.name}: agents read these"
+      assert_equal [ READS.include?(name) ? "read" : "act", "household", false ],
+                   [ cap.kind, cap.realm, cap.input_schema["additionalProperties"] ], name
+      assert cap.description.length > 80, "#{name}: agents read these"
     end
     assert_equal PERSON, caps.values.select(&:requires_person?).map(&:name).sort
     assert_equal Email::SEARCH_FILTERS.sort, caps["mail.search"].input_schema["properties"].keys.sort

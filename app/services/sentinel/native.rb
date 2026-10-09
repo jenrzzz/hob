@@ -40,6 +40,7 @@ module Sentinel
       "mail_move" => "Sentinel::Native::MailMove",
       "mail_send" => "Sentinel::Native::MailSend",
       "mail_reply" => "Sentinel::Native::MailReply",
+      "attachment_get" => "Sentinel::Native::AttachmentGet",
       "text_chats" => "Sentinel::Native::TextChats",
       "text_messages" => "Sentinel::Native::TextMessages",
       "text_poll" => "Sentinel::Native::TextPoll",

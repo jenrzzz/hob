@@ -7,7 +7,7 @@ module Sentinel
         "name" => "mail.message.get",
         "description" => "Read one message: its summary plus its text, threading headers, and what is attached. Returns " \
                          "{ message: { ...the summary mail.search gives, bcc, message_id, in_reply_to, references, body, " \
-                         "body_truncated, attachments: [{ name, type, size }] }, notice }. `body` is plain text (an HTML-only " \
+                         "body_truncated, attachments: [{ id, name, type, size }] }, notice }. `body` is plain text (an HTML-only " \
                          "message is turned into text), at most #{Email::Backends::Jmap::MAX_BODY} characters. Attachments are " \
                          "named, not fetched. Give `headers` for the raw header fields too: a name or list of names " \
                          "(\"List-Unsubscribe\", any case) for just those, or true for every one. They come back as `headers: " \

@@ -65,30 +65,40 @@ final class PushCenter: NSObject {
 // MARK: - UNUserNotificationCenterDelegate
 
 extension PushCenter: UNUserNotificationCenterDelegate {
+    // The completion-handler forms, not the `async` ones: an `async` delegate
+    // method's thunk calls UIKit's completion handler from a background
+    // executor, and UIKit crashes the app on a tap when it is not on main.
+
     /// A petition while the app is open still shows: the banner is how hob
     /// gets a word in without the inbox polling for it.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
     }
 
     /// `hob.kind` and `hob.id` say what to open.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
-        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
-        let payload = response.notification.request.content.userInfo["hob"] as? [String: Any] ?? [:]
-        guard let kind = payload["kind"] as? String, let id = payload["id"] as? String,
-              let route = Route(kind: kind, id: id)
-        else {
-            log.info("notification tapped without a hob link; opening the inbox")
-            await MainActor.run { Session.shared.path = [] }
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else {
+            completionHandler()
             return
         }
-        log.info("notification tapped; opening \(kind, privacy: .public) \(id, privacy: .public)")
-        await MainActor.run { Session.shared.open(route) }
+        let payload = response.notification.request.content.userInfo["hob"] as? [String: Any] ?? [:]
+        let route = (payload["kind"] as? String).flatMap { kind in (payload["id"] as? String).flatMap { Route(kind: kind, id: $0) } }
+        if let route {
+            log.info("notification tapped; opening \(String(describing: route), privacy: .public)")
+        } else {
+            log.info("notification tapped without a hob link; opening the inbox")
+        }
+        Task { @MainActor in
+            if let route { Session.shared.open(route) } else { Session.shared.path = [] }
+            completionHandler()
+        }
     }
 }

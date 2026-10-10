@@ -2,8 +2,8 @@ require "socket"
 
 module Sentinel
   module Native
-    # hob.ward.portcheck (WARD.md): one TCP connect check from the ward
-    # worker's own network, so an agent can verify an exposure finding
+    # hob.ward.portcheck (WARD.md): one TCP connect check from the hob host,
+    # external to the household, so an agent can verify an exposure finding
     # without shell access to the house. `host` is never taken on the
     # agent's word: it must already be one of the literal addresses in
     # HOB_WARD_SCAN_TARGETS, the household's own list of what ward scans
@@ -43,8 +43,8 @@ module Sentinel
       MAX_TIMEOUT = 30
       BANNER_WAIT = 2     # seconds of passive reading
       BANNER_BYTES = 256  # kept at most
-      NOTICE = "Checked from inside the household network; a public-IP check may hairpin and not reflect true " \
-               "external exposure.".freeze
+      NOTICE = "The check runs from the hob host, which sits outside the household network, so the result " \
+               "reflects true internet exposure.".freeze
 
       # Tests inject a lambda (host, port, timeout) -> socket-like, raising
       # the same Errno a real connect would; nil means a real Socket.tcp.
@@ -97,7 +97,7 @@ module Sentinel
       end
 
       def vantage
-        "#{ENV.fetch('HOB_WARD_PRINCIPAL', 'ward')}@hob (internal)"
+        "#{ENV.fetch('HOB_WARD_PRINCIPAL', 'ward')}@hob (external)"
       end
 
       # One connect; a refusal is closed, a timeout (a dropped SYN, from in

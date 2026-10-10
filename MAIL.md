@@ -51,7 +51,7 @@ adds what it takes to read and answer one:
   bcc, message_id, in_reply_to, references,
   body,                 plain text, at most 20,000 characters; an HTML-only message is turned into text
   body_truncated: bool,
-  attachments: [{ name, type, size }]       named, not fetched
+  attachments: [{ id, name, type, size }]   named, not fetched; id is what mail.attachment.get wants
   headers: [{ name, value }],               only when asked for: see below
   headers_truncated: bool
 ```

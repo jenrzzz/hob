@@ -531,7 +531,7 @@ module Email
           "bcc" => addresses(email["bcc"]), "message_id" => Array(email["messageId"]).first,
           "in_reply_to" => Array(email["inReplyTo"]).first, "references" => Array(email["references"]),
           "body" => text, "body_truncated" => truncated,
-          "attachments" => Array(email["attachments"]).map { |part| { "name" => part["name"], "type" => part["type"], "size" => part["size"] } }
+          "attachments" => Array(email["attachments"]).map { |part| { "id" => part["blobId"], "name" => part["name"], "type" => part["type"], "size" => part["size"] } }
         )
       end
 

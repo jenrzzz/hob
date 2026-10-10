@@ -20,7 +20,7 @@ class EmailTest < ActiveSupport::TestCase
     @server.email("m-spam", subject: "You won a reservation", folders: [ "mb-junk" ], received: "2026-10-05T20:00:00Z")
     @server.email("m-receipt", subject: "Your receipt", from: "Hardware Store <store@example.test>", folders: [ "mb-receipts" ],
                                received: "2026-10-04T18:00:00Z", body: "<p>Thanks!</p><p>Total: <b>$12.00</b></p>", html: true,
-                               attachments: [ { "name" => "receipt.pdf", "type" => "application/pdf", "size" => 2048 } ])
+                               attachments: [ { "blobId" => "b-receipt", "name" => "receipt.pdf", "type" => "application/pdf", "size" => 2048 } ])
   end
 
   teardown do
@@ -91,7 +91,7 @@ class EmailTest < ActiveSupport::TestCase
     assert_equal [ "m-recital@example.test", false ], recital.values_at("message_id", "body_truncated")
     receipt = Email.message("jenner-fastmail:m-receipt")["message"]
     assert_equal "Thanks!\nTotal: $12.00", receipt["body"]
-    assert_equal [ { "name" => "receipt.pdf", "type" => "application/pdf", "size" => 2048 } ], receipt["attachments"]
+    assert_equal [ { "id" => "b-receipt", "name" => "receipt.pdf", "type" => "application/pdf", "size" => 2048 } ], receipt["attachments"]
     assert @server.last("Email/get")["fetchTextBodyValues"]
     assert_raises(Email::NotFound) { Email.message("jenner-fastmail:m-nope") }
     assert_raises(Email::Invalid) { Email.message("m-recital") }

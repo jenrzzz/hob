@@ -87,7 +87,7 @@ class WardPortcheckNativeTest < ActiveSupport::TestCase
     assert_operator result["banner"].bytesize, :<=, 256
     assert_equal "wf_01", result["finding_id"]
     assert_equal "", sent_to_server, "the handler must send nothing"
-    assert_match(/\(internal\)\z/, result["vantage"])
+    assert_match(/\(external\)\z/, result["vantage"])
     assert_equal Sentinel::Native::WardPortcheck::NOTICE, result["notice"]
   ensure
     server&.close

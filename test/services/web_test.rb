@@ -42,7 +42,7 @@ class WebTest < ActiveSupport::TestCase
   test "nothing inside the house: loopback, private, the tailnet, link-local, and their IPv6 forms" do
     {
       "127.0.0.1" => "loopback", "10.1.2.3" => "lan", "192.168.1.10" => "router", "172.20.0.5" => "docker",
-      "100.90.105.100" => "tailnet", "169.254.169.254" => "metadata", "0.0.0.0" => "any", "::1" => "v6 loopback",
+      "100.64.0.7" => "tailnet", "169.254.169.254" => "metadata", "0.0.0.0" => "any", "::1" => "v6 loopback",
       "::ffff:127.0.0.1" => "mapped", "fd7a:115c:a1e0::1" => "tailnet v6", "fe80::1" => "v6 link-local",
       "64:ff9b::a00:1" => "nat64", "2002:7f00:1::1" => "6to4"
     }.each do |address, what|

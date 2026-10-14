@@ -262,7 +262,7 @@ which is how part of a personal account is shared with household agents.
 
 ```sh
 export FASTMAIL_APP_PASSWORD=...                           # a Fastmail app password with CalDAV access
-bin/rails "hob:calendar:backend[jenner-fastmail,fastmail,personal]" USERNAME=jenner@fastmail.com KEY_ENV=FASTMAIL_APP_PASSWORD
+bin/rails "hob:calendar:backend[jenner-fastmail,fastmail,personal]" USERNAME=you@fastmail.com KEY_ENV=FASTMAIL_APP_PASSWORD
 bin/rails "hob:calendar:check[jenner-fastmail]"            # the calendars it sees
 bin/rails "hob:calendar:backend[kids-ics,ics,household]" URL_ENV=KIDS_ICS_URL
 bin/rails "hob:sentinel:policy[muse,calendar.*,allow]"     # calendar.calendars, calendar.events
@@ -303,7 +303,7 @@ herald has *scoped* to that chat, at realm `household`.
 
 ```sh
 export HERALD_KEY=... HERALD_FAMILY_KEY=...                # herald's bearer keys, in hob's environment
-bin/rails "hob:texts:backend[jenner-messages,herald,http://mini.tailnet.ts.net:8379,personal]" KEY_ENV=HERALD_KEY ADDR=100.90.105.100
+bin/rails "hob:texts:backend[jenner-messages,herald,http://mini.tailnet.ts.net:8379,personal]" KEY_ENV=HERALD_KEY ADDR=100.x.y.z
 bin/rails "hob:texts:backend[family-texts,herald,http://mini.tailnet.ts.net:8379,household]" KEY_ENV=HERALD_FAMILY_KEY
 bin/rails hob:texts:backends                               # what is registered, and whether each answers
 bin/rails "hob:texts:check[family-texts]"                  # herald's status: the database, Contacts, the key's scope
@@ -405,7 +405,7 @@ that clearance.
 
 ```sh
 export GOFER_KEY=...                                        # gofer's bearer key, in hob's environment
-bin/rails "hob:browse:browser[mini-chrome,gofer,http://mini.tailnet.ts.net:8378,personal]" KEY_ENV=GOFER_KEY ADDR=100.90.105.100
+bin/rails "hob:browse:browser[mini-chrome,gofer,http://mini.tailnet.ts.net:8378,personal]" KEY_ENV=GOFER_KEY ADDR=100.x.y.z
 bin/rails hob:browse:browsers                               # registered, and whether each answers
 bin/rails hob:browse:sessions                               # open tabs, whose, and for what
 bin/rails "hob:sentinel:policy[muse,browse.open,review]" GUIDANCE="..."   # the goal is judged once, at open

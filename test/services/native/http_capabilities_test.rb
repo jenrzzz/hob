@@ -11,7 +11,7 @@ class HttpCapabilitiesTest < ActiveSupport::TestCase
     native_capabilities!
     @muse, = agent("muse")
     @sent = []
-    Web.resolver = ->(host) { host == "inside.example" ? [ "100.90.105.100" ] : [ "93.184.215.14" ] }
+    Web.resolver = ->(host) { host == "inside.example" ? [ "100.64.0.7" ] : [ "93.184.215.14" ] }
     Web.transport = lambda do |verb, uri, _address, body, _headers|
       @sent << [ verb, uri.to_s, body ]
       [ 200, "<p>You have been unsubscribed.</p>", { "Content-Type" => "text/html" } ]
@@ -72,7 +72,7 @@ class HttpCapabilitiesTest < ActiveSupport::TestCase
     policy!(@muse, "http.get", "allow")
     request = submit("http.get", { "url" => "http://inside.example/admin" })
     assert_equal "failed", request.status
-    assert_match(/\ABlocked: inside\.example resolves to 100\.90\.105\.100/, request.error)
+    assert_match(/\ABlocked: inside\.example resolves to 100\.64\.0\.7/, request.error)
     assert_empty @sent
   end
 end

@@ -240,12 +240,12 @@ can do. The rest is the profile: an account whose worst case is a return,
 ```sh
 # on the mini (gofer/README.md)
 bin/gofer key add hob --domains amazon.com --block /checkout,/gp/buy,/buy
-GOFER_BIND=127.0.0.1,100.90.105.100 bin/gofer install
+GOFER_BIND=127.0.0.1,100.x.y.z bin/gofer install
 bin/gofer open amazon.com                                     # log in, in the window
 
 # on the hob box
 export GOFER_KEY=gfr_...
-bin/rails "hob:browse:browser[mini-chrome,gofer,http://mini.tailnet.ts.net:8378,personal]" KEY_ENV=GOFER_KEY OWNER=jenner ADDR=100.90.105.100
+bin/rails "hob:browse:browser[mini-chrome,gofer,http://mini.tailnet.ts.net:8378,personal]" KEY_ENV=GOFER_KEY OWNER=jenner ADDR=100.x.y.z
 bin/rails hob:browse:browsers                                 # registered, and whether each answers
 bin/rails "hob:browse:check[mini-chrome]"
 bin/rails hob:browse:sessions                                 # what is open right now, and for what

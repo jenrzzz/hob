@@ -126,7 +126,7 @@ calendar_backends  ulid, name (unique slug), kind, principal (the owner: a perso
 |---|---|---|
 | `url` / `url_env` | ics | the feed's address (http, https, or `webcal://`), or the env var holding it |
 | `name` | ics | what to call the calendar, over the feed's own name |
-| `username` | fastmail, caldav | the account's login, `jenner@fastmail.com` |
+| `username` | fastmail, caldav | the account's login, `you@fastmail.com` |
 | `key` / `key_env` | fastmail, caldav | the (app) password, or the env var holding it |
 | `url` | caldav (fastmail: optional) | the account's calendar home |
 | `calendars` | fastmail, caldav | the calendars (names or ids) this row may reach; the rest of the account does not exist for it |
@@ -207,10 +207,10 @@ list and RLS are what stop it.
 # on the hob box, in hob's environment
 export FASTMAIL_APP_PASSWORD=...  KIDS_ICS_URL=https://...
 
-bin/rails "hob:calendar:backend[jenner-fastmail,fastmail,personal]" USERNAME=jenner@fastmail.com KEY_ENV=FASTMAIL_APP_PASSWORD
+bin/rails "hob:calendar:backend[jenner-fastmail,fastmail,personal]" USERNAME=you@fastmail.com KEY_ENV=FASTMAIL_APP_PASSWORD
 bin/rails "hob:calendar:check[jenner-fastmail]"         # reachable, and the calendars it sees: pick names for CALENDARS
-bin/rails "hob:calendar:backend[house-fastmail,fastmail,household]" USERNAME=jenner@fastmail.com KEY_ENV=FASTMAIL_APP_PASSWORD CALENDARS=Family
-bin/rails "hob:calendar:backend[jenner-busy,fastmail,household]" USERNAME=jenner@fastmail.com KEY_ENV=FASTMAIL_APP_PASSWORD \
+bin/rails "hob:calendar:backend[house-fastmail,fastmail,household]" USERNAME=you@fastmail.com KEY_ENV=FASTMAIL_APP_PASSWORD CALENDARS=Family
+bin/rails "hob:calendar:backend[jenner-busy,fastmail,household]" USERNAME=you@fastmail.com KEY_ENV=FASTMAIL_APP_PASSWORD \
   CALENDARS=Work VISIBILITY=free_busy
 bin/rails "hob:calendar:backend[kids-ics,ics,household]" URL_ENV=KIDS_ICS_URL LABEL="Kids' sports"
 bin/rails hob:calendar:backends                          # what is registered, and whether each answers

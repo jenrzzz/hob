@@ -123,7 +123,7 @@ namespace :hob do
     # Calendar backends (CALENDARS.md): where the household's calendars are read from.
     desc "Register (or update) a calendar backend (CALENDARS.md). A feed: bin/rails \"hob:calendar:backend[kids-ics,ics,household]\" " \
          "URL_ENV=KIDS_ICS_URL (or URL=<the feed>) LABEL=Kids. Fastmail: bin/rails \"hob:calendar:backend[jenner-fastmail,fastmail,personal]\" " \
-         "USERNAME=jenner@fastmail.com KEY_ENV=FASTMAIL_APP_PASSWORD (or KEY=). Any kind: OWNER=jenner CALENDARS=Family,Kids " \
+         "USERNAME=you@fastmail.com KEY_ENV=FASTMAIL_APP_PASSWORD (or KEY=). Any kind: OWNER=jenner CALENDARS=Family,Kids " \
          "VISIBILITY=free_busy TIME_ZONE=America/Los_Angeles ENABLED=0"
     task :backend, [ :name, :kind, :realm ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:calendar:backend[name,kind=ics|fastmail|caldav,realm=personal]\" URL= | URL_ENV= | USERNAME= KEY_ENV=" if args[:name].blank?

@@ -21,7 +21,7 @@
 #   name        optional: what to call the calendar, over the feed's own name
 #
 # for kind fastmail (and caldav, which also needs a `url`):
-#   username    the account's login, e.g. jenner@fastmail.com
+#   username    the account's login, e.g. you@fastmail.com
 #   key_env     the env var holding an app password, read at request time
 #               the way providers read theirs; or
 #   key         the app password itself, stored in the row

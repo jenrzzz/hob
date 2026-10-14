@@ -57,6 +57,12 @@ development:
 test:
   <<: *default
   database: hob_test
+  # Not a superuser, so row-level security applies (test/test_helper.rb
+  # refuses one). The role CI makes; locally:
+  #   psql -d template1 -c "CREATE ROLE hob LOGIN CREATEDB PASSWORD 'hob'"
+  username: hob
+  password: hob
+  host: <%= ENV.fetch("PGHOST", "localhost") %>
 
 # As with config/credentials.yml, you never want to store sensitive information,
 # like your database password, in your source code. If your source code is

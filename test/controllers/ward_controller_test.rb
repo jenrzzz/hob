@@ -3,7 +3,7 @@ require "test_helper"
 # The ward over HTTP: the worker posts, a person reads and decides, agents
 # and surfaces are turned away.
 class WardControllerTest < ActionDispatch::IntegrationTest
-  REPORT = "WARN  mise: review — public recipe app\nFAIL  cadance 5.78.183.213:8888: unexpected public TCP port\nOK    done\nOK=1 WARN=1 FAIL=1 ERROR=0\n"
+  REPORT = "WARN  mise: review — public recipe app\nFAIL  cadance 203.0.113.9:8888: unexpected public TCP port\nOK    done\nOK=1 WARN=1 FAIL=1 ERROR=0\n"
 
   setup do
     WardCheck.create!(slug: "exposure")
@@ -86,11 +86,11 @@ class WardControllerTest < ActionDispatch::IntegrationTest
     assert_equal "8888 is public on cadance", body["triage"]["headline"]
     assert_equal [ "bind it" ], body["triage"]["next_steps"]
 
-    post "/v1/ward/findings/#{port.id}/ack", params: { note: "nordlynx; auth required", until: 30.days.from_now.iso8601 }, headers: auth, as: :json
+    post "/v1/ward/findings/#{port.id}/ack", params: { note: "proxy; auth required", until: 30.days.from_now.iso8601 }, headers: auth, as: :json
     assert_response :ok
     assert_equal "acknowledged", body["state"]
     assert_equal "tester", body["acknowledged_by"]
-    assert_equal "nordlynx; auth required", body["ack_note"]
+    assert_equal "proxy; auth required", body["ack_note"]
 
     get "/v1/ward/findings", headers: auth
     assert_equal [ "warn" ], body.map { |f| f["level"] }, "open by default"
@@ -106,7 +106,7 @@ class WardControllerTest < ActionDispatch::IntegrationTest
     post "/v1/ward/findings/#{port.id}/ack", params: { until: 1.day.ago.iso8601 }, headers: auth, as: :json
     assert_response :unprocessable_entity
 
-    post "/v1/ward/notes", params: { subject: "cadance", body: "8888 is nordlynx's HTTP proxy; auth required on it." }, headers: auth, as: :json
+    post "/v1/ward/notes", params: { subject: "cadance", body: "8888 is an HTTP proxy; auth required on it." }, headers: auth, as: :json
     assert_response :created
     assert_equal "tester", body["author"]
     get "/v1/ward/notes?subject=cadance", headers: auth

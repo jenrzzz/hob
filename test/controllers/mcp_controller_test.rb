@@ -185,7 +185,7 @@ class McpControllerTest < ActionDispatch::IntegrationTest
     WardCheck.create!(slug: "exposure")
     Notify.transport = ->(*) { "200" }
     @fake.reply({ severity: "attention", headline: "h", summary: "s", next_steps: [] }.to_json)
-    Ward::Ingest.call(check: "exposure", exit_code: 1, lines: [ "FAIL cadance 5.78.183.213:8888: unexpected public TCP port" ], principal: @principal)
+    Ward::Ingest.call(check: "exposure", exit_code: 1, lines: [ "FAIL cadance 203.0.113.9:8888: unexpected public TCP port" ], principal: @principal)
 
     findings = answered("ward_findings")
     assert_equal 1, findings["count"]

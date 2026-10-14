@@ -68,12 +68,12 @@ class WebTest < ActiveSupport::TestCase
   end
 
   test "HOB_HTTP_DENY: the household's own names and addresses" do
-    ENV["HOB_HTTP_DENY"] = "amber.place, 203.0.114.0/24"
-    assert_match(/deny list/, assert_raises(Web::Blocked) { Web.get("url" => "https://hob.amber.place/v1/usage") }.message)
-    assert_raises(Web::Blocked) { Web.get("url" => "https://amber.place/") }
+    ENV["HOB_HTTP_DENY"] = "household.test, 203.0.114.0/24"
+    assert_match(/deny list/, assert_raises(Web::Blocked) { Web.get("url" => "https://hob.household.test/v1/usage") }.message)
+    assert_raises(Web::Blocked) { Web.get("url" => "https://household.test/") }
     @dns["box.example"] = [ "203.0.114.9" ]
     assert_match(/deny list/, assert_raises(Web::Blocked) { Web.get("url" => "https://box.example/") }.message)
-    assert_equal 200, Web.get("url" => "https://notamber.place/")["status"], "a suffix, not a substring"
+    assert_equal 200, Web.get("url" => "https://nothousehold.test/")["status"], "a suffix, not a substring"
   end
 
   test "a GET follows redirects and checks every hop; a POST does not follow" do

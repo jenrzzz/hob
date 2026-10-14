@@ -309,7 +309,7 @@ The discipline: **don't build the ontology first.** Memory with no conversations
 3. **Prompt snapshot retention** — every turn forever is a lot of jsonb. Lean: keep hashes forever, GC bodies after N days except pinned.
 4. **ST import fidelity** — cards yes, full chat JSONL history yes (kat parser exists); lorebooks → observation+activation-rule mapping needs a spike.
 5. **chatelaine transport** — SSE vs WebSocket for the component; SSE is simpler and sufficient until multi-user presence matters.
-6. **Where hob runs** — ~~tabitha next to kat, or its own box?~~ **Decided (2026-07-18): cadance.jfave.com (VPS)**, so hob survives home-internet outages. This accepts VPS custody of realm-tagged data; trade-off and mitigations recorded in [CHATELAINE.md](CHATELAINE.md#deployment-cadancejfavecom). The per-realm-database escape hatch stays open for pinning `intimate` to owned hardware if the placement ever feels wrong.
+6. **Where hob runs** — ~~tabitha next to kat, or its own box?~~ **Decided (2026-07-18): vps.example.com (VPS)**, so hob survives home-internet outages. This accepts VPS custody of realm-tagged data; trade-off and mitigations recorded in [CHATELAINE.md](CHATELAINE.md#deployment-the-vps). The per-realm-database escape hatch stays open for pinning `intimate` to owned hardware if the placement ever feels wrong.
 
 ## Name registry status (checked 2026-07-04)
 

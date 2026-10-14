@@ -143,7 +143,7 @@ realm, input_schema }] }`, with every name prefixed by the surface's own
 from it:
 
 ```sh
-bin/rails "hob:surface:register[mise,https://mise.amber.place]" APP=<mise's coolify app uuid>
+bin/rails "hob:surface:register[mise,https://mise.example.com]" APP=<mise's coolify app uuid>
 bin/rails "hob:surface:capabilities[mise]"
 ```
 

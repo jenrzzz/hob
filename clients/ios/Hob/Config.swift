@@ -4,7 +4,9 @@ import Security
 /// Where hob is and who this phone is: the server URL in defaults, the
 /// person's key in the keychain.
 enum Config {
-    static let defaultServerURL = "https://hob.amber.place"
+    /// HOB_SERVER_URL at build time (project.yml, or on the xcodebuild line);
+    /// the settings screen can change it either way.
+    static let defaultServerURL = Bundle.main.object(forInfoDictionaryKey: "HobServerURL") as? String ?? ""
 
     /// The same names the Ruby clients use. Set for a simulator launch
     /// (`SIMCTL_CHILD_HOB_URL=… SIMCTL_CHILD_HOB_KEY=… xcrun simctl launch …`)

@@ -57,7 +57,7 @@ instruct/context templates, story strings, per-model tokenizer settings, sampler
 └───────────────┬────────────────────────────────┘
                 │  REST + SSE, bearer key  (public contract)
 ┌───────────────┴────────────────────────────────┐
-│  hob slice on cadance.jfave.com                │
+│  hob slice on vps.example.com                │
 │  Rails 8 API · Postgres + pgvector · RLS       │
 │  Gateway (Anthropic + OpenAI-compat)           │
 │  Conversation DAG · assembly pipeline          │
@@ -112,9 +112,9 @@ UI: a reorderable toggle list, deliberately ST-prompt-manager-shaped so refugees
 
 ---
 
-## Deployment: cadance.jfave.com
+## Deployment: the VPS
 
-hob deploys to the VPS **cadance.jfave.com** so it stays up when home internet doesn't. This **reverses DESIGN.md open question 6**, which leaned toward tabitha (home) *because hob holds `intimate` data*. Recording the trade-off, not hiding it:
+hob deploys to the VPS **vps.example.com** so it stays up when home internet doesn't. This **reverses DESIGN.md open question 6**, which leaned toward tabitha (home) *because hob holds `intimate` data*. Recording the trade-off, not hiding it:
 
 - **Accepted:** availability beats physical custody for the substrate itself. A VPS provider (and anyone who compromises the box) can read the disk.
 - **Mitigations, cheapest first:** full-disk / at-rest encryption on cadance; hob API not exposed publicly beyond TLS + keys (tailnet-only ingress is still an option even on a VPS); secrets in env, not repo.

@@ -447,7 +447,7 @@ end
 namespace :hob do
   namespace :surface do
     desc "Register the capabilities a surface offers the sentinel (SENTINEL.md) from its manifest at /hob/capabilities, " \
-         "and hand it the secret hob signs deliveries with. bin/rails \"hob:surface:register[mise,https://mise.amber.place]\" " \
+         "and hand it the secret hob signs deliveries with. bin/rails \"hob:surface:register[mise,https://mise.example.com]\" " \
          "APP=<coolify app uuid> (RESTART=0 to skip the restart; no APP prints the secret once, for you to set as HOB_WEBHOOK_SECRET)"
     task :register, [ :surface, :url ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:surface:register[surface,url]\" APP=<coolify app uuid>" if args[:surface].blank? || args[:url].blank?

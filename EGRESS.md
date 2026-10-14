@@ -28,9 +28,8 @@ Whatever else happens, the tunnel runs in one container on cadance
 with a proxy (SOCKS5 or HTTP CONNECT) on an internal Docker network. No
 published port, not bound to the tailnet or the public address. An open
 proxy on a dedicated IP is worse than one on a shared IP: whatever anyone
-sends through it is ours. (The ward has notes about a nordlynx proxy on
-cadance:8888 answering publicly; whatever that is, it is the thing not to
-repeat.)
+sends through it is ours. (A proxy answering publicly is exactly the
+thing not to repeat.)
 
 Dedicated IPs work over OpenVPN configs from Nord's site, and over
 NordLynx/WireGuard in the app; a container wants a WireGuard private key

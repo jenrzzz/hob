@@ -108,7 +108,7 @@ A finding is in one of three states:
 
 **Acknowledging** is the reviewed-decision line of infra's `SECURITY.md`
 ("step-ca TCP 9000 is intentionally public, reviewed 2026-06-12"), with a
-clock: `bin/rails "hob:ward:ack[<id>]" NOTE='nordlynx proxy; auth required'
+clock: `bin/rails "hob:ward:ack[<id>]" NOTE='proxy; auth required'
 UNTIL=2026-12-01`. An acknowledged finding stays out of the open list and
 out of the triage's attention until it expires, at which point it is open
 again and the ward says so. No expiry means until it resolves.
@@ -233,7 +233,7 @@ bin/rails "hob:ward:setup[ward]"                   # the worker principal and it
 bin/rails hob:ward:status                          # checks, open and acknowledged findings, the latest triage
 bin/rails "hob:ward:findings[open]" CHECK=exposure
 bin/rails "hob:ward:ack[<id>,jenner]" NOTE='reviewed: intentional' UNTIL=2026-12-01
-bin/rails "hob:ward:note[cadance,jenner]" BODY='8888 is nordlynx; auth required on it'
+bin/rails "hob:ward:note[cadance,jenner]" BODY='8888 is a proxy; auth required on it'
 bin/rails "hob:ward:runs[exposure]"
 bin/rails "hob:ward:schedule[exposure]" CRON='0 4 * * 1' TZ_NAME=America/Los_Angeles   # the weekly run, on hob's clock
 bin/rails hob:ward:sweep                           # by hand; WardSweepJob runs it hourly

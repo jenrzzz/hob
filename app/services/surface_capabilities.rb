@@ -9,7 +9,7 @@ require "net/http"
 # key: never shown to a person), and upserts a webhook Capability row per
 # entry, at /hob/capabilities/<name> on the surface.
 #
-#   bin/rails "hob:surface:register[mise,https://mise.amber.place]" APP=<coolify app uuid>
+#   bin/rails "hob:surface:register[mise,https://mise.example.com]" APP=<coolify app uuid>
 #
 # Re-running re-reads the manifest: new capabilities are added, changed
 # descriptions and schemas follow the code, a capability the manifest no

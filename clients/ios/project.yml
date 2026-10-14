@@ -38,6 +38,9 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: Hob/Info.plist
+        # The server the app starts pointed at: override on the xcodebuild line
+        # (HOB_SERVER_URL=https://…) or in Xcode. bin/build passes $HOB_SERVER_URL.
+        HOB_SERVER_URL: "https://hob.example.com"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     # Push Notifications capability. Xcode's automatic signing adds it to the
     # App ID; the value is rewritten to `production` for distribution builds.
@@ -54,6 +57,7 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
+        HobServerURL: "$(HOB_SERVER_URL)"
         # hob://petition/<id> and hob://request/<id>: the ntfy message's click
         # action, and anything else that wants to open an item here.
         CFBundleURLTypes:

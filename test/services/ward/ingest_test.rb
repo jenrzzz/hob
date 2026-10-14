@@ -4,10 +4,10 @@ require "test_helper"
 class WardIngestTest < ActiveSupport::TestCase
   REPORT = <<~TXT
     WARN  vaultwarden: review — High value; enforce 2FA and review direct host port exposure.
-    FAIL  filebrowser-jfave-app: private route files.jfave.com resolves publicly
-    FAIL  cadance 5.78.183.213:8888: unexpected public TCP port
+    FAIL  filebrowser-app: private route files.example.com resolves publicly
+    FAIL  cadance 203.0.113.9:8888: unexpected public TCP port
     OK    inventory comparison completed for 40 resources (unknown health is not healthy)
-    OK    cadance 5.78.183.213: full TCP scan completed; open=[22, 25, 80, 443, 8888]
+    OK    cadance 203.0.113.9: full TCP scan completed; open=[22, 25, 80, 443, 8888]
     OK=2 WARN=1 FAIL=2 ERROR=0
   TXT
 
@@ -24,10 +24,10 @@ class WardIngestTest < ActiveSupport::TestCase
 
   test "parses LEVEL lines, ignores the tally, and counts" do
     assert_equal [ [ "warn", "vaultwarden: review — High value; enforce 2FA and review direct host port exposure." ],
-                   [ "fail", "filebrowser-jfave-app: private route files.jfave.com resolves publicly" ],
-                   [ "fail", "cadance 5.78.183.213:8888: unexpected public TCP port" ],
+                   [ "fail", "filebrowser-app: private route files.example.com resolves publicly" ],
+                   [ "fail", "cadance 203.0.113.9:8888: unexpected public TCP port" ],
                    [ "ok", "inventory comparison completed for 40 resources (unknown health is not healthy)" ],
-                   [ "ok", "cadance 5.78.183.213: full TCP scan completed; open=[22, 25, 80, 443, 8888]" ] ],
+                   [ "ok", "cadance 203.0.113.9: full TCP scan completed; open=[22, 25, 80, 443, 8888]" ] ],
                  Ward::Ingest.parse(REPORT)
     assert_equal [ [ "fail", "x: y" ] ], Ward::Ingest.parse([ "FAIL x: y", "noise without a level", "", "OK=0 WARN=0 FAIL=1 ERROR=0" ])
     assert_equal [ [ "error", "boom" ] ], Ward::Ingest.parse([ [ "ERROR", "boom" ] ]), "already-split pairs are accepted"
@@ -46,8 +46,8 @@ class WardIngestTest < ActiveSupport::TestCase
     assert_equal 3, run.diff_ids("new").size
     assert_empty run.diff_ids("resolved")
 
-    port = WardFinding.find_by!(level: "fail", subject: "cadance 5.78.183.213:8888")
-    assert_equal "cadance 5.78.183.213:8888: unexpected public TCP port", port.message
+    port = WardFinding.find_by!(level: "fail", subject: "cadance 203.0.113.9:8888")
+    assert_equal "cadance 203.0.113.9:8888: unexpected public TCP port", port.message
     assert_equal WardFinding.fingerprint_for("exposure", "fail", port.message), port.fingerprint
     assert_equal 32, port.fingerprint.length
     assert_equal "open", port.state
@@ -69,7 +69,7 @@ class WardIngestTest < ActiveSupport::TestCase
 
   test "a complete run resolves what it no longer reports; a later report reopens it" do
     ingest
-    port = WardFinding.find_by!(subject: "cadance 5.78.183.213:8888")
+    port = WardFinding.find_by!(subject: "cadance 203.0.113.9:8888")
 
     without_port = REPORT.lines.reject { |l| l.include?("8888: unexpected") }.join
     run = ingest(without_port, exit_code: 1)
@@ -108,9 +108,9 @@ class WardIngestTest < ActiveSupport::TestCase
 
   test "a resolved finding cannot be acknowledged; an open one can, with an expiry; unack reopens" do
     ingest
-    port = WardFinding.find_by!(subject: "cadance 5.78.183.213:8888")
+    port = WardFinding.find_by!(subject: "cadance 203.0.113.9:8888")
     assert_raises(ArgumentError) { port.acknowledge!(by: @principal, until_at: 1.hour.ago) }
-    port.acknowledge!(by: @principal, note: "nordlynx proxy; auth required", until_at: 30.days.from_now)
+    port.acknowledge!(by: @principal, note: "proxy; auth required", until_at: 30.days.from_now)
     assert_equal "acknowledged", port.state
     assert_equal @principal, port.acknowledged_by
     assert_includes WardFinding.acknowledged, port

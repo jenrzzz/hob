@@ -115,7 +115,7 @@ already reach:
   still home: commas between entries, each a domain (it and everything
   under it), an address, or a CIDR range. Put the household's own domains
   and its boxes' public addresses there, so hob is never asked to call
-  itself or its neighbours from the outside in (`HOB_HTTP_DENY=amber.place,203.0.113.7`).
+  itself or its neighbours from the outside in (`HOB_HTTP_DENY=example.com,203.0.113.7`).
 - **No credentials ride along.** A URL with a user name or password in it
   is refused; hob adds no token, cookie, or key of its own to anything.
 

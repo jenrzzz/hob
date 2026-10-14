@@ -4,6 +4,7 @@
 #   bin/build            # generate project, build for simulator
 #   bin/build run        # …then boot the simulator, install and launch
 #   SIM="iPhone 17" bin/build run
+#   HOB_SERVER_URL=https://hob.… bin/build   # the server the app starts pointed at
 #
 # Needs Xcode and xcodegen (brew install xcodegen). No signing identity required.
 # The build targets the generic simulator; SIM only picks which one to run on.
@@ -26,6 +27,7 @@ xcodebuild \
   -destination "generic/platform=iOS Simulator" \
   -derivedDataPath "${DERIVED}" \
   CODE_SIGNING_ALLOWED=NO \
+  ${HOB_SERVER_URL:+HOB_SERVER_URL="${HOB_SERVER_URL}"} \
   build | { command -v xcbeautify >/dev/null && xcbeautify || grep -E "error:|warning:|BUILD" ; }
 
 if [[ "${1:-}" == "run" ]]; then

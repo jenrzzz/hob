@@ -69,7 +69,7 @@ older keys are deleted. hob needs these in its own environment:
 |---|---|
 | `COOLIFY_URL` | the Coolify instance, e.g. `https://cool.example` |
 | `COOLIFY_TOKEN` | an API token with write access to the target apps |
-| `HOB_CLIENT_URL` | the name surfaces call hob by, e.g. `https://hob.amber.place` |
+| `HOB_CLIENT_URL` | the name surfaces call hob by, e.g. `https://hob.example.com` |
 | `HOB_CLIENT_ADDR` | optional: hob's tailnet address; surfaces pin the connection to it (`Hob::Client` `ipaddr:`) so calls never leave the tailnet while the certificate check stays on the public name |
 
 ## Admin
@@ -124,7 +124,7 @@ bin/rails "hob:link[jenner,]"        # unlink; ends their sessions
 
 | var | value |
 |---|---|
-| `HOB_OIDC_ISSUER` | the provider's issuer, e.g. `https://id.amber.place` |
+| `HOB_OIDC_ISSUER` | the provider's issuer, e.g. `https://id.example.com` |
 | `HOB_OIDC_CLIENT_ID`, `HOB_OIDC_CLIENT_SECRET` | hob's client at the provider |
 | `HOB_CLIENT_URL` | hob's public URL; the callback is `$HOB_CLIENT_URL/auth/oidc/callback` |
 
@@ -323,7 +323,7 @@ Coolify app; mise's `docs/HOB.md` is the contract, and SENTINEL.md
 (*Capabilities*) is how registration works.
 
 ```sh
-bin/rails "hob:surface:register[mise,https://mise.amber.place]" APP=<mise's coolify app uuid>
+bin/rails "hob:surface:register[mise,https://mise.example.com]" APP=<mise's coolify app uuid>
 bin/rails "hob:surface:capabilities[mise]"                       # what is registered, and how much each has been asked
 
 for cap in recipes recipe.get plan shopping_list preferences; do     # the reads: allowed outright
@@ -360,7 +360,7 @@ finding with a note and an expiry; that is the reviewed-decision line of
 bin/rails "hob:ward:setup[ward]"                    # the worker's key, shown once; registers the exposure check
 bin/rails hob:ward:status                           # checks, open and acknowledged findings, the latest triage
 bin/rails "hob:ward:ack[<id>]" NOTE='reviewed: intentional' UNTIL=2026-12-01
-bin/rails "hob:ward:note[cadance]" BODY='8888 is nordlynx; auth required on it'
+bin/rails "hob:ward:note[cadance]" BODY='8888 is a proxy; auth required on it'
 bin/rails hob:ward:sweep                            # by hand; WardSweepJob runs it hourly (hob-jobs)
 bin/rails "hob:sentinel:policy[butler,ward.status,allow]"   # let an agent ask how the house stands
 ```
@@ -431,7 +431,7 @@ bin/rails "hob:sentinel:policy[muse,http.*,review]" \
   GUIDANCE="Muse may follow List-Unsubscribe links from the household's mail for lists Tessa asked to leave. Deny anything else."
 ```
 
-`HOB_HTTP_DENY=amber.place,203.0.113.7` keeps hob off the household's own
+`HOB_HTTP_DENY=example.com,203.0.113.7` keeps hob off the household's own
 public names and addresses as well (domains, addresses, or CIDR ranges).
 [HTTP.md](HTTP.md) is the design.
 

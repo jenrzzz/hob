@@ -3,6 +3,13 @@ require_relative "../config/environment"
 require "rails/test_help"
 require_relative "support/hob_world"
 
+# A superuser (or a BYPASSRLS role) skips row-level security, and the realm
+# tests then fail as though clearance were broken. Connect the way CI does.
+if ActiveRecord::Base.connection.select_value("SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user")
+  abort "The test database connects as #{ActiveRecord::Base.connection.select_value('SELECT current_user')}, which bypasses " \
+        "row-level security. Connect as a non-superuser role, as CI does (PGUSER=hob; see .github/workflows/ci.yml)."
+end
+
 module ActiveSupport
   class TestCase
     include HobWorld

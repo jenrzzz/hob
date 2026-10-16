@@ -34,6 +34,14 @@ module Email
   MESSAGE_ARGUMENTS = %w[id headers].freeze
   ATTACHMENTS_ARGUMENTS = %w[id].freeze
   ATTACHMENT_ARGUMENTS = %w[id attachment max_bytes].freeze
+  SEND_ATTACHMENT_ARGUMENTS = %w[from_account to cc subject body quote reply_all reply_to_message_id attachments reason].freeze
+  ATTACHMENT_REF_ARGUMENTS = %w[message_id attachment_id filename].freeze
+  MAX_ATTACHMENTS = 5
+  MAX_ATTACHMENTS_BYTES = 20.megabytes
+  MAX_ATTACHMENT_SUBJECT = 300
+  MAX_ATTACHMENT_BODY = 20_000
+  MAX_ATTACHMENT_FILENAME = 200
+  MAX_ATTACHMENT_RECIPIENTS = 20
   MAX_HEADER_NAMES = 50
   HEADER_NAME = /\A[!-9;-~]+\z/ # RFC 5322: printable ASCII, no colon
   DEFAULT_LIMIT = 25
@@ -205,6 +213,48 @@ module Email
     sent = backend!(name).adapter.reply(native, body: body!(arguments["body"]), from: from!(arguments["from"]), cc: cc, bcc: bcc,
                                                 reply_all: flag(arguments, "reply_all", false), quote: flag(arguments, "quote", true))
     { "message" => shown(sent), "sent" => true, "in_reply_to" => arguments["id"] }
+  end
+
+  # hob.mail.send_attachment: a send or reply, like send_message and reply,
+  # but carrying up to MAX_ATTACHMENTS files already in household mail,
+  # referenced by message id and attachment id rather than their bytes.
+  # Resolving a reference never downloads it: only the blob id, name, mime
+  # type, and size the message's attachment list already shows. The blob id
+  # is handed straight to the backend's own Email/set, so a file's bytes
+  # travel from one JMAP account to the sent message without passing
+  # through hob or the agent — which also means every attachment must
+  # already live in the account the message is sent from.
+  def send_attachment(arguments)
+    arguments = known!(arguments, SEND_ATTACHMENT_ARGUMENTS, "argument")
+    reply_id = arguments["reply_to_message_id"].presence
+    raise Invalid, "give reply_to_message_id, or to and subject" if reply_id.blank? && (arguments["to"].blank? || arguments["subject"].blank?)
+    if reply_id.present? && (arguments["to"].present? || arguments["subject"].present?)
+      raise Invalid, "reply_to_message_id answers one message: don't also give to or subject"
+    end
+
+    refs = attachment_refs!(arguments["attachments"])
+    body = body!(arguments["body"], MAX_ATTACHMENT_BODY)
+    cc = attachment_addresses!(arguments["cc"], "cc")
+    backend_name, native_reply_id = reply_id ? parse_id(string!(reply_id, "reply_to_message_id")) : [ one_backend!(arguments["from_account"]).name, nil ]
+    resolved = resolve_attachments!(refs, backend_name)
+    parts = resolved.map { |r| r[:part] }
+
+    sent =
+      if reply_id
+        recipients!(cc)
+        backend!(backend_name).adapter.reply_with_attachments(native_reply_id, body: body, from: nil, cc: cc, bcc: [],
+                                                                               reply_all: flag(arguments, "reply_all", false),
+                                                                               quote: flag(arguments, "quote", true), attachments: parts)
+      else
+        to = attachment_addresses!(arguments["to"], "to")
+        raise Invalid, "to is required: who the message is for" if to.empty?
+
+        recipients!(to + cc)
+        backend!(backend_name).adapter.send_with_attachments(to: to, cc: cc, bcc: [],
+                                                                     subject: text!(arguments["subject"], "subject", MAX_ATTACHMENT_SUBJECT),
+                                                                     body: body, from: nil, attachments: parts)
+      end
+    { "message" => shown(sent), "sent" => true, "attachments" => resolved.map { |r| r[:summary] } }
   end
 
   def backend!(name)
@@ -398,16 +448,80 @@ module Email
     raise Invalid, "at most #{MAX_RECIPIENTS} recipients on one message" if list.size > MAX_RECIPIENTS
   end
 
+  def attachment_addresses!(value, what)
+    list = addresses!(value, what)
+    raise Invalid, "#{what}: at most #{MAX_ATTACHMENT_RECIPIENTS} addresses" if list.size > MAX_ATTACHMENT_RECIPIENTS
+
+    list
+  end
+
+  def attachment_refs!(value)
+    refs = value.is_a?(Array) ? value : []
+    raise Invalid, "attachments is required: 1 to #{MAX_ATTACHMENTS} files already in household mail" if refs.empty?
+    raise Invalid, "at most #{MAX_ATTACHMENTS} attachments" if refs.size > MAX_ATTACHMENTS
+
+    refs.map { |ref| attachment_ref!(ref) }
+  end
+
+  def attachment_ref!(ref)
+    raise Invalid, "attachments: each one is an object with message_id and attachment_id" unless ref.is_a?(Hash)
+
+    ref = ref.deep_stringify_keys
+    unknown = ref.keys - ATTACHMENT_REF_ARGUMENTS
+    raise Invalid, "attachments: unknown key#{'s' if unknown.size > 1} #{unknown.join(', ')}" if unknown.any?
+    raise Invalid, "attachments: message_id is required" if ref["message_id"].blank?
+    raise Invalid, "attachments: attachment_id is required" if ref["attachment_id"].blank?
+    if ref["filename"].to_s.length > MAX_ATTACHMENT_FILENAME
+      raise Invalid, "attachments: filename is at most #{MAX_ATTACHMENT_FILENAME} characters"
+    end
+
+    ref
+  end
+
+  # Every reference resolved to the blob id, filename, mime type, and size
+  # the message's attachment list already shows (attachment_list: never a
+  # download), under the MAX_ATTACHMENTS_BYTES total.
+  def resolve_attachments!(refs, backend_name)
+    resolved = refs.map { |ref| resolve_attachment!(ref, backend_name) }
+    total = resolved.sum { |r| r[:summary]["size"].to_i }
+    raise Invalid, "attachments total #{total} bytes, over the #{MAX_ATTACHMENTS_BYTES} byte limit" if total > MAX_ATTACHMENTS_BYTES
+
+    resolved
+  end
+
+  # -> { part: the JMAP EmailBodyPart to attach, summary: the result shape }.
+  # A message the agent cannot see (or that does not exist) fails NotFound,
+  # the same as mail.message.get; an attachment not on an otherwise-visible
+  # message, or on a message in another account than the one sending, is
+  # the caller's mistake (Invalid): there is no way to carry its bytes
+  # across accounts without downloading and re-uploading them, which this
+  # capability does not do.
+  def resolve_attachment!(ref, backend_name)
+    message_id = string!(ref["message_id"], "attachments.message_id")
+    name, = parse_id(message_id)
+    if name != backend_name
+      raise Invalid, "attachments: #{message_id} is on #{name}, not #{backend_name}: attach files from the account you are sending from"
+    end
+
+    found = attachments(message_id)["attachments"].find { |a| a["id"] == ref["attachment_id"] }
+    raise Invalid, "attachments: #{message_id} has no attachment #{ref['attachment_id'].inspect}" if found.nil?
+
+    filename = ref["filename"].presence || found["filename"]
+    { part: { "blobId" => ref["attachment_id"], "type" => found["content_type"], "name" => filename, "disposition" => "attachment" },
+      summary: { "size" => found["size"], "filename" => filename, "mime_type" => found["content_type"],
+                 "attachment_id" => ref["attachment_id"], "source_message_id" => message_id } }
+  end
+
   def from!(value)
     return nil if value.blank?
 
     address!(string!(value, "from"), "from")["email"]
   end
 
-  def body!(value)
+  def body!(value, max = MAX_BODY)
     body = string!(value, "body")
     raise Invalid, "body is required: the message's text" if body.strip.empty?
-    raise Invalid, "body is at most #{MAX_BODY} characters" if body.length > MAX_BODY
+    raise Invalid, "body is at most #{max} characters" if body.length > max
 
     body
   end

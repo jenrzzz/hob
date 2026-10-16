@@ -23,6 +23,9 @@ class FakeJmap
   MAIL = "urn:ietf:params:jmap:mail".freeze
   SUBMISSION = "urn:ietf:params:jmap:submission".freeze
   ME = { "name" => "Jenner", "email" => "jenner@fastmail.test" }.freeze
+  # RFC 8621 §4.1: server-set on an Email, so a create that sets any of
+  # these directly is invalidProperties, the same as the real Fastmail.
+  SERVER_SET_EMAIL_PROPERTIES = %w[id blobId threadId size receivedAt hasAttachment preview].freeze
 
   attr_reader :calls, :mailboxes, :emails, :submissions, :identities, :blobs
   attr_accessor :read_only, :can_send, :refuse_send, :forgotten
@@ -251,11 +254,18 @@ class FakeJmap
   def email_set(arguments)
     out = { "accountId" => ACCOUNT }
     (arguments["create"] || {}).each do |cid, spec|
+      invalid = spec.keys & SERVER_SET_EMAIL_PROPERTIES
+      if invalid.any?
+        next (out["notCreated"] ||= {})[cid] = { "type" => "invalidProperties", "properties" => invalid,
+                                                  "description" => "may not be set on create" }
+      end
+
       new_id = "m-new-#{@next += 1}"
       body = spec.dig("bodyValues", spec.dig("textBody", 0, "partId"), "value")
       created(spec.except("bodyValues", "textBody").merge("id" => new_id, "threadId" => "t-#{new_id}", "receivedAt" => "2026-10-06T19:00:00Z",
                                                          "preview" => body.to_s.first(80), "_body" => body, "size" => body.to_s.size,
-                                                         "messageId" => [ "#{new_id}@fastmail.test" ]))
+                                                         "messageId" => [ "#{new_id}@fastmail.test" ],
+                                                         "hasAttachment" => Array(spec["attachments"]).any?))
       @created[cid] = new_id
       (out["created"] ||= {})[cid] = { "id" => new_id }
     end

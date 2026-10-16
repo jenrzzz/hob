@@ -337,9 +337,14 @@ module Email
         end
       end
 
+      # invalidProperties names the properties it refused (RFC 8620 §5.3); an
+      # outside reader could not tell which without them, so they ride along
+      # with the type rather than being dropped on the floor.
       def set_error_text(error)
         error = error.is_a?(Hash) ? error : {}
-        [ error["type"], error["description"].presence ].compact.join(": ").presence || "refused"
+        properties = Array(error["properties"]).presence
+        label = [ error["type"], properties && "(#{properties.join(', ')})" ].compact.join(" ")
+        [ label.presence, error["description"].presence ].compact.join(": ").presence || "refused"
       end
 
       # A refused create (a mailbox, a draft, a submission) as one of ours.
@@ -678,12 +683,15 @@ module Email
         all_mailboxes.find { |m| m["role"] == "sent" }&.dig("id")
       end
 
+      # hasAttachment is server-set (RFC 8621 §4.1.3), derived from
+      # `attachments`: Fastmail refuses a create that sets it directly,
+      # with every property on the draft, attachments included.
       def draft(identity, address, to:, cc:, bcc:, subject:, body:, attachments: [])
         { "mailboxIds" => { drafts_id => true }, "keywords" => { "$draft" => true, "$seen" => true },
           "from" => [ { "name" => identity["name"].presence, "email" => address }.compact ],
           "to" => to.presence, "cc" => cc.presence, "bcc" => bcc.presence, "subject" => subject,
           "bodyValues" => { "body" => { "value" => body } }, "textBody" => [ { "partId" => "body", "type" => "text/plain" } ],
-          "attachments" => attachments.presence, "hasAttachment" => attachments.any? || nil }.compact
+          "attachments" => attachments.presence }.compact
       end
 
       # reply and reply_with_attachments share every step but the draft's

@@ -249,6 +249,17 @@ class EmailTest < ActiveSupport::TestCase
     }.message)
   end
 
+  test "an invalidProperties refusal names the properties, not just the error type" do
+    mail_backend
+    adapter = Email.backend!("jenner-fastmail").adapter
+    assert_equal "invalidProperties (hasAttachment): may not be set on create",
+                 adapter.send(:set_error_text, { "type" => "invalidProperties", "properties" => %w[hasAttachment],
+                                                  "description" => "may not be set on create" })
+    assert_equal "invalidProperties (hasAttachment, size)",
+                 adapter.send(:set_error_text, { "type" => "invalidProperties", "properties" => %w[hasAttachment size] })
+    assert_equal "forbiddenToSend", adapter.send(:set_error_text, { "type" => "forbiddenToSend" })
+  end
+
   test "reply: to the sender, in the conversation, quoted, from the address it came to; the original marked answered" do
     mail_backend
     @server.email("m-ask", subject: "Carpool?", from: "Bo <bo@example.test>", to: [ "house@lafave.test" ], cc: [ "Cy <cy@example.test>" ],

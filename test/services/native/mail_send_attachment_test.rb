@@ -100,9 +100,16 @@ class MailSendAttachmentTest < ActiveSupport::TestCase
     request = confirmed(SEND.merge("attachments" => [ ATTACHMENT ]))
     assert_equal "completed", request.status, request.error.to_s
 
-    sent = @server.submissions.last["email"]
+    # The exact Email object handed to Email/set create: Fastmail refuses
+    # this create outright (invalidProperties) if it carries hasAttachment
+    # or any other server-set property alongside the attachment.
+    draft = @server.api_calls.find { |c| c.methods.include?("Email/set") }.arguments("Email/set").dig("create", "draft")
     assert_equal [ { "blobId" => "b-policy", "type" => "application/pdf", "name" => "Lemonade-renters-policy-2026.pdf",
-                    "disposition" => "attachment" } ], sent["attachments"]
+                    "disposition" => "attachment" } ], draft["attachments"]
+    refute draft.key?("hasAttachment"), "hasAttachment is server-set: Fastmail refuses a create that sets it"
+
+    sent = @server.submissions.last["email"]
+    assert_equal draft["attachments"], sent["attachments"]
     refute @server.calls.any? { |c| c.verb == "GET" && c.url.include?("/jmap/download/") }, "attachment bytes were never fetched"
   end
 
@@ -110,6 +117,11 @@ class MailSendAttachmentTest < ActiveSupport::TestCase
     request = confirmed("reply_to_message_id" => "house-mail:m-policy", "body" => "Here is the proof you asked for.",
                         "attachments" => [ ATTACHMENT ])
     assert_equal "completed", request.status, request.error.to_s
+
+    draft = @server.api_calls.find { |c| c.methods.include?("Email/set") }.arguments("Email/set").dig("create", "draft")
+    assert_equal [ { "blobId" => "b-policy", "type" => "application/pdf", "name" => "Lemonade-renters-policy-2026.pdf",
+                    "disposition" => "attachment" } ], draft["attachments"]
+    refute draft.key?("hasAttachment"), "hasAttachment is server-set: Fastmail refuses a create that sets it"
 
     sent = @server.submissions.last["email"]
     assert_equal "Re: Your renewed policy", sent["subject"]

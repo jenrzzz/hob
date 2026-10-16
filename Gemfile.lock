@@ -108,7 +108,6 @@ GEM
     erubi (1.13.1)
     et-orbi (1.4.2)
       tzinfo
-    event_stream_parser (1.0.0)
     faraday (2.14.4)
       faraday-net_http (>= 2.0, < 3.5)
       json
@@ -143,7 +142,7 @@ GEM
       prism (>= 1.3.0)
       rdoc (>= 4.0.0)
       reline (>= 0.4.2)
-    json (2.21.2)
+    json (3.0.2)
     json-jwt (1.17.2)
       activesupport (>= 4.2)
       aes_key_wrap
@@ -360,14 +359,13 @@ GEM
       rubocop-performance (>= 1.24)
       rubocop-rails (>= 2.30)
     ruby-progressbar (1.13.0)
-    ruby_llm (2.0.0)
+    ruby_llm (2.1.0)
       base64
-      event_stream_parser (~> 1)
       faraday (>= 1.10.0)
       faraday-multipart (>= 1)
       faraday-net_http (>= 1)
       faraday-retry (>= 1)
-      json (< 3)
+      json (< 4)
       marcel (>= 1.0, < 3)
       schematist (~> 1.1)
       zeitwerk (~> 2)
@@ -460,7 +458,7 @@ DEPENDENCIES
   rails (~> 8.1.4)
   rrule (~> 0.8)
   rubocop-rails-omakase
-  ruby_llm (= 2.0.0)
+  ruby_llm (= 2.1.0)
   sentry-rails
   sentry-ruby
   solid_cache
@@ -505,7 +503,6 @@ CHECKSUMS
   erb (6.0.7) sha256=c5ca6dc25b0ef974a44dc8f59fe847577122483b1968a38dec305c60bf91ee92
   erubi (1.13.1) sha256=a082103b0885dbc5ecf1172fede897f9ebdb745a4b97a5e8dc63953db1ee4ad9
   et-orbi (1.4.2) sha256=bb555dae668419cb24caa2a293a170e58be6d4df1e017c51f5030bdc133cd20c
-  event_stream_parser (1.0.0) sha256=a2683bab70126286f8184dc88f7968ffc4028f813161fb073ec90d171f7de3c8
   faraday (2.14.4) sha256=9bb4408c44621b0dbaaaa39e5dbfc4dbe58cc6751b6eb94d16ae9e1f2f2fab6e
   faraday-follow_redirects (0.5.0) sha256=5cde93c894b30943a5d2b93c2fe9284216a6b756f7af406a1e55f211d97d10ad
   faraday-multipart (1.2.0) sha256=7d89a949693714176f612323ca13746a2ded204031a6ba528adee788694ef757
@@ -521,7 +518,7 @@ CHECKSUMS
   ice_cube (0.17.0) sha256=32deb45dda4b4acc53505c2f581f6d32b5afc04d29b9004769944a0df5a5fcbe
   io-console (0.9.4) sha256=a403304f32928ee85e56d457b4612ca43f2703b561a3258844992bd24085fbb1
   irb (1.18.0) sha256=de9454a0703a54704b9811a5ef31a60c86949fbf4013fcf244fabc7c775248e3
-  json (2.21.2) sha256=1f1d3b7cf2b3ba1a69beca0bb6db13d5438b80bff3cd54cdaaa620b9b07c1c6a
+  json (3.0.2) sha256=8e6d7e7b11384c21230430cef90b71f14849a34a1f4452796670f7c981bd19df
   json-jwt (1.17.2) sha256=97e37c1c3e22e9e1d74a1c0d77319c5cdc8a636226e5dbb1664b0b34eddcf1c9
   json_schemer (2.5.0) sha256=2f01fb4cce721a4e08dd068fc2030cffd0702a7f333f1ea2be6e8991f00ae396
   kamal (2.12.0) sha256=c51d1ab085e515470f98d0c0f043637122b5ebf76e8b610cb1fbbed0b7f9b8fa
@@ -596,7 +593,7 @@ CHECKSUMS
   rubocop-rails (2.38.0) sha256=6e2b7c532efa95e3050371bec20b8f5b025662acead8bc70ee31f0e3e6fa2f06
   rubocop-rails-omakase (1.1.0) sha256=2af73ac8ee5852de2919abbd2618af9c15c19b512c4cfc1f9a5d3b6ef009109d
   ruby-progressbar (1.13.0) sha256=80fc9c47a9b640d6834e0dc7b3c94c9df37f08cb072b7761e4a71e22cff29b33
-  ruby_llm (2.0.0) sha256=b3ea5978f544c1c1edf74636fe4ac1d24129127deb44e4c4e7c58df11a4b9e3b
+  ruby_llm (2.1.0) sha256=041e73588758172e37b2883584b3bbca6fbddec2f273cdbdfa5f2b4f2f9a053e
   schematist (1.1.0) sha256=905d8f0286830926e77e0d631bee325ee741c4b99640bc99735593b40ba73e7b
   securerandom (0.4.1) sha256=cc5193d414a4341b6e225f0cb4446aceca8e50d5e1888743fac16987638ea0b1
   sentry-rails (7.1.0) sha256=21e2092f8ab013ec384a4a3e406622a1c2a04d6638c697b8f922d9d46da634fa

@@ -161,24 +161,25 @@ module Email
         submit(draft(identity, address, to: to, cc: cc, bcc: bcc, subject: subject, body: body), identity)
       end
 
-      def reply(id, body:, reply_all:, cc:, bcc:, quote:, from:)
+      # hob.mail.send_attachment: like send_message, plus attachments
+      # already resolved to their blob id, name, and mime type (Email
+      # .resolve_attachment!) — referenced, not uploaded, so their bytes
+      # never leave this account.
+      def send_with_attachments(to:, cc:, bcc:, subject:, body:, from:, attachments:)
         writable!
         sendable!
-        original = emails([ id ], FULL, body: quote).first
-        raise Email::NotFound, "#{backend.name} has no message #{prefixed(id).inspect}" unless original && visible_email?(original)
+        identity, address = identity!(from)
+        submit(draft(identity, address, to: to, cc: cc, bcc: bcc, subject: subject, body: body, attachments: attachments), identity)
+      end
 
-        identity, address = from ? identity!(from) : identity_for(original)
-        to, copied = reply_recipients(original, reply_all, address)
-        copied = distinct(copied + cc, except: to)
-        subject = original["subject"].to_s
-        subject = "Re: #{subject}".strip unless subject.match?(/\A\s*re:/i)
-        text = quote ? "#{body}#{quoted(original)}" : body
-        message = draft(identity, address, to: to, cc: copied, bcc: bcc, subject: subject, body: text)
-        message["inReplyTo"] = Array(original["messageId"]).presence
-        message["references"] = (Array(original["references"]) + Array(original["messageId"])).last(MAX_REFERENCES).presence
-        sent = submit(message.compact, identity)
-        answered(id)
-        sent
+      def reply(id, body:, reply_all:, cc:, bcc:, quote:, from:)
+        reply_message(id, body: body, reply_all: reply_all, cc: cc, bcc: bcc, quote: quote, from: from)
+      end
+
+      # hob.mail.send_attachment's reply: the same threading as reply, plus
+      # attachments.
+      def reply_with_attachments(id, body:, reply_all:, cc:, bcc:, quote:, from:, attachments:)
+        reply_message(id, body: body, reply_all: reply_all, cc: cc, bcc: bcc, quote: quote, from: from, attachments: attachments)
       end
 
       def check
@@ -677,11 +678,34 @@ module Email
         all_mailboxes.find { |m| m["role"] == "sent" }&.dig("id")
       end
 
-      def draft(identity, address, to:, cc:, bcc:, subject:, body:)
+      def draft(identity, address, to:, cc:, bcc:, subject:, body:, attachments: [])
         { "mailboxIds" => { drafts_id => true }, "keywords" => { "$draft" => true, "$seen" => true },
           "from" => [ { "name" => identity["name"].presence, "email" => address }.compact ],
           "to" => to.presence, "cc" => cc.presence, "bcc" => bcc.presence, "subject" => subject,
-          "bodyValues" => { "body" => { "value" => body } }, "textBody" => [ { "partId" => "body", "type" => "text/plain" } ] }.compact
+          "bodyValues" => { "body" => { "value" => body } }, "textBody" => [ { "partId" => "body", "type" => "text/plain" } ],
+          "attachments" => attachments.presence, "hasAttachment" => attachments.any? || nil }.compact
+      end
+
+      # reply and reply_with_attachments share every step but the draft's
+      # attachments.
+      def reply_message(id, body:, reply_all:, cc:, bcc:, quote:, from:, attachments: [])
+        writable!
+        sendable!
+        original = emails([ id ], FULL, body: quote).first
+        raise Email::NotFound, "#{backend.name} has no message #{prefixed(id).inspect}" unless original && visible_email?(original)
+
+        identity, address = from ? identity!(from) : identity_for(original)
+        to, copied = reply_recipients(original, reply_all, address)
+        copied = distinct(copied + cc, except: to)
+        subject = original["subject"].to_s
+        subject = "Re: #{subject}".strip unless subject.match?(/\A\s*re:/i)
+        text = quote ? "#{body}#{quoted(original)}" : body
+        message = draft(identity, address, to: to, cc: copied, bcc: bcc, subject: subject, body: text, attachments: attachments)
+        message["inReplyTo"] = Array(original["messageId"]).presence
+        message["references"] = (Array(original["references"]) + Array(original["messageId"])).last(MAX_REFERENCES).presence
+        sent = submit(message.compact, identity)
+        answered(id)
+        sent
       end
 
       # Write the draft and send it in one request. -> the sent message.

@@ -19,6 +19,8 @@
     </dl>
     <% if (records = records_context(r)) %>
       <%= render "records_context", request: r, context: records %>
+    <% elsif (people = people_context(r)) %>
+      <%= render "people_context", request: r, context: people %>
     <% else %>
       <pre><%= JSON.pretty_generate(r.arguments) %></pre>
     <% end %>

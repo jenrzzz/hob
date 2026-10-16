@@ -1,0 +1,54 @@
+<h1>People</h1>
+<p class="muted">Who the household knows (PEOPLE.md). Loops open and close themselves from texts; merges, new handles, and dismissals wait in Sentinel.</p>
+
+<h1 style="margin-top: 24px">Open loops</h1>
+<section class="card">
+  <% if @loops["loops"].empty? %>
+    <p class="muted">Nothing open.</p>
+  <% else %>
+    <div class="table-wrap">
+      <table>
+        <tr><th>Who</th><th>What</th><th>Waiting</th><th>Whose</th><th>Realm</th><th>Summary</th></tr>
+        <% @loops["loops"].each do |l| %>
+          <tr id="loop-<%= l["id"] %>">
+            <td><% if (p = l["person"]) %><%= link_to p["display_name"], admin_person_path(p["id"]) %><% else %><%= l.dig("group", "name") %><% end %></td>
+            <td><%= l["kind"].tr("_", " ") %><% if l["channel"] %> <span class="muted">· <%= l["channel"] %></span><% end %></td>
+            <td title="<%= l["opened_at"] %>"><%= l["age_days"] %>d</td>
+            <td><%= l["whose"] || "household" %></td>
+            <td><%= l["realm"] %></td>
+            <td><%= l["summary"] %></td>
+          </tr>
+        <% end %>
+      </table>
+    </div>
+    <% if @loops["truncated"] %><p class="muted"><%= @loops["matched"] - @loops["count"] %> more.</p><% end %>
+  <% end %>
+</section>
+
+<h1 style="margin-top: 32px">Everyone</h1>
+<section class="card">
+  <%= form_with url: admin_people_path, method: :get, class: "row" do |f| %>
+    <%= f.text_field :q, value: params[:q], placeholder: "name, alias, or handle", "aria-label": "Search" %>
+    <%= f.button "Search" %>
+  <% end %>
+  <% if @people["people"].empty? %>
+    <p class="muted">No one yet. <code>bin/rails "hob:people:seed[backend]"</code> starts from a text backend's chats.</p>
+  <% else %>
+    <div class="table-wrap">
+      <table>
+        <tr><th>Name</th><th>Circles</th><th>Open</th><th>Last contact</th><th>Usual gap</th><th>Realm</th></tr>
+        <% @people["people"].each do |p| %>
+          <tr>
+            <td><%= link_to p["display_name"], admin_person_path(p["id"]) %><% if p["automated"] %> <span class="tag">automated</span><% end %><% if p.dig("contact", "quiet") %> <span class="tag">quiet</span><% end %></td>
+            <td><%= p["circles"].join(", ") %></td>
+            <td><%= p["open_loops"].positive? ? p["open_loops"] : "" %></td>
+            <td><% if (at = p.dig("contact", "last_contact_at")) %><span title="<%= at %>"><%= time_ago_in_words(Time.iso8601(at)) %> ago</span><% else %>—<% end %></td>
+            <td><%= p.dig("contact", "expected_days") ? "#{p.dig('contact', 'expected_days')}d" : "" %></td>
+            <td><%= p["realm"] %></td>
+          </tr>
+        <% end %>
+      </table>
+    </div>
+    <% if @people["truncated"] %><p class="muted">Showing <%= @people["count"] %> of <%= @people["matched"] %>; search to narrow.</p><% end %>
+  <% end %>
+</section>

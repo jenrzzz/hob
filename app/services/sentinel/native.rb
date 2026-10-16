@@ -70,7 +70,19 @@ module Sentinel
       "records_collection_create" => "Sentinel::Native::RecordsCollectionCreate",
       "records_collection_update" => "Sentinel::Native::RecordsCollectionUpdate",
       "records_delete" => "Sentinel::Native::RecordsDelete",
-      "records_collection_delete" => "Sentinel::Native::RecordsCollectionDelete"
+      "records_collection_delete" => "Sentinel::Native::RecordsCollectionDelete",
+      "people_list" => "Sentinel::Native::PeopleList",
+      "people_get" => "Sentinel::Native::PeopleGet",
+      "people_loops" => "Sentinel::Native::PeopleLoops",
+      "people_groups" => "Sentinel::Native::PeopleGroups",
+      "people_create" => "Sentinel::Native::PeopleCreate",
+      "people_update" => "Sentinel::Native::PeopleUpdate",
+      "people_record" => "Sentinel::Native::PeopleRecord",
+      "people_note" => "Sentinel::Native::PeopleNote",
+      "people_loop_snooze" => "Sentinel::Native::PeopleLoopSnooze",
+      "people_handle_add" => "Sentinel::Native::PeopleHandleAdd",
+      "people_merge" => "Sentinel::Native::PeopleMerge",
+      "people_loop_dismiss" => "Sentinel::Native::PeopleLoopDismiss"
     }.freeze
 
     module_function

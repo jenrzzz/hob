@@ -9,7 +9,7 @@ full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 [BUDGET.md](BUDGET.md) for its budget, [CALENDARS.md](CALENDARS.md) for its
 calendars, [MAIL.md](MAIL.md) for its mail, [TEXTS.md](TEXTS.md) for its
 text messages, [RECORDS.md](RECORDS.md) for what
-its agents keep, mise's `docs/HOB.md` for its kitchen,
+its agents keep, [PEOPLE.md](PEOPLE.md) for who it knows, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure,
 [SCHEDULES.md](SCHEDULES.md) for its clock,
 [BROWSE.md](BROWSE.md) for the household's browser,
@@ -311,6 +311,27 @@ bin/rails "hob:sentinel:policy[muse,text.*,allow]"         # text.send still wai
 ```
 
 `OWNER=`, `KEY=`, `READ_ONLY=1`, and `ENABLED=0` are the other knobs.
+
+## People
+
+Who the household knows ([PEOPLE.md](PEOPLE.md)): people and the handles
+that reach them, the groups they are in, an append-only log of what passed
+between them and the household, notes with bylines, and the **open loops**
+derived from that log: the reach-out not answered, the reply owed, the
+answer awaited. hob keeps this one itself. Every text backend's stream is
+read on hob's clock (`PeopleSyncJob`, every 10 minutes), so an incoming 1:1
+text opens a loop and the reply, sent from anywhere, closes it. Agents
+read the brief on a person before they answer them; merging two records,
+adding a handle to someone known, and dismissing a loop wait for a person.
+
+```sh
+bin/rails "hob:people:seed[jenner-messages]"              # a person per chat participant, a group per group chat
+bin/rails hob:people:sync                                 # what the job does; the first run only notes where the stream is
+bin/rails "hob:people:backfill[jenner-messages,2026-09-01]"   # read back over what came before
+bin/rails hob:people:loops OLDER_THAN=7                   # what has waited a week
+bin/rails "hob:people:realm[+15550001111,household]"      # let household agents know someone exists
+bin/rails "hob:sentinel:policy[muse,people.*,allow]"      # merges, handles, and dismissals still wait for a person
+```
 
 ## Meals: mise
 

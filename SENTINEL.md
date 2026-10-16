@@ -182,7 +182,8 @@ glob | *) → effect`, plus constraints, limits, and guidance.
 
 **Some capabilities only a person may approve.** A native capability
 whose handler says `requires_person` (`records.collection.create`,
-`.collection.update`, `.delete`, and `.collection.delete`: RECORDS.md)
+`.collection.update`, `.delete`, and `.collection.delete`: RECORDS.md;
+`people.merge`, `people.handle.add`, and `people.loop.dismiss`: PEOPLE.md)
 is held for a person under any rule that would `allow` or `review` it, a
 `*` among them; a rule naming one exactly may only `confirm` or `deny`
 it, and the steward grants it at `confirm` whatever it was asked for.

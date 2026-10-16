@@ -44,7 +44,7 @@ module Records
 
   # What a ref may name (RECORDS.md, "Refs"). hob checks a ref's shape, never
   # that the thing exists.
-  REF_KINDS = %w[rec budget todo mise board mission].freeze
+  REF_KINDS = %w[rec budget todo mise board mission person].freeze
   REF = /\A(#{REF_KINDS.join('|')}):\S+\z/
   REF_LIMIT = 300
 

@@ -1,0 +1,50 @@
+<% person = @brief["person"] %>
+<% contact = @brief["contact"] %>
+<h1><%= person["display_name"] %><% if person["automated"] %> <span class="tag">automated</span><% end %></h1>
+<section class="card">
+  <dl class="facts">
+    <% if person["names"].any? %><dt>Also</dt><dd><%= person["names"].join(", ") %></dd><% end %>
+    <dt>Handles</dt><dd><%= person["handles"].map { |h| "#{h['address']}#{" (#{h['label']})" if h['label']}#{' · no loops' unless h['opens_loops']}" }.join(" · ").presence || "none" %></dd>
+    <dt>Circles</dt><dd><%= @brief["groups"].map { |g| g["name"] }.join(", ").presence || "none" %></dd>
+    <% if @brief["mutual"].any? %><dt>Knows</dt><dd><%= safe_join(@brief["mutual"].map { |m| link_to(m["display_name"], admin_person_path(m["id"])) }, ", ") %></dd><% end %>
+    <dt>Last heard from</dt><dd><%= contact["last_inbound_at"] || "—" %></dd>
+    <dt>Last reached</dt><dd><%= contact["last_outbound_at"] || "—" %></dd>
+    <dt>Rhythm</dt><dd><%= contact["expected_days"] ? "every #{contact['expected_days']} days#{' (set by a person)' if person['cadence_days']}" : "not enough history" %><% if contact["quiet"] %> · <strong>gone quiet</strong><% end %></dd>
+    <% if @brief["upcoming_dates"].any? %><dt>Coming up</dt><dd><%= @brief["upcoming_dates"].map { |d| "#{d['kind']} #{d['next']} (#{d['in_days']}d)" }.join(" · ") %></dd><% end %>
+    <dt>Realm</dt><dd><%= person["realm"] %> · <%= person["whose"] || "the household's" %></dd>
+    <% if @brief["merged_from"].any? %><dt>Merged from</dt><dd><code><%= @brief["merged_from"].join(", ") %></code></dd><% end %>
+  </dl>
+</section>
+
+<h1 style="margin-top: 32px">Open loops</h1>
+<section class="card">
+  <% if @brief["open_loops"].empty? %><p class="muted">Nothing open.</p><% end %>
+  <% @brief["open_loops"].each do |l| %>
+    <p><strong><%= l["kind"].tr("_", " ") %></strong> · <%= l["age_days"] %>d<% if l["state"] == "snoozed" %> · snoozed until <%= l["snoozed_until"] %><% end %> · <%= l["summary"] %> <span class="muted"><code><%= l["id"] %></code></span></p>
+  <% end %>
+</section>
+
+<h1 style="margin-top: 32px">Notes</h1>
+<section class="card">
+  <% if @brief["notes"].empty? %><p class="muted">None.</p><% end %>
+  <% @brief["notes"].each do |n| %>
+    <p><%= n["body"] %> <span class="muted">— <%= n.dig("by", "principal") %>, <%= n["at"] %>, <%= n["realm"] %></span></p>
+  <% end %>
+</section>
+
+<h1 style="margin-top: 32px">Recent</h1>
+<section class="card">
+  <% if @brief["recent_events"].empty? %><p class="muted">Nothing yet.</p><% end %>
+  <div class="table-wrap">
+    <table>
+      <% @brief["recent_events"].each do |e| %>
+        <tr>
+          <td title="<%= e["at"] %>"><%= Time.iso8601(e["at"]).in_time_zone(Texts.zone).strftime("%b %-d %Y, %-l:%M%P") %></td>
+          <td><%= e["kind"].tr("_", " ") %><% if e["direction"] %> · <%= e["direction"] %><% end %><% if e["channel"] %> · <%= e["channel"] %><% end %></td>
+          <td><%= e["summary"] %></td>
+          <td class="muted"><%= e.dig("source", "kind") %><% if e.dig("source", "by") %> · <%= e.dig("source", "by") %><% end %></td>
+        </tr>
+      <% end %>
+    </table>
+  </div>
+</section>

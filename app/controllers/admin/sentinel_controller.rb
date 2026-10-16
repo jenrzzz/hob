@@ -2,7 +2,7 @@ module Admin
   # What hob:sentinel:pending, :decide and :petition do from a terminal: the
   # requests and petitions waiting on a person, and deciding them.
   class SentinelController < BaseController
-    helper_method :existing_grant, :records_context
+    helper_method :existing_grant, :records_context, :people_context
 
     def index
       @requests = SentinelRequest.pending.recent.includes(:capability, :principal, :authorization_claim)
@@ -52,6 +52,26 @@ module Admin
       when "records.collection.delete"
         live = collection.records.live
         { kind: "collection_delete", collection: collection, count: live.count, last: live.maximum(:updated_at) }
+      end
+    end
+
+    # What a person needs to see to decide a people.* request only a person
+    # may approve (PEOPLE.md): both records a merge would make one, whose a
+    # handle already is, the loop a dismissal would close. nil for anything else.
+    def people_context(request)
+      name = request.capability.name
+      return nil unless request.capability.requires_person? && name.start_with?("people.")
+
+      args = request.arguments
+      find = lambda do |value|
+        People.person!(value)
+      rescue People::Error
+        nil
+      end
+      case name
+      when "people.merge" then { into: find.call(args["into"]), from: find.call(args["from"]) }
+      when "people.handle.add" then { person: find.call(args["person"]), owner: find.call(args["handle"]) }
+      when "people.loop.dismiss" then { loop: PeopleLoop.outstanding.find_by(id: args["loop"].to_s.delete_prefix("loop:")) }
       end
     end
 

@@ -1068,3 +1068,73 @@ namespace :hob do
     end
   end
 end
+
+# People (PEOPLE.md): who the household knows, and what is still open.
+namespace :hob do
+  namespace :people do
+    desc "Read every text backend's stream since the last run into events and loops (what PeopleSyncJob does)"
+    task sync: :environment do
+      Clearance.with("intimate") do
+        Current.set(surface: People::Sync::SURFACE) { People::Sync.run!.each { |report| puts report } }
+      end
+    end
+
+    desc "Read back over a text backend's messages from a date into events and loops: " \
+         "bin/rails \"hob:people:backfill[jenner-messages,2026-09-01]\". Safe to repeat; run hob:people:sync first"
+    task :backfill, [ :backend, :since ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:people:backfill[backend,YYYY-MM-DD]\"" if args[:backend].blank?
+
+      Clearance.with("intimate") do
+        Current.set(surface: People::Sync::SURFACE) do
+          backend = TextBackend.find_by!(name: args[:backend])
+          since = args[:since].present? ? Date.iso8601(args[:since]).in_time_zone(Texts.zone) : 30.days.ago
+          puts People::Sync.backfill!(backend, since: since)
+        end
+      end
+    end
+
+    desc "Start the Rolodex from a text backend's chats: a person per participant, a group per group chat. " \
+         "bin/rails \"hob:people:seed[jenner-messages]\""
+    task :seed, [ :backend ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:people:seed[backend]\"" if args[:backend].blank?
+
+      Clearance.with("intimate") do
+        result = People::Sync.seed!(TextBackend.find_by!(name: args[:backend]))
+        puts "#{result[:chats]} chats read; #{result[:groups]} group chats; #{result[:people]} people known"
+      end
+    end
+
+    desc "List open loops, the longest-waiting first: bin/rails hob:people:loops [OLDER_THAN=7]"
+    task loops: :environment do
+      Clearance.with("intimate") do
+        filters = { "limit" => 200 }
+        filters["older_than"] = ENV["OLDER_THAN"] if ENV["OLDER_THAN"].present?
+        rows = People.loops(filters)["loops"]
+        puts "no open loops" if rows.empty?
+        rows.each do |row|
+          puts "#{row['id']}  #{row['age_days'].to_s.rjust(4)}d  #{row['kind'].ljust(18)} #{(row.dig('person', 'display_name') || row.dig('group', 'name')).to_s.ljust(24)} " \
+               "#{row['realm'].ljust(9)} #{row['summary']}"
+        end
+      end
+    end
+
+    desc "Move a person to another realm, with their handles: bin/rails \"hob:people:realm[<person id or handle>,household]\". " \
+         "Lowering it lets that realm see they exist; their events, loops, and notes keep their own realms"
+    task :realm, [ :person, :realm ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:people:realm[person,realm]\"" if args[:person].blank? || args[:realm].blank?
+
+      Clearance.with("intimate") do
+        person = People.person!(args[:person])
+        Realm.rank_of(args[:realm])
+        Person.transaction do
+          person.update!(realm: args[:realm])
+          person.handles.update_all(realm: args[:realm])
+          person.memberships.includes(:group).each { |m| m.update!(realm: People.higher(args[:realm], m.group.realm)) }
+        end
+        puts "#{person.display_name} (#{person.id}) is #{person.realm}"
+      rescue People::Error, ArgumentError => e
+        abort e.message
+      end
+    end
+  end
+end

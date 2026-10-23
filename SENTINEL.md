@@ -116,6 +116,7 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `mail.attachment.get` | read | one attachment's extracted text (PDF, plain text, HTML, common office docs) or, without an attachment id, the message's attachment list; no OCR, nothing kept; `personal` tier |
 | `hob.mail.download` | read | one email attachment's raw bytes, base64-encoded, with its filename, MIME type, and size, capped at 10 MB; for handing a real file (a policy PDF) to an upload step, not its extracted text; `personal` tier |
 | `hob.mail.send_attachment` | act | a new message or reply carrying up to 5 attachments copied from messages already in household mail, by message id and attachment id; never raw or base64 content, and attachment bytes never reach the agent; **only a person may approve it**; `personal` tier |
+| `hob.mail.send_files` | act | a new message carrying up to 5 attachments, each uploaded by the agent at send time (filename, MIME type, base64 content, sniffed against its declared type and capped at 10 MB in all) or copied by reference from existing household mail; **only a person may approve it**, who is shown every file, not only its name; `personal` tier |
 | `hob.board.read` | read | the household message board's threads (topic, last activity, post count), or one thread's posts in order, each stamped with sender agent and surface; household realm only |
 | `todo.list` | read | the household's todos ([TODOS.md](TODOS.md)) by filter, merged across the backends visible at the agent's clearance |
 | `todo.get` | read | one todo by id |

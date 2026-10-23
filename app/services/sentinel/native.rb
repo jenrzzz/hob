@@ -44,6 +44,7 @@ module Sentinel
       "attachment_get" => "Sentinel::Native::AttachmentGet",
       "mail_download" => "Sentinel::Native::MailDownload",
       "mail_send_attachment" => "Sentinel::Native::MailSendAttachment",
+      "mail_send_files" => "Sentinel::Native::MailSendFiles",
       "text_chats" => "Sentinel::Native::TextChats",
       "text_messages" => "Sentinel::Native::TextMessages",
       "text_poll" => "Sentinel::Native::TextPoll",

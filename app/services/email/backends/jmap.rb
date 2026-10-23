@@ -176,6 +176,24 @@ module Email
         reply_message(id, body: body, reply_all: reply_all, cc: cc, bcc: bcc, quote: quote, from: from)
       end
 
+      # hob.mail.send_files: a new attachment's bytes, uploaded as a blob
+      # (RFC 8620 §6.1) so it can be attached the same way a reference's
+      # blobId is — through Email/set, never downloaded back out. JMAP core
+      # defines no way to delete a blob outright; an upload that is never
+      # attached to a sent message simply expires with the account's own
+      # unreferenced-blob housekeeping.
+      def upload_blob(bytes, type)
+        writable!
+        sendable!
+        status, response = deliver("POST", upload_url, body: bytes, headers: auth_headers.merge("Content-Type" => type.presence || "application/octet-stream"))
+        raise status_error(status, response, "#{backend.name}'s JMAP upload") unless status.between?(200, 299)
+
+        blob_id = parse(response)["blobId"]
+        raise Email::Unavailable, "#{backend.name}'s JMAP upload answered without a blobId" if blob_id.blank?
+
+        blob_id
+      end
+
       # hob.mail.send_attachment's reply: the same threading as reply, plus
       # attachments.
       def reply_with_attachments(id, body:, reply_all:, cc:, bcc:, quote:, from:, attachments:)
@@ -458,6 +476,15 @@ module Email
       def attachment_json(part)
         { "id" => part["blobId"], "filename" => part["name"], "content_type" => part["type"], "size" => part["size"],
           "inline" => part["disposition"].to_s.casecmp?("inline") }
+      end
+
+      # JMAP's upload URL template (RFC 8620 §6.1), expanded by hand: the
+      # one placeholder it defines.
+      def upload_url
+        template = session["uploadUrl"].to_s
+        raise Email::Unavailable, "#{backend.name}'s JMAP session offers no upload URL" if template.blank?
+
+        template.gsub("{accountId}", ERB::Util.url_encode(account))
       end
 
       # JMAP's download URL template (RFC 8620 §6.2), expanded by hand: the

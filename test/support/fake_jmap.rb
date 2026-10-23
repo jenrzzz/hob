@@ -18,6 +18,7 @@ class FakeJmap
   SESSION = "https://api.fastmail.com/jmap/session".freeze
   API = "https://api.fastmail.com/jmap/api/".freeze
   DOWNLOAD = "https://api.fastmail.com/jmap/download/{accountId}/{blobId}/{name}?type={type}".freeze
+  UPLOAD = "https://api.fastmail.com/jmap/upload/{accountId}/".freeze
   TOKEN = "api-token".freeze
   ACCOUNT = "u1".freeze
   MAIL = "urn:ietf:params:jmap:mail".freeze
@@ -91,12 +92,17 @@ class FakeJmap
       blob_id = CGI.unescape(url.delete_prefix("https://api.fastmail.com/jmap/download/").split("/")[1].to_s)
       return @blobs.key?(blob_id) ? [ 200, @blobs[blob_id] ] : [ 404, "" ]
     end
+    if verb == "POST" && url == UPLOAD.sub("{accountId}", ACCOUNT)
+      blob_id = "blob-#{@next += 1}"
+      @blobs[blob_id] = body.dup.force_encoding(Encoding::BINARY)
+      return [ 200, JSON.generate("accountId" => ACCOUNT, "blobId" => blob_id, "type" => headers["Content-Type"], "size" => body.bytesize) ]
+    end
 
     [ 404, "" ]
   end
 
   def api_calls
-    @calls.select { |call| call.verb == "POST" }
+    @calls.select { |call| call.verb == "POST" && call.url == API }
   end
 
   # The arguments of the last call to `name`.
@@ -109,7 +115,7 @@ class FakeJmap
   def session
     accounts = { MAIL => ACCOUNT }
     accounts[SUBMISSION] = ACCOUNT if can_send
-    { "username" => ME["email"], "apiUrl" => API, "downloadUrl" => DOWNLOAD, "primaryAccounts" => accounts,
+    { "username" => ME["email"], "apiUrl" => API, "downloadUrl" => DOWNLOAD, "uploadUrl" => UPLOAD, "primaryAccounts" => accounts,
       "accounts" => { ACCOUNT => { "name" => ME["email"], "isReadOnly" => read_only == true } },
       "capabilities" => { "urn:ietf:params:jmap:core" => {}, MAIL => {} } }
   end

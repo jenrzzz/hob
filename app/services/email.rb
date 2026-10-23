@@ -36,6 +36,15 @@ module Email
   ATTACHMENT_ARGUMENTS = %w[id attachment max_bytes].freeze
   SEND_ATTACHMENT_ARGUMENTS = %w[from_account to cc subject body quote reply_all reply_to_message_id attachments reason].freeze
   ATTACHMENT_REF_ARGUMENTS = %w[message_id attachment_id filename].freeze
+  SEND_FILES_ARGUMENTS = %w[account to cc subject body attachments reason].freeze
+  FILE_UPLOAD_ARGUMENTS = %w[filename mime_type content_base64].freeze
+  FILE_REF_ARGUMENTS = %w[message_id attachment_id].freeze
+  FILE_MIME_TYPES = %w[image/jpeg image/png image/heic image/webp application/pdf text/plain
+                        application/vnd.openxmlformats-officedocument.wordprocessingml.document].freeze
+  FILE_FILENAME = /\A[^\/\\]{1,128}\z/
+  HEIC_BRANDS = %w[heic heix heim heis hevc mif1 msf1].freeze
+  MAX_FILES = 5
+  MAX_FILES_BYTES = 10.megabytes
   MAX_ATTACHMENTS = 5
   MAX_ATTACHMENTS_BYTES = 20.megabytes
   MAX_ATTACHMENT_SUBJECT = 300
@@ -254,6 +263,29 @@ module Email
                                                                      subject: text!(arguments["subject"], "subject", MAX_ATTACHMENT_SUBJECT),
                                                                      body: body, from: nil, attachments: parts)
       end
+    { "message" => shown(sent), "sent" => true, "attachments" => resolved.map { |r| r[:summary] } }
+  end
+
+  # hob.mail.send_files: a new message, like send_message, but carrying up
+  # to MAX_FILES attachments — each either new bytes the agent supplies
+  # (filename, mime type, base64, sniffed against its declared type) or a
+  # reference resolved exactly as send_attachment resolves one. Unlike
+  # send_attachment, new bytes do reach hob, long enough to be sniffed,
+  # measured, and uploaded as a blob; nothing is kept once the message is
+  # sent or the request is otherwise done with.
+  def send_files(arguments)
+    arguments = known!(arguments, SEND_FILES_ARGUMENTS, "argument")
+    backend = one_backend!(arguments["account"])
+    to = addresses!(arguments["to"], "to")
+    cc = addresses!(arguments["cc"], "cc")
+    raise Invalid, "to is required: who the message is for" if to.empty?
+
+    recipients!(to + cc)
+    subject = text!(arguments["subject"], "subject", MAX_SUBJECT)
+    body = body!(arguments["body"])
+    resolved = resolve_files!(file_entries!(arguments["attachments"]), backend.name)
+    sent = backend.adapter.send_with_attachments(to: to, cc: cc, bcc: [], subject: subject, body: body, from: nil,
+                                                 attachments: resolved.map { |r| r[:part] })
     { "message" => shown(sent), "sent" => true, "attachments" => resolved.map { |r| r[:summary] } }
   end
 
@@ -510,6 +542,112 @@ module Email
     { part: { "blobId" => ref["attachment_id"], "type" => found["content_type"], "name" => filename, "disposition" => "attachment" },
       summary: { "size" => found["size"], "filename" => filename, "mime_type" => found["content_type"],
                  "attachment_id" => ref["attachment_id"], "source_message_id" => message_id } }
+  end
+
+  def file_entries!(value)
+    entries = value.is_a?(Array) ? value : []
+    raise Invalid, "attachments is required: 1 to #{MAX_FILES} files, new or already in household mail" if entries.empty?
+    raise Invalid, "at most #{MAX_FILES} attachments" if entries.size > MAX_FILES
+
+    entries
+  end
+
+  # Each entry is either a new upload (filename, mime_type, content_base64)
+  # or a reference (message_id, attachment_id) — never a mix of both
+  # shapes' keys, and never anything else.
+  def file_entry!(entry)
+    raise Invalid, "attachments: each one is an upload (filename, mime_type, content_base64) or a reference " \
+                   "(message_id, attachment_id)" unless entry.is_a?(Hash)
+
+    entry = entry.deep_stringify_keys
+    if entry.key?("message_id") || entry.key?("attachment_id")
+      file_ref!(entry)
+    elsif entry.key?("filename") || entry.key?("mime_type") || entry.key?("content_base64")
+      file_upload!(entry)
+    else
+      raise Invalid, "attachments: each one is an upload (filename, mime_type, content_base64) or a reference " \
+                     "(message_id, attachment_id)"
+    end
+  end
+
+  def file_ref!(entry)
+    unknown = entry.keys - FILE_REF_ARGUMENTS
+    raise Invalid, "attachments: unknown key#{'s' if unknown.size > 1} #{unknown.join(', ')}" if unknown.any?
+    raise Invalid, "attachments: message_id is required" if entry["message_id"].blank?
+    raise Invalid, "attachments: attachment_id is required" if entry["attachment_id"].blank?
+
+    { kind: :ref, ref: entry }
+  end
+
+  def file_upload!(entry)
+    unknown = entry.keys - FILE_UPLOAD_ARGUMENTS
+    raise Invalid, "attachments: unknown key#{'s' if unknown.size > 1} #{unknown.join(', ')}" if unknown.any?
+
+    filename = entry["filename"].to_s
+    raise Invalid, "attachments: filename is required" if entry["filename"].blank?
+    raise Invalid, "attachments: filename #{filename.inspect} may not contain a path separator" unless filename.match?(FILE_FILENAME)
+
+    mime_type = entry["mime_type"]
+    unless FILE_MIME_TYPES.include?(mime_type)
+      raise Invalid, "attachments: mime_type must be one of #{FILE_MIME_TYPES.join(', ')}, got #{mime_type.inspect}"
+    end
+    raise Invalid, "attachments: content_base64 is required" if entry["content_base64"].blank?
+
+    bytes = strict_decode64!(entry["content_base64"], filename)
+    if file_type_mismatch?(mime_type, bytes)
+      raise Invalid, "attachments: #{filename} is declared #{mime_type} but its bytes are not #{mime_type}"
+    end
+
+    { kind: :upload, filename: filename, mime_type: mime_type, bytes: bytes }
+  end
+
+  def strict_decode64!(value, filename)
+    Base64.strict_decode64(value.to_s)
+  rescue ArgumentError
+    raise Invalid, "attachments: #{filename}'s content_base64 is not valid base64"
+  end
+
+  # Magic bytes for the mime types send_files accepts: a declared type
+  # whose bytes don't match it is refused before anything is uploaded, so
+  # a jpeg claimed over a ZIP or an executable never reaches the account.
+  # text/plain has no signature of its own; it is refused only when the
+  # bytes are plainly one of the other types instead.
+  def file_type_mismatch?(mime_type, bytes)
+    head = bytes.byteslice(0, 12).to_s
+    case mime_type
+    when "image/jpeg" then head.byteslice(0, 3) != "\xFF\xD8\xFF".b
+    when "image/png" then head.byteslice(0, 8) != "\x89PNG\r\n\x1A\n".b
+    when "image/webp" then head.byteslice(0, 4) != "RIFF".b || head.byteslice(8, 4) != "WEBP".b
+    when "image/heic" then head.byteslice(4, 4) != "ftyp".b || !HEIC_BRANDS.include?(head.byteslice(8, 4).to_s)
+    when "application/pdf" then head.byteslice(0, 5) != "%PDF-".b
+    when "application/vnd.openxmlformats-officedocument.wordprocessingml.document" then head.byteslice(0, 2) != "PK".b
+    when "text/plain"
+      head.byteslice(0, 3) == "\xFF\xD8\xFF".b || head.byteslice(0, 8) == "\x89PNG\r\n\x1A\n".b ||
+        head.byteslice(0, 5) == "%PDF-".b || head.byteslice(0, 2) == "PK".b || head.byteslice(0, 4) == "RIFF".b
+    else
+      true
+    end
+  end
+
+  # Classify and validate every entry, resolve references the same way
+  # resolve_attachment! does (a lookup, never a download), and total every
+  # upload's decoded bytes and every reference's declared size under
+  # MAX_FILES_BYTES before a single new blob is uploaded.
+  def resolve_files!(raw_entries, backend_name)
+    entries = raw_entries.map { |entry| file_entry!(entry) }
+    entries.each { |entry| entry[:resolved] = resolve_attachment!(entry[:ref], backend_name) if entry[:kind] == :ref }
+
+    total = entries.sum { |entry| entry[:kind] == :upload ? entry[:bytes].bytesize : entry[:resolved][:summary]["size"].to_i }
+    raise Invalid, "attachments total #{total} bytes, over the #{MAX_FILES_BYTES} byte limit" if total > MAX_FILES_BYTES
+
+    entries.map { |entry| entry[:kind] == :ref ? entry[:resolved] : upload_file!(entry, backend_name) }
+  end
+
+  def upload_file!(entry, backend_name)
+    blob_id = backend!(backend_name).adapter.upload_blob(entry[:bytes], entry[:mime_type])
+    { part: { "blobId" => blob_id, "type" => entry[:mime_type], "name" => entry[:filename], "disposition" => "attachment" },
+      summary: { "filename" => entry[:filename], "mime_type" => entry[:mime_type], "bytes" => entry[:bytes].bytesize,
+                 "sha256" => Digest::SHA256.hexdigest(entry[:bytes]) } }
   end
 
   def from!(value)

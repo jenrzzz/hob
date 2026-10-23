@@ -1,0 +1,42 @@
+<%# A pending hob.mail.send_files request, shown as what it would send —
+    with a thumbnail for bytes the stack can preview inline, never the raw
+    base64 (PR #67's implementer notes flagged this card was missing). %>
+<dl class="facts">
+  <dt>From</dt><dd><%= context[:account].presence || "(sender's default account)" %></dd>
+  <dt>To</dt><dd><%= context[:to].join(", ") %></dd>
+  <% if context[:cc].present? %><dt>Cc</dt><dd><%= context[:cc].join(", ") %></dd><% end %>
+  <dt>Subject</dt><dd><%= context[:subject] %></dd>
+</dl>
+<pre><%= context[:body] %></pre>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px">
+  <% context[:attachments].each do |a| %>
+    <div class="card">
+      <% if a[:kind] == :ref %>
+        <dl class="facts">
+          <dt>Reference</dt><dd>already in household mail; no bytes carried</dd>
+          <dt>Message</dt><dd><code><%= a[:message_id] %></code></dd>
+          <dt>Attachment</dt><dd><code><%= a[:attachment_id] %></code></dd>
+        </dl>
+      <% else %>
+        <% case a[:preview][:kind] %>
+        <% when :image %>
+          <img src="<%= a[:preview][:data_uri] %>" alt="<%= a[:filename] %>" style="max-width: 120px; max-height: 120px; display: block; margin-bottom: 4px">
+        <% when :pdf %>
+          <div class="muted" style="margin-bottom: 4px">PDF — no inline preview in this stack</div>
+        <% when :text %>
+          <pre style="max-height: 120px; overflow: auto"><%= a[:preview][:excerpt] %></pre>
+        <% when :unsupported %>
+          <div class="muted" style="margin-bottom: 4px"><%= a[:preview][:note] %></div>
+        <% when :undecodable %>
+          <div class="muted" style="margin-bottom: 4px">Could not decode: invalid base64</div>
+        <% end %>
+        <dl class="facts">
+          <dt>Filename</dt><dd><%= a[:filename] %></dd>
+          <dt>Type</dt><dd><code><%= a[:mime_type] %></code></dd>
+          <dt>Size</dt><dd><%= a[:size] ? number_to_human_size(a[:size]) : "unknown" %></dd>
+          <dt>SHA-256</dt><dd><code><%= a[:sha256] || "unknown" %></code></dd>
+        </dl>
+      <% end %>
+    </div>
+  <% end %>
+</div>

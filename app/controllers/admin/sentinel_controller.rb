@@ -2,7 +2,11 @@ module Admin
   # What hob:sentinel:pending, :decide and :petition do from a terminal: the
   # requests and petitions waiting on a person, and deciding them.
   class SentinelController < BaseController
-    helper_method :existing_grant, :records_context, :people_context
+    helper_method :existing_grant, :records_context, :people_context, :mail_send_files_context
+
+    # Browsers render these inline from a data URI with no new dependency;
+    # heic and pdf get a metadata-only placeholder (no renderer in this stack).
+    MAIL_SEND_FILES_IMAGE_TYPES = %w[image/jpeg image/png image/webp].freeze
 
     def index
       @requests = SentinelRequest.pending.recent.includes(:capability, :principal, :authorization_claim)
@@ -75,6 +79,20 @@ module Admin
       end
     end
 
+    # What a person needs to see to decide a pending hob.mail.send_files
+    # request without the generic fallback ever printing raw base64: the
+    # message as it would send, and for each attachment its own facts and,
+    # for bytes the stack can preview inline, a thumbnail built from them.
+    # nil for anything else.
+    def mail_send_files_context(request)
+      return nil unless request.capability.name == "hob.mail.send_files"
+
+      args = request.arguments
+      { account: args["account"], to: Array(args["to"]), cc: Array(args["cc"]),
+        subject: args["subject"], body: args["body"],
+        attachments: Array(args["attachments"]).map { |entry| mail_send_files_attachment(entry) } }
+    end
+
     def decide_request
       row = ::Sentinel.decide!(SentinelRequest.find(params[:id]), decision: params.expect(:decision),
                                decider: current_person, rationale: params[:rationale].presence,
@@ -96,6 +114,58 @@ module Admin
                                                "#{row.error.present? ? " #{row.error}" : ''}"
     rescue Gateway::Invalid, ActionController::ParameterMissing => e
       redirect_to admin_sentinel_path, alert: e.message
+    end
+
+    private
+
+    # A reference (message_id, attachment_id: no bytes) or an upload
+    # (filename, mime_type, content_base64), exactly as Email.file_entry!
+    # tells them apart — but tolerant of whatever a still-pending request
+    # holds, since nothing has validated it yet.
+    def mail_send_files_attachment(entry)
+      entry = entry.is_a?(Hash) ? entry : {}
+      return { kind: :ref, message_id: entry["message_id"], attachment_id: entry["attachment_id"] } if entry.key?("message_id") || entry.key?("attachment_id")
+
+      mail_send_files_upload(entry)
+    end
+
+    def mail_send_files_upload(entry)
+      bytes = mail_send_files_decode(entry["content_base64"])
+      { kind: :upload, filename: entry["filename"], mime_type: entry["mime_type"], size: bytes&.bytesize,
+        sha256: bytes && Digest::SHA256.hexdigest(bytes), preview: mail_send_files_preview(entry["mime_type"], bytes) }
+    end
+
+    def mail_send_files_decode(value)
+      return nil unless value.is_a?(String) && value.present?
+
+      Base64.strict_decode64(value)
+    rescue ArgumentError
+      nil
+    end
+
+    # -> { kind: :image, data_uri } | { kind: :pdf } | { kind: :text, excerpt } |
+    #    { kind: :unsupported, note } | { kind: :undecodable }. Never the bytes
+    #    themselves outside the data URI a real inline image needs.
+    def mail_send_files_preview(mime_type, bytes)
+      return { kind: :undecodable } if bytes.nil?
+
+      case mime_type
+      when *MAIL_SEND_FILES_IMAGE_TYPES
+        { kind: :image, data_uri: "data:#{mime_type};base64,#{Base64.strict_encode64(bytes)}" }
+      when "image/heic"
+        { kind: :unsupported, note: "heic has no inline preview in this stack; showing file facts only" }
+      when "application/pdf"
+        { kind: :pdf }
+      when "text/plain"
+        { kind: :text, excerpt: mail_send_files_excerpt(bytes) }
+      else
+        { kind: :unsupported, note: "no inline preview for this file type; showing file facts only" }
+      end
+    end
+
+    def mail_send_files_excerpt(bytes, limit = 500)
+      text = bytes.dup.force_encoding(Encoding::UTF_8).scrub("�")
+      text.length > limit ? "#{text[0, limit]}…" : text
     end
   end
 end

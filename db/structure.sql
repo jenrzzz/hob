@@ -425,6 +425,22 @@ CREATE TABLE public.gofer_key_changes (
 
 
 --
+-- Name: group_memberships; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.group_memberships (
+    id character varying NOT NULL,
+    group_id character varying NOT NULL,
+    person_id character varying NOT NULL,
+    realm character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.group_memberships FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: guidance_changes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -576,6 +592,156 @@ CREATE SEQUENCE public.model_roles_id_seq
 --
 
 ALTER SEQUENCE public.model_roles_id_seq OWNED BY public.model_roles.id;
+
+
+--
+-- Name: people; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.people (
+    id character varying NOT NULL,
+    display_name character varying NOT NULL,
+    names character varying[] DEFAULT '{}'::character varying[] NOT NULL,
+    key_dates jsonb DEFAULT '[]'::jsonb NOT NULL,
+    automated boolean DEFAULT false NOT NULL,
+    cadence_days integer,
+    realm character varying NOT NULL,
+    principal_id bigint,
+    created_by_id bigint,
+    merged_into_id character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.people FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: people_cursors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.people_cursors (
+    id character varying NOT NULL,
+    source character varying NOT NULL,
+    cursor text,
+    synced_at timestamp(6) without time zone,
+    last_error text,
+    realm character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.people_cursors FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: people_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.people_events (
+    id character varying NOT NULL,
+    person_id character varying,
+    group_id character varying,
+    at timestamp(6) without time zone NOT NULL,
+    kind character varying NOT NULL,
+    direction character varying,
+    channel character varying,
+    summary text,
+    source_kind character varying NOT NULL,
+    source_ref character varying,
+    principal_id bigint,
+    recorded_by_id bigint NOT NULL,
+    surface character varying,
+    sentinel_request_id character varying,
+    supersedes_id character varying,
+    realm character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.people_events FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: people_groups; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.people_groups (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    chat_ref character varying,
+    realm character varying NOT NULL,
+    principal_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.people_groups FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: people_loops; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.people_loops (
+    id character varying NOT NULL,
+    person_id character varying,
+    group_id character varying,
+    principal_id bigint,
+    kind character varying NOT NULL,
+    channel character varying,
+    handle_id character varying,
+    opened_by_id character varying NOT NULL,
+    latest_event_id character varying NOT NULL,
+    opened_at timestamp(6) without time zone NOT NULL,
+    summary text,
+    state character varying DEFAULT 'open'::character varying NOT NULL,
+    closed_by_id character varying,
+    closed_at timestamp(6) without time zone,
+    snoozed_until timestamp(6) without time zone,
+    realm character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.people_loops FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: people_notes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.people_notes (
+    id character varying NOT NULL,
+    person_id character varying,
+    group_id character varying,
+    body text NOT NULL,
+    author_id bigint NOT NULL,
+    surface character varying,
+    sentinel_request_id character varying,
+    realm character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.people_notes FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: person_handles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.person_handles (
+    id character varying NOT NULL,
+    person_id character varying NOT NULL,
+    kind character varying NOT NULL,
+    address character varying NOT NULL,
+    label character varying,
+    opens_loops boolean DEFAULT true NOT NULL,
+    realm character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.person_handles FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -1384,6 +1550,14 @@ ALTER TABLE ONLY public.gofer_key_changes
 
 
 --
+-- Name: group_memberships group_memberships_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.group_memberships
+    ADD CONSTRAINT group_memberships_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: guidance_changes guidance_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1437,6 +1611,62 @@ ALTER TABLE ONLY public.model_prices
 
 ALTER TABLE ONLY public.model_roles
     ADD CONSTRAINT model_roles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: people_cursors people_cursors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_cursors
+    ADD CONSTRAINT people_cursors_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: people_events people_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_events
+    ADD CONSTRAINT people_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: people_groups people_groups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_groups
+    ADD CONSTRAINT people_groups_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: people_loops people_loops_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_loops
+    ADD CONSTRAINT people_loops_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: people_notes people_notes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_notes
+    ADD CONSTRAINT people_notes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: people people_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people
+    ADD CONSTRAINT people_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: person_handles person_handles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.person_handles
+    ADD CONSTRAINT person_handles_pkey PRIMARY KEY (id);
 
 
 --
@@ -1875,6 +2105,20 @@ CREATE INDEX index_gofer_key_changes_on_decider_id ON public.gofer_key_changes U
 
 
 --
+-- Name: index_group_memberships_on_group_id_and_person_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_group_memberships_on_group_id_and_person_id ON public.group_memberships USING btree (group_id, person_id);
+
+
+--
+-- Name: index_group_memberships_on_person_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_group_memberships_on_person_id ON public.group_memberships USING btree (person_id);
+
+
+--
 -- Name: index_guidance_changes_on_decider_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1984,6 +2228,153 @@ CREATE INDEX index_missions_on_sentinel_request_id ON public.missions USING btre
 --
 
 CREATE UNIQUE INDEX index_model_roles_on_role ON public.model_roles USING btree (role);
+
+
+--
+-- Name: index_people_cursors_on_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_people_cursors_on_source ON public.people_cursors USING btree (source);
+
+
+--
+-- Name: index_people_events_on_group_id_and_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_events_on_group_id_and_at ON public.people_events USING btree (group_id, at);
+
+
+--
+-- Name: index_people_events_on_person_id_and_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_events_on_person_id_and_at ON public.people_events USING btree (person_id, at);
+
+
+--
+-- Name: index_people_events_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_events_on_principal_id ON public.people_events USING btree (principal_id);
+
+
+--
+-- Name: index_people_events_on_recorded_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_events_on_recorded_by_id ON public.people_events USING btree (recorded_by_id);
+
+
+--
+-- Name: index_people_events_on_source_kind_and_source_ref; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY ((ARRAY['text'::character varying, 'mail'::character varying, 'calendar'::character varying])::text[])));
+
+
+--
+-- Name: index_people_groups_on_chat_ref; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_people_groups_on_chat_ref ON public.people_groups USING btree (chat_ref) WHERE (chat_ref IS NOT NULL);
+
+
+--
+-- Name: index_people_groups_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_groups_on_principal_id ON public.people_groups USING btree (principal_id);
+
+
+--
+-- Name: index_people_groups_on_realm_and_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_groups_on_realm_and_name ON public.people_groups USING btree (realm, name);
+
+
+--
+-- Name: index_people_loops_on_person_id_and_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_loops_on_person_id_and_state ON public.people_loops USING btree (person_id, state);
+
+
+--
+-- Name: index_people_loops_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_loops_on_principal_id ON public.people_loops USING btree (principal_id);
+
+
+--
+-- Name: index_people_loops_on_state_and_opened_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_loops_on_state_and_opened_at ON public.people_loops USING btree (state, opened_at);
+
+
+--
+-- Name: index_people_notes_on_author_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_notes_on_author_id ON public.people_notes USING btree (author_id);
+
+
+--
+-- Name: index_people_notes_on_group_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_notes_on_group_id_and_created_at ON public.people_notes USING btree (group_id, created_at);
+
+
+--
+-- Name: index_people_notes_on_person_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_notes_on_person_id_and_created_at ON public.people_notes USING btree (person_id, created_at);
+
+
+--
+-- Name: index_people_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_on_created_by_id ON public.people USING btree (created_by_id);
+
+
+--
+-- Name: index_people_on_merged_into_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_on_merged_into_id ON public.people USING btree (merged_into_id);
+
+
+--
+-- Name: index_people_on_names; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_on_names ON public.people USING gin (names);
+
+
+--
+-- Name: index_people_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_people_on_principal_id ON public.people USING btree (principal_id);
+
+
+--
+-- Name: index_person_handles_on_kind_and_address; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_person_handles_on_kind_and_address ON public.person_handles USING btree (kind, address);
+
+
+--
+-- Name: index_person_handles_on_person_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_person_handles_on_person_id ON public.person_handles USING btree (person_id);
 
 
 --
@@ -2372,6 +2763,14 @@ CREATE INDEX index_ward_runs_on_principal_id ON public.ward_runs USING btree (pr
 
 
 --
+-- Name: people_loops fk_rails_01ed8050e8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_loops
+    ADD CONSTRAINT fk_rails_01ed8050e8 FOREIGN KEY (opened_by_id) REFERENCES public.people_events(id);
+
+
+--
 -- Name: sentinel_policies fk_rails_038859ac35; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2460,6 +2859,14 @@ ALTER TABLE ONLY public.herald_key_changes
 
 
 --
+-- Name: people fk_rails_31c0515a2d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people
+    ADD CONSTRAINT fk_rails_31c0515a2d FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: gofer_key_changes fk_rails_35aa256496; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2497,6 +2904,14 @@ ALTER TABLE ONLY public.browse_sessions
 
 ALTER TABLE ONLY public.guidance_changes
     ADD CONSTRAINT fk_rails_4897281c3f FOREIGN KEY (petition_id) REFERENCES public.petitions(id);
+
+
+--
+-- Name: people fk_rails_530d9e4397; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people
+    ADD CONSTRAINT fk_rails_530d9e4397 FOREIGN KEY (created_by_id) REFERENCES public.principals(id);
 
 
 --
@@ -2540,11 +2955,43 @@ ALTER TABLE ONLY public.calendar_contributors
 
 
 --
+-- Name: people_events fk_rails_696e67b95e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_events
+    ADD CONSTRAINT fk_rails_696e67b95e FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: people_notes fk_rails_6b3c452350; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_notes
+    ADD CONSTRAINT fk_rails_6b3c452350 FOREIGN KEY (person_id) REFERENCES public.people(id);
+
+
+--
+-- Name: person_handles fk_rails_6bdcdcdd38; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.person_handles
+    ADD CONSTRAINT fk_rails_6bdcdcdd38 FOREIGN KEY (person_id) REFERENCES public.people(id);
+
+
+--
 -- Name: missions fk_rails_6e053f8b2f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.missions
     ADD CONSTRAINT fk_rails_6e053f8b2f FOREIGN KEY (assignee_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: people_groups fk_rails_713fb7689b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_groups
+    ADD CONSTRAINT fk_rails_713fb7689b FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -2556,11 +3003,35 @@ ALTER TABLE ONLY public.ward_runs
 
 
 --
+-- Name: people_loops fk_rails_79c45c12bb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_loops
+    ADD CONSTRAINT fk_rails_79c45c12bb FOREIGN KEY (latest_event_id) REFERENCES public.people_events(id);
+
+
+--
+-- Name: people_events fk_rails_7d1a2a4a0a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_events
+    ADD CONSTRAINT fk_rails_7d1a2a4a0a FOREIGN KEY (person_id) REFERENCES public.people(id);
+
+
+--
 -- Name: ward_notes fk_rails_7e3b5c0498; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ward_notes
     ADD CONSTRAINT fk_rails_7e3b5c0498 FOREIGN KEY (author_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: people_loops fk_rails_7feaba55be; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_loops
+    ADD CONSTRAINT fk_rails_7feaba55be FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -2604,6 +3075,14 @@ ALTER TABLE ONLY public.ward_findings
 
 
 --
+-- Name: people_events fk_rails_a05e413a4f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_events
+    ADD CONSTRAINT fk_rails_a05e413a4f FOREIGN KEY (recorded_by_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: calendar_events fk_rails_a15b711368; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2628,11 +3107,27 @@ ALTER TABLE ONLY public.guidance_changes
 
 
 --
+-- Name: group_memberships fk_rails_aa20139368; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.group_memberships
+    ADD CONSTRAINT fk_rails_aa20139368 FOREIGN KEY (person_id) REFERENCES public.people(id);
+
+
+--
 -- Name: sentinel_requests fk_rails_aed65976d5; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sentinel_requests
     ADD CONSTRAINT fk_rails_aed65976d5 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: people_notes fk_rails_afe907e911; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_notes
+    ADD CONSTRAINT fk_rails_afe907e911 FOREIGN KEY (group_id) REFERENCES public.people_groups(id);
 
 
 --
@@ -2668,6 +3163,14 @@ ALTER TABLE ONLY public.todo_backends
 
 
 --
+-- Name: people_loops fk_rails_c1e479025a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_loops
+    ADD CONSTRAINT fk_rails_c1e479025a FOREIGN KEY (person_id) REFERENCES public.people(id);
+
+
+--
 -- Name: records fk_rails_c8d9734b1e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2684,11 +3187,27 @@ ALTER TABLE ONLY public.petitions
 
 
 --
+-- Name: people_loops fk_rails_cba21b1ad9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_loops
+    ADD CONSTRAINT fk_rails_cba21b1ad9 FOREIGN KEY (closed_by_id) REFERENCES public.people_events(id);
+
+
+--
 -- Name: authorization_claims fk_rails_cc0ae52300; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.authorization_claims
     ADD CONSTRAINT fk_rails_cc0ae52300 FOREIGN KEY (sentinel_request_id) REFERENCES public.sentinel_requests(id);
+
+
+--
+-- Name: group_memberships fk_rails_d05778f88b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.group_memberships
+    ADD CONSTRAINT fk_rails_d05778f88b FOREIGN KEY (group_id) REFERENCES public.people_groups(id);
 
 
 --
@@ -2748,6 +3267,14 @@ ALTER TABLE ONLY public.schedules
 
 
 --
+-- Name: people_notes fk_rails_e6014eb458; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_notes
+    ADD CONSTRAINT fk_rails_e6014eb458 FOREIGN KEY (author_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: record_collections fk_rails_ec6368c65c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2772,6 +3299,14 @@ ALTER TABLE ONLY public.usage_events
 
 
 --
+-- Name: people_loops fk_rails_f4b8d65e20; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_loops
+    ADD CONSTRAINT fk_rails_f4b8d65e20 FOREIGN KEY (group_id) REFERENCES public.people_groups(id);
+
+
+--
 -- Name: record_collections fk_rails_f4d99c1415; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2785,6 +3320,14 @@ ALTER TABLE ONLY public.record_collections
 
 ALTER TABLE ONLY public.missions
     ADD CONSTRAINT fk_rails_f765c80df4 FOREIGN KEY (created_by_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: people_events fk_rails_f9e37afc25; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.people_events
+    ADD CONSTRAINT fk_rails_f9e37afc25 FOREIGN KEY (group_id) REFERENCES public.people_groups(id);
 
 
 --
@@ -2830,6 +3373,12 @@ ALTER TABLE public.calendar_backends ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: group_memberships; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.group_memberships ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: mail_backends; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2846,6 +3395,48 @@ ALTER TABLE public.message_nodes ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.missions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: people; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.people ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: people_cursors; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.people_cursors ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: people_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.people_events ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: people_groups; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.people_groups ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: people_loops; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.people_loops ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: people_notes; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.people_notes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: person_handles; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.person_handles ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: petitions; Type: ROW SECURITY; Schema: public; Owner: -
@@ -2923,6 +3514,15 @@ CREATE POLICY realm_visibility ON public.conversations USING ((( SELECT realms.r
 
 
 --
+-- Name: group_memberships realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.group_memberships USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (group_memberships.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
 -- Name: mail_backends realm_visibility; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -2947,6 +3547,69 @@ CREATE POLICY realm_visibility ON public.message_nodes USING ((( SELECT realms.r
 CREATE POLICY realm_visibility ON public.missions USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (missions.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: people realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.people USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (people.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: people_cursors realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.people_cursors USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (people_cursors.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: people_events realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.people_events USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (people_events.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: people_groups realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.people_groups USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (people_groups.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: people_loops realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.people_loops USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (people_loops.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: people_notes realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.people_notes USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (people_notes.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: person_handles realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.person_handles USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (person_handles.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -3079,6 +3742,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261016000001'),
 ('20261007140000'),
 ('20261007130000'),
 ('20261007120000'),

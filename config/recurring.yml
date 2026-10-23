@@ -9,6 +9,9 @@ production:
   ward_sweep:
     class: WardSweepJob
     schedule: every hour at minute 7
+  people_sync:
+    class: PeopleSyncJob
+    schedule: every 10 minutes
   upkeep_discover:
     class: UpkeepDiscoverJob
     schedule: every sunday at 1am

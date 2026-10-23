@@ -91,6 +91,7 @@ of thing, then the id it already has.
 | `mise:recipe:<id>`, `mise:meal:<id>` | mise's things |
 | `board:<thread id>` | a board thread |
 | `mission:<ulid>` | a mission |
+| `person:<ulid>` | a person ([PEOPLE.md](PEOPLE.md)) |
 
 That is the whole of hob's "global id": a convention for writing down
 what an id already is, so a record can point at a YNAB transaction

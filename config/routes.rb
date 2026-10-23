@@ -26,6 +26,8 @@ Rails.application.routes.draw do
     post "gofer_keys", to: "gofer_keys#update"
     get "herald_keys", to: "herald_keys#new", as: :herald_keys
     post "herald_keys", to: "herald_keys#update"
+    get "people", to: "people#index"
+    get "people/:id", to: "people#show", as: :person
     get "records", to: "records#index"
     get "records/:name", to: "records#show", as: :records_collection, constraints: { name: %r{[^/]+} }
     post "records/:name/restore", to: "records#restore_collection", as: :restore_records_collection, constraints: { name: %r{[^/]+} }

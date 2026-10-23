@@ -1,0 +1,25 @@
+<%# A people.* request only a person may approve (PEOPLE.md), shown as what it would do. %>
+<% args = request.arguments %>
+<%# Names and handles here were written by senders: everything goes through safe_join, never html_safe. %>
+<% describe = lambda do |p|
+     next tag.span("not found", class: "muted") unless p
+
+     safe_join([ link_to(p.display_name, admin_person_path(p.id)),
+                 " (#{p.realm}; #{p.handles.map(&:address).join(', ').presence || 'no handles'}; #{p.groups.map(&:name).join(', ').presence || 'no circles'})" ])
+   end %>
+<dl class="facts">
+  <% case request.capability.name %>
+  <% when "people.merge" %>
+    <dt>Keep</dt><dd><%= describe.call(context[:into]) %></dd>
+    <dt>Fold in</dt><dd><%= describe.call(context[:from]) %></dd>
+    <dt>Then</dt><dd class="muted">The second answers as the first: its handles, circles, and open loops move; its events and notes are read with the first's.</dd>
+  <% when "people.handle.add" %>
+    <dt>Person</dt><dd><%= describe.call(context[:person]) %></dd>
+    <dt>Add</dt><dd><code><%= args["handle"] %></code><% if (owner = context[:owner]) %> <strong>— already <%= owner.display_name %>'s</strong><% end %></dd>
+  <% when "people.loop.dismiss" %>
+    <% l = context[:loop] %>
+    <dt>Loop</dt><dd><% if l %><%= l.kind.tr("_", " ") %> with <%= describe.call(l.person) %>, <%= l.age_days %>d: <%= l.summary %><% else %><span class="muted">not found, or not open</span><% end %></dd>
+    <% if args["never_again"] %><dt>And</dt><dd>That handle never opens a loop again</dd><% end %>
+  <% end %>
+  <% if args["reason"].present? %><dt>Why</dt><dd><%= args["reason"] %></dd><% end %>
+</dl>

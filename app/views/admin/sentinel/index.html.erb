@@ -21,6 +21,8 @@
       <%= render "records_context", request: r, context: records %>
     <% elsif (people = people_context(r)) %>
       <%= render "people_context", request: r, context: people %>
+    <% elsif (mail_send_files = mail_send_files_context(r)) %>
+      <%= render "mail_send_files_context", request: r, context: mail_send_files %>
     <% else %>
       <pre><%= JSON.pretty_generate(r.arguments) %></pre>
     <% end %>

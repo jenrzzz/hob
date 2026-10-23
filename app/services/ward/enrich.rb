@@ -52,7 +52,7 @@ module Ward
       products = []
       matches.each do |m|
         parts = m["criteria"].to_s.split(":")
-        products << parts[4].to_s.downcase if parts[4].present?
+        products << WardAsset.component_name(parts[4]) if parts[4].present?
         fix = m["versionEndExcluding"].presence
         next unless fix
 

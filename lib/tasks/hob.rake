@@ -984,7 +984,7 @@ namespace :hob do
                 WardAsset.create!(ref: "manual:#{args[:asset]}", name: args[:asset], kind: ENV.fetch("KIND", "application"), source: "person",
                                   host: ENV["HOST"], last_seen_at: Time.current)
         declared = asset.declared.dup
-        declared["components"] = ENV["COMPONENTS"].split(",").map { |c| c.strip.downcase }.compact_blank if ENV.key?("COMPONENTS")
+        declared["components"] = ENV["COMPONENTS"].split(",").filter_map { |c| WardAsset.component_name(c) } if ENV.key?("COMPONENTS")
         declared["exposure"] = ENV["EXPOSURE"].presence if ENV.key?("EXPOSURE")
         asset.update!(declared: declared.compact_blank)
         puts "#{asset.name}: #{asset.declared.to_json}"

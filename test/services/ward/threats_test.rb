@@ -97,6 +97,33 @@ class WardThreatsTest < ActiveSupport::TestCase
     refute Ward::Inventory::Coolify.method_defined?(:restart)
   end
 
+  test "component names: the product an image runs, spelled the way NVD spells it" do
+    {
+      "vaultwarden/server" => { "vaultwarden" => nil },
+      "pgvector/pgvector:pg16" => { "postgres" => nil, "pgvector" => nil },
+      "quay.io/oauth2-proxy/oauth2-proxy:latest" => { "oauth2_proxy" => nil },
+      "prom/node-exporter:v1.8.2" => { "node_exporter" => "1.8.2" },
+      "docker.io/library/nginx:1.27.3" => { "nginx" => "1.27.3" },
+      "ghcr.io/coollabsio/coolify" => { "coolify" => nil, "php" => nil, "laravel" => nil },
+      "localhost:5000/server" => { "server" => nil }
+    }.each { |image, components| assert_equal components, Ward::Inventory.components_for(image), image }
+
+    proxy = WardAsset.create!(ref: "coolify:p", name: "oauth2-proxy", kind: "service", source: "coolify",
+                              components: Ward::Inventory.components_for("quay.io/oauth2-proxy/oauth2-proxy:7.6.0"))
+    vault = WardAsset.create!(ref: "coolify:v", name: "vaultwarden-wkcks0", kind: "service", source: "coolify",
+                              components: Ward::Inventory.components_for("vaultwarden/server"))
+    assert_equal [ proxy ], WardAsset.with_component("OAuth2-Proxy").to_a, "however a reporter spells it"
+    assert_equal [ vault ], WardAsset.with_component("vaultwarden").to_a
+    assert_equal [ proxy ], WardAsset.with_component("oauth2_proxy").to_a, "and the asset's own name matches too"
+    proxy.observe!(component: "oauth2-proxy", version: "7.6.1", source: "probe")
+    assert_equal "7.6.1", proxy.believed("oauth2_proxy").first
+
+    threat, _ = Ward::Threats.report!({ "kind" => "cve", "cve_ids" => [ "CVE-2026-10001" ], "component" => "OAuth2-Proxy",
+                                        "fixed_versions" => { "*" => "7.7.0" } }, by: @skipsy)
+    assert_equal "oauth2_proxy", threat.component
+    assert_equal [ [ "oauth2-proxy", "7.6.1", "vulnerable" ] ], threat.affected.map { |a| a.values_at("name", "version", "verdict") }
+  end
+
   test "versions: per branch, floating tags and unknown lines are never fixed" do
     fixed = { "8.3" => "8.3.36", "8.4" => "8.4.27" }
     assert_equal "vulnerable", Ward::Versions.verdict("8.3.30", fixed).first

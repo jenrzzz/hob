@@ -49,7 +49,7 @@ module Ward
     private
 
     def versions
-      component = @threat.component.to_s.downcase
+      component = WardAsset.component_name(@threat.component).to_s
       if component.blank?
         return Result.new(status: "not_exposed", affected: [], severity: "none", confidence: "unverified", matched: false,
                           summary: "unmatched: the threat names no component to look for, and the inventory is known to be incomplete")

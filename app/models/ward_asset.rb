@@ -10,6 +10,13 @@ class WardAsset < ApplicationRecord
   # public outranks tailnet outranks localhost when ward weighs a threat.
   EXPOSURE_RANK = { "public" => 0, "tailnet" => 1, "localhost" => 2 }.freeze
 
+  # One spelling for a component everywhere it is written or matched:
+  # lowercase, hyphens and spaces as underscores, which is how NVD's CPE
+  # products are named ("oauth2-proxy" → "oauth2_proxy").
+  def self.component_name(name)
+    name.to_s.strip.downcase.gsub(/[\s-]+/, "_").presence
+  end
+
   has_many :observations, class_name: "WardObservation", foreign_key: :asset_id, inverse_of: :asset, dependent: :destroy
 
   validates :ref, presence: true, uniqueness: true
@@ -24,8 +31,9 @@ class WardAsset < ApplicationRecord
   scope :by_name, -> { order(:name) }
   # Has the component, by inventory or by a person's word, or is it.
   scope :with_component, lambda { |component|
-    where("jsonb_exists(components, :c) OR jsonb_exists(COALESCE(declared->'components', '[]'::jsonb), :c) OR lower(name) = :c",
-          c: component.to_s.downcase)
+    where("jsonb_exists(components, :c) OR jsonb_exists(COALESCE(declared->'components', '[]'::jsonb), :c) OR " \
+          "regexp_replace(lower(name), '[\\s-]+', '_', 'g') = :c",
+          c: component_name(component))
   }
 
   def component_names
@@ -42,7 +50,7 @@ class WardAsset < ApplicationRecord
   # what answers on the wire is the cross-check on what the control plane
   # says. -> [version, observation, disagreement or nil]
   def believed(component)
-    latest = observations.where(component: component.to_s).order(last_seen_at: :desc).to_a
+    latest = observations.where(component: self.class.component_name(component)).order(last_seen_at: :desc).to_a
     coolify = latest.find { |o| o.source == "coolify" }
     probe = latest.find { |o| o.source != "coolify" }
     chosen = if probe && (coolify.nil? || probe.last_seen_at >= coolify.first_seen_at) then probe else coolify || probe end
@@ -57,7 +65,7 @@ class WardAsset < ApplicationRecord
   # moves last_seen_at, a different one is a new row, so a change in what
   # runs is on the record with when it was first seen.
   def observe!(component:, version:, source:, digest: nil, principal: nil, started_at: nil, data: {}, at: Time.current)
-    component = component.to_s.downcase
+    component = self.class.component_name(component)
     current = observations.where(component: component, source: source).order(last_seen_at: :desc).first
     if current && current.version == version.presence && current.digest == digest.presence && current.started_at == started_at
       current.update!(last_seen_at: at)

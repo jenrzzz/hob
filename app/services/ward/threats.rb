@@ -42,7 +42,7 @@ module Ward
 
       threat = WardThreat.create!(
         kind: kind, title: attributes["title"].to_s.squish.truncate(WardThreat::TITLE_LIMIT).presence || default_title(kind, cve_ids, attributes),
-        cve_ids: cve_ids, component: attributes["component"].to_s.strip.downcase.presence,
+        cve_ids: cve_ids, component: WardAsset.component_name(attributes["component"]),
         fixed_versions: fixed_versions(attributes["fixed_versions"]), gotchas: gotchas(attributes["gotchas"]),
         sources: [ source ], reported_by: by, claimed_severity: severity(attributes["claimed_severity"]),
         exploited: by&.trusted? && attributes["exploited"] == true, actor: attributes["actor"].to_s.strip.presence,
@@ -227,7 +227,7 @@ module Ward
 
     def merge!(threat, attributes, cve_ids, source, by)
       changes = { sources: threat.sources + [ source ], cve_ids: (threat.cve_ids + cve_ids).uniq }
-      changes[:component] = attributes["component"].to_s.strip.downcase if threat.component.blank? && attributes["component"].present?
+      changes[:component] = WardAsset.component_name(attributes["component"]) if threat.component.blank? && attributes["component"].present?
       changes[:fixed_versions] = fixed_versions(attributes["fixed_versions"]) if threat.fixed_versions.blank? && attributes["fixed_versions"].present?
       changes[:exploited] = true if by&.trusted? && attributes["exploited"] == true
       threat.update!(changes)

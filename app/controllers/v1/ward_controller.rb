@@ -153,7 +153,7 @@ module V1
     def declare_asset
       asset = find_asset(params[:id]) || raise(ActiveRecord::RecordNotFound)
       declared = asset.declared.dup
-      declared["components"] = Array(params[:components]).map { |c| c.to_s.strip.downcase }.compact_blank if params.key?(:components)
+      declared["components"] = Array(params[:components]).filter_map { |c| WardAsset.component_name(c) } if params.key?(:components)
       if params.key?(:exposure)
         raise Ward::Invalid, "exposure must be one of #{WardAsset::EXPOSURES.join(', ')}" unless params[:exposure].blank? || WardAsset::EXPOSURES.include?(params[:exposure])
 

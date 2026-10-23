@@ -12,6 +12,11 @@ module Ward
   class Inventory
     # What an image implies beyond its own name: Coolify is PHP and Laravel.
     STACKS = { "coolify" => %w[php laravel] }.freeze
+    # Images whose name is not the product they run, by repository.
+    PRODUCTS = { "pgvector/pgvector" => %w[postgres pgvector] }.freeze
+    # A last path segment that names a role, not a product: the namespace
+    # is the product (vaultwarden/server is Vaultwarden).
+    GENERIC = %w[server app web api core backend frontend service].freeze
     SYNC_EVERY = 1.hour
 
     # Coolify's API, read-only: there is no method here that writes.
@@ -70,15 +75,27 @@ module Ward
     end
 
     # "php:8.3.30-fpm" → { "php" => "8.3.30" }; "ghcr.io/coollabsio/coolify"
-    # tagged 4.0.0-beta.420 → { "coolify" => "4.0.0-beta.420", "php" => nil, "laravel" => nil }.
+    # tagged 4.0.0-beta.420 → { "coolify" => "4.0.0-beta.420", "php" => nil, "laravel" => nil };
+    # "vaultwarden/server" → { "vaultwarden" => nil }; "pgvector/pgvector:pg16" → { "postgres" => nil, "pgvector" => nil }.
+    # The tag's version goes to the first product, the one the image is.
     def self.components_for(image, tag = nil)
       path, inline_tag = split_image(image)
       return {} if path.blank?
 
-      name = path.split("/").last.downcase
-      found = { name => Versions.from_tag(tag.presence || inline_tag) }
-      STACKS.fetch(name, []).each { |component| found[component] = nil unless found.key?(component) }
+      names = products_of(path)
+      found = { names.first => Versions.from_tag(tag.presence || inline_tag) }
+      (names.drop(1) + STACKS.fetch(names.first, [])).each { |component| found[component] = nil unless found.key?(component) }
       found
+    end
+
+    # The repository without its registry ("ghcr.io/", "docker.io/library/"), then the product names.
+    def self.products_of(path)
+      parts = path.downcase.split("/")
+      parts.shift if parts.size > 1 && parts.first.match?(/[.:]|\Alocalhost\z/)
+      parts.shift if parts.first == "library" && parts.size > 1
+      repository = parts.join("/")
+      names = PRODUCTS[repository] || [ GENERIC.include?(parts.last) && parts.size > 1 ? parts[-2] : parts.last ]
+      names.filter_map { |n| WardAsset.component_name(n) }
     end
 
     def self.split_image(image)

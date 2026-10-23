@@ -133,6 +133,10 @@ class WardThreatsTest < ActiveSupport::TestCase
     assert_equal [ "rescan", "raise scan cadence", "get the version", "open task", "notify" ], actions
     mission = Mission.find(threat.posture.first["ref"])
     assert_equal [ @worker, "ward.audit", "exposure" ], [ mission.assignee, mission.payload["kind"], mission.payload["check"] ]
+    probe = Mission.find(threat.posture.find { |p| p["action"] == "get the version" }["ref"])
+    assert_equal [ @worker, { "kind" => "ward.probe" } ], [ probe.assignee, probe.payload ]
+    assert_match(/probe queued for coolify php/, threat.posture.find { |p| p["action"] == "get the version" }["result"])
+    assert_equal [ probe, true ], Ward.queue_probe!, "one probe mission at a time"
     schedule = Schedule.find(threat.schedule_id)
     assert_equal [ "0 */6 * * *", "exposure" ], [ schedule.cron, schedule.payload["check"] ]
     assert_match(/\Ajenner-of:/, threat.todo_id)

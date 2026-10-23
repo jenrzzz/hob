@@ -9,6 +9,8 @@ module Ward
   # The surface ledger rows and conversations carry when the ward acts on
   # its own (a sweep from a rake task) rather than for a key.
   SURFACE = "ward".freeze
+  # The worker's mission kind for reading versions (infra security/ward.py, probes.yaml).
+  PROBE_KIND = "ward.probe".freeze
 
   module_function
 
@@ -42,6 +44,22 @@ module Ward
       assignee: worker, created_by: by, title: "ward: run #{check.slug}", brief: reason.to_s.strip.truncate(200).presence,
       payload: { "kind" => Sentinel::Native::WardAuditRun::KIND, "check" => check.slug, "request" => request }.compact, realm: "personal"
     )
+    [ mission, false ]
+  end
+
+  # A ward.probe mission: the worker reads the versions its probes.yaml
+  # names now and posts them as observations (THREATS.md). One at a time;
+  # an open one is the answer. -> [mission, queued_before]
+  def queue_probe!(reason: nil)
+    worker = Principal.find_by(name: ENV.fetch("HOB_WARD_PRINCIPAL", "ward"), kind: "worker")
+    raise Invalid, "no ward worker is set up (bin/rails \"hob:ward:setup[ward]\")" if worker.nil?
+
+    if (open = Mission.open.for(worker).where("payload->>'kind' = ?", PROBE_KIND).first)
+      return [ open, true ]
+    end
+
+    mission = Mission.create!(assignee: worker, title: "ward: probe versions", brief: reason.to_s.strip.truncate(200).presence,
+                              payload: { "kind" => PROBE_KIND }, realm: "personal")
     [ mission, false ]
   end
 

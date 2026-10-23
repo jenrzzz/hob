@@ -280,12 +280,20 @@ worker) or a **person** posts what answers on the wire to
 `POST /v1/ward/observations`; a probe seen since Coolify's claim last
 changed wins, and any disagreement is shown on the threat.
 
+The worker (infra `security/ward.py`) runs the probes `security/probes.yaml`
+names after every audit, so a threat's raised audit cadence keeps them
+fresh, and on a `ward.probe` mission, which hob queues (one at a time) when
+a match has no version. Today's probes are Coolify's version and the
+`PHP_VERSION` of the image it runs: what the image was built with, not a
+process asked on the wire, which is why "workers restarted" stays a
+person's gotcha.
+
 ### Posture, as built
 
 - **Tier 0**: a `ward.audit` mission for the worker; a
   `ward-threat-<id>` schedule running the exposure audit every 6 hours
   (`HOB_WARD_WATCH_CRON`) until the threat resolves; an inventory refresh
-  and a standing ask for a probe when a match has no version; a note on
+  and a `ward.probe` mission when a match has no version; a note on
   any open finding about a matched asset, and a step up in severity.
 - **Tier 1**: a task through Todos (`HOB_WARD_TODO_BACKEND`,
   `HOB_WARD_TODO_LIST`), kept updated, completed at resolution, reopened
@@ -348,11 +356,6 @@ Not realm-scoped, like the rest of the ward.
 
 ### Not yet
 
-- **The worker's probes.** `security/ward.py` (infra) does not post
-  observations yet. Until it does, a person posts what a probe shows
-  (`hob:ward:inventory:observe`), and Coolify's version and image tags
-  are the only automatic readings. The worker today fails a mission kind
-  it does not know, so ward does not queue probe missions for it.
 - **Tier 2 execution.** Proposals are confirmed, not carried out.
 - **A model in triage.** Threat pings are mechanical; `Ward::Triage`
   still reads findings only.

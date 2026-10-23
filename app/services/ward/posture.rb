@@ -159,14 +159,24 @@ module Ward
     end
 
     # The first posture for an unverified match is to learn the version: a
-    # fresh inventory if Coolify can say, and a standing ask for a probe.
+    # fresh inventory if Coolify can say, and a ward.probe mission for the
+    # worker to read what runs now. A component its probes.yaml does not
+    # name still waits for a person's observation.
     def verify_versions(threat)
       act(threat, 0, "get the version") do
-        synced = Inventory.configured? ? (Inventory.sync! && "inventory refreshed; ") : ""
+        synced = begin
+          Inventory.configured? ? (Inventory.sync! && "inventory refreshed; ") : ""
+        rescue Ward::Error => e
+          "inventory refresh failed: #{e.message}; "
+        end
         unknown = threat.affected.select { |a| a["verdict"] == "unknown" }.map { |a| "#{a['name']} #{a['component']}" }
-        "#{synced}awaiting a probe of #{unknown.join(', ')} (POST /v1/ward/observations, or hob:ward:inventory:observe)"
-      rescue Ward::Error => e
-        "inventory refresh failed: #{e.message}; awaiting a probe"
+        probe = begin
+          mission, before = Ward.queue_probe!(reason: "threat #{threat.id}: versions of #{unknown.join(', ')}")
+          [ "probe #{before ? 'already queued' : 'queued'}", mission.id ]
+        rescue Ward::Invalid => e
+          [ "no probe (#{e.message})", nil ]
+        end
+        [ "#{synced}#{probe.first} for #{unknown.join(', ')}", probe.last ]
       end
     end
 

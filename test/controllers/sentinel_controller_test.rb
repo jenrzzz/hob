@@ -320,4 +320,36 @@ class MissionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "late", body["title"]
     assert elapsed < 4, "returned after #{elapsed}s"
   end
+
+  test "a lease poll whose caller hung up leases nothing and leaves the mission queued" do
+    post "/v1/missions", params: { assignee: "muse", title: "probe", realm: "household" }, headers: auth, as: :json
+    id = body["id"]
+    ours, theirs = UNIXSocket.pair
+    theirs.close
+
+    post "/v1/missions/lease", params: { wait: 5 }, headers: agent_auth, as: :json, env: { "puma.socket" => ours }
+    assert_equal "empty", body["status"]
+    mission = Mission.find(id)
+    assert_equal "queued", mission.status
+    assert_nil mission.lease_token
+    assert_equal 0, mission.attempts
+
+    ours, theirs = UNIXSocket.pair
+    post "/v1/missions/lease", params: { wait: 0 }, headers: agent_auth, as: :json, env: { "puma.socket" => ours }
+    assert_equal id, body["id"], "a caller still on the line gets it"
+    assert_equal 1, Mission.find(id).attempts
+  ensure
+    [ ours, theirs ].each { |s| s&.close unless s&.closed? }
+  end
+
+  test "a lease poll stops waiting once its caller hangs up" do
+    ours, theirs = UNIXSocket.pair
+    Thread.new { sleep 1; theirs.close }
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    post "/v1/missions/lease", params: { wait: 10 }, headers: agent_auth, as: :json, env: { "puma.socket" => ours }
+    assert Process.clock_gettime(Process::CLOCK_MONOTONIC) - started < 4
+    assert_equal "empty", body["status"]
+  ensure
+    ours&.close
+  end
 end

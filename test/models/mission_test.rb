@@ -31,6 +31,19 @@ class MissionTest < ActiveSupport::TestCase
     assert_equal 3600, (Mission.lease_next!(@muse, lease: 99_999) rescue nil) || 3600
   end
 
+  test "a released lease is back in the queue as if never taken" do
+    m = mission("job")
+    leased = Mission.lease_next!(@muse)
+    stale = leased.lease_token
+    leased.release!
+    assert_equal "queued", m.reload.status
+    assert_equal 0, m.attempts
+    assert_nil m.lease_token
+    again = Mission.lease_next!(@muse)
+    assert_equal m, again
+    assert_not again.held_by?(stale)
+  end
+
   test "an expired lease goes back to the queue; a stale token can no longer report" do
     m = mission("job")
     first = Mission.lease_next!(@muse, lease: 1)

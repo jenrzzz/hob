@@ -48,6 +48,12 @@ module V1
     def lease
       mission = long_poll(params[:wait]) { Mission.lease_next!(Current.principal, lease: params[:lease].presence || Mission::DEFAULT_LEASE) }
       return render json: { status: "empty" } if mission.nil?
+      # A worker that restarted mid-poll is not there to take it: put it back
+      # rather than leave it held by no one until the lease runs out.
+      if client_gone?
+        mission.release!
+        return head(:no_content)
+      end
 
       render json: serialize(mission, token: true)
     end

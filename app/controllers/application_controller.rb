@@ -80,12 +80,28 @@ class ApplicationController < ActionController::API
   def long_poll(wait)
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait.to_i.clamp(0, 30)
     loop do
+      return nil if client_gone?
+
       value = yield
       return value if value
       return nil if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
 
       sleep 1
     end
+  end
+
+  # Whether the caller hung up while we held its request: the proxy closes
+  # its connection to us when its own client goes, so the socket reads EOF.
+  # A peek, so a pipelined request behind this one is left where it is.
+  # False when the server gives us no socket to ask.
+  def client_gone?
+    socket = request.env["puma.socket"]
+    return false unless socket.respond_to?(:recv_nonblock)
+
+    peeked = socket.recv_nonblock(1, Socket::MSG_PEEK, exception: false)
+    peeked.nil? || peeked == ""
+  rescue IOError, SystemCallError
+    true
   end
 
   # request clearance = min(key default, principal grant, explicit cap).

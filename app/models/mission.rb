@@ -55,6 +55,12 @@ class Mission < ApplicationRecord
     scope.update_all(status: "queued", lease_token: nil, leased_at: nil, lease_expires_at: nil)
   end
 
+  # Undo a lease that never reached its holder: back to the queue as if
+  # it had not been taken.
+  def release!
+    update!(status: "queued", lease_token: nil, leased_at: nil, lease_expires_at: nil, attempts: [ attempts - 1, 0 ].max)
+  end
+
   def leased?
     status == "leased"
   end

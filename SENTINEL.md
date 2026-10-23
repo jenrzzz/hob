@@ -128,6 +128,11 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `ward.status` | read | the household's security posture as the ward sees it ([WARD.md](WARD.md)): checks, staleness, open and acknowledged findings, the latest triage; `personal` tier |
 | `ward.audit.run` | act | queue a `ward.audit` mission for the ward worker to run a check now; `personal` tier |
 | `hob.ward.portcheck` | read | one TCP connect check from ward's own network against a host already in ward's scan-target inventory (`HOB_WARD_SCAN_TARGETS`) and a single port; open, closed, or filtered, with an optional short passive banner; `personal` tier |
+| `ward.threat.report` | act | tell the ward about a threat it cannot scan for ([THREATS.md](THREATS.md)): a CVE, an advisory, an actor, an anomaly; merges into an open threat naming the same CVE; `personal` tier, meant to sit at `review` |
+| `ward.threats` | read | the ward's threats, or one with its history; `personal` tier |
+| `ward.threat.note` | act | add evidence or context to a threat's history; `indicator: true` resets an actor watch; `personal` tier |
+| `ward.threat.accept_risk` | act | accept a threat as a known risk, with a reason; re-surfaces every review period; only a person approves |
+| `ward.threat.standdown` | act | end an actor threat's watch early; only a person approves |
 | `hob.capability.search` | read | keyword search over the capability catalog — name, description, kind, realm, and whether the caller may petition for each — filtered to the caller's clearance |
 | `browse.open` | act | a tab in one of the household's real browsers ([BROWSE.md](BROWSE.md)), at a URL, for a stated goal: the request policy judges |
 | `browse.act` | act | one step (click, type, navigate, read, ...) in a session the agent opened; bound to that session's goal |
@@ -185,7 +190,8 @@ glob | *) → effect`, plus constraints, limits, and guidance.
 **Some capabilities only a person may approve.** A native capability
 whose handler says `requires_person` (`records.collection.create`,
 `.collection.update`, `.delete`, and `.collection.delete`: RECORDS.md;
-`people.merge`, `people.handle.add`, and `people.loop.dismiss`: PEOPLE.md)
+`people.merge`, `people.handle.add`, and `people.loop.dismiss`: PEOPLE.md;
+`ward.threat.accept_risk` and `ward.threat.standdown`: THREATS.md)
 is held for a person under any rule that would `allow` or `review` it, a
 `*` among them; a rule naming one exactly may only `confirm` or `deny`
 it, and the steward grants it at `confirm` whatever it was asked for.

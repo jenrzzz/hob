@@ -11,6 +11,7 @@ calendars, [MAIL.md](MAIL.md) for its mail, [TEXTS.md](TEXTS.md) for its
 text messages, [RECORDS.md](RECORDS.md) for what
 its agents keep, [PEOPLE.md](PEOPLE.md) for who it knows, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure,
+[THREATS.md](THREATS.md) for the threats it is told about,
 [SCHEDULES.md](SCHEDULES.md) for its clock,
 [BROWSE.md](BROWSE.md) for the household's browser,
 [HTTP.md](HTTP.md) for the requests hob makes to the web for an agent,
@@ -391,6 +392,25 @@ POST /v1/ward/runs                     { check, exit_code, lines | output, start
 GET  /v1/ward/status · GET /v1/ward/findings?state=open|acknowledged|resolved|all · GET /v1/ward/runs
 POST /v1/ward/findings/:id/ack         { note, until }  · POST …/unack
 GET/POST /v1/ward/notes                { subject, body }                                                  (a person)
+```
+
+**Threats** ([THREATS.md](THREATS.md)) are what the ward is *told*: a CVE
+with an exploit in the wild, an advisory, someone threatening the house.
+A threat is matched against the inventory ward pulls from Coolify with
+its own read-only token, defended on its own at Tier 0 (re-scan, a raised
+scan cadence, an upstream watch) and Tier 1 (a task, a ping, a word to
+the household's agents), and anything disruptive is only ever proposed
+for a person to confirm. It resolves when ward can point at evidence: two
+fresh checks an hour apart showing every matched asset at the fixed
+version, or an actor window that passed quietly and a person agreed.
+
+```sh
+bin/rails hob:ward:inventory:sync                   # Coolify's resources and versions (HOB_WARD_COOLIFY_TOKEN, read-only)
+bin/rails hob:ward:threat:report KIND=cve CVES=CVE-2026-109618 COMPONENT=php FIXED='8.3=8.3.36,8.4=8.4.27'
+bin/rails hob:ward:threat:list                      # open threats; :show[<id>] for one with its history
+bin/rails "hob:ward:threat:await[<id>]" SOURCE=github REPOSITORY=coollabsio/coolify CURRENT=4.0.0-beta.420
+bin/rails "hob:ward:threat:decide[<id>,<proposal>,confirm]"
+bin/rails "hob:sentinel:policy[skipsy,ward.threat.report,review]"   # agent reports are read by the reviewer first
 ```
 
 ## Claude Code

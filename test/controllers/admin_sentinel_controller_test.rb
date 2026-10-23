@@ -52,6 +52,28 @@ class AdminSentinelControllerTest < ActionDispatch::IntegrationTest
     assert_select ".flash.alert", /not pending/
   end
 
+  test "a held ward.threat.accept_risk shows the threat it acts on, escaped, and allowing it accepts as the person" do
+    skipsy, token = agent("skipsy", clearance: "personal")
+    policy!(skipsy, "ward.threat.accept_risk", "confirm")
+    threat = WardThreat.create!(kind: "cve", title: "PHP2Shell <script>x</script>", cve_ids: [ "CVE-2026-109618" ], status: "exposed",
+                                assessed_severity: "high", affected: [ { "asset" => "a", "name" => "coolify", "component" => "php", "verdict" => "unknown" } ])
+    post "/v1/sentinel/requests", params: { capability: "ward.threat.accept_risk", arguments: { threat: threat.id, reason: "behind Authelia" } },
+         headers: { "Authorization" => "Bearer #{token}" }, as: :json
+    request = SentinelRequest.find(body["id"])
+    assert_equal "pending", request.status
+
+    admin_sign_in
+    get "/admin/sentinel"
+    assert_select "#request-#{request.id} dd", /PHP2Shell <script>x<\/script>/
+    assert_select "#request-#{request.id} script", false, "a reporter's title is text, never markup"
+    assert_select "#request-#{request.id} dd", /coolify · php · unknown/
+    assert_select "#request-#{request.id} dd", /re-surfaces every 30 days/
+
+    post "/admin/sentinel/requests/#{request.id}/decide", params: { decision: "allow" }
+    threat.reload
+    assert_equal [ "accepted_risk", @principal, "behind Authelia" ], [ threat.status, threat.accepted_by, threat.accepted_reason ]
+  end
+
   test "denying a request" do
     request = held_request
     admin_sign_in

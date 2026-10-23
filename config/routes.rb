@@ -110,6 +110,22 @@ Rails.application.routes.draw do
       post "findings/:id/unack", action: :unack
       get "notes", action: :notes
       post "notes", action: :create_note
+      # Threats (THREATS.md): people report and decide; the worker observes.
+      get "threats", action: :threats
+      post "threats", action: :create_threat
+      get "threats/:id", action: :threat
+      post "threats/:id/notes", action: :threat_note
+      post "threats/:id/retriage", action: :threat_retriage
+      post "threats/:id/accept_risk", action: :threat_accept_risk
+      post "threats/:id/standdown", action: :threat_standdown
+      post "threats/:id/await_upstream", action: :threat_await_upstream
+      post "threats/:id/extend", action: :threat_extend
+      post "threats/:id/gotchas/:index", action: :threat_gotcha
+      post "threats/:id/proposals/:proposal/:decision", action: :threat_decide, constraints: { decision: /confirm|decline/ }
+      get "assets", action: :assets
+      post "assets/sync", action: :sync_assets
+      patch "assets/:id", action: :declare_asset
+      post "observations", action: :create_observation
     end
     # hob as an MCP server (CLAUDE_CODE.md): a person's assistant's tools.
     post "mcp", to: "mcp#create"

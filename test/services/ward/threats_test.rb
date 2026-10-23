@@ -1,0 +1,324 @@
+require "test_helper"
+
+# THREATS.md: a threat the ward is told about, matched against the
+# inventory, defended at Tier 0/1 on its own, Tier 2 only proposed, and
+# resolved only with evidence.
+class WardThreatsTest < ActiveSupport::TestCase
+  # Coolify's API as the ward's read-only token sees it.
+  class FakeCoolify
+    attr_accessor :version, :applications, :services, :databases, :servers
+
+    def initialize
+      @version = "4.0.0-beta.420"
+      @servers = [ { "uuid" => "s1", "name" => "cadance", "ip" => "5.161.10.20" } ]
+      @applications = [ { "uuid" => "a1", "name" => "feedcurator", "fqdn" => "https://feeds.example.com", "destination" => { "server" => { "uuid" => "s1" } },
+                          "docker_registry_image_name" => "ghcr.io/jenrzzz/feedcurator", "docker_registry_image_tag" => "1.4.2" } ]
+      @services = [ { "uuid" => "v1", "name" => "wiki", "server_uuid" => "s1", "applications" => [ { "image" => "php:8.3.30-fpm" } ] } ]
+      @databases = [ { "uuid" => "d1", "name" => "hob-postgres", "image" => "postgres:16.4", "server_uuid" => "s1" } ]
+    end
+
+    def url
+      "https://coolify.example.com"
+    end
+
+    def service(_uuid)
+      raise "the list rows carry their applications"
+    end
+  end
+
+  PHP = {
+    "kind" => "cve", "title" => "PHP2Shell RCE in PHP core", "cve_ids" => %w[CVE-2026-109618 CVE-2026-109619],
+    "component" => "php", "fixed_versions" => { "8.3" => "8.3.36", "8.4" => "8.4.27" },
+    "gotchas" => [ "FPM workers restarted after the patch" ], "claimed_severity" => "critical",
+    "source" => { "type" => "agent", "ref" => "hetzner mail 4411" }, "exploited" => true
+  }.freeze
+
+  setup do
+    @worker = Principal.create!(name: "ward", kind: "worker", max_clearance: "personal")
+    WardCheck.create!(slug: "exposure", description: "the audit")
+    @skipsy, _ = agent("skipsy", clearance: "personal")
+    @coolify = FakeCoolify.new
+    @pings = []
+    ENV["HOB_NOTIFY_URL"] = "https://ntfy.test/house"
+    Notify.transport = ->(_url, title, body, _headers) { @pings << [ title, body ]; "200" }
+    @todos = todo_backend("jenner-of", realm: "personal", primary: true)
+    ENV["HOB_WARD_TODO_BACKEND"] = "jenner-of"
+    Web.resolver = ->(_host) { [ "93.184.216.34" ] }
+    @tags = %w[v4.0.0-beta.419 v4.0.0-beta.420]
+    Web.transport = lambda do |_verb, uri, _address, _body, _headers|
+      raise "unexpected request to #{uri}" unless uri.host == "api.github.com"
+
+      [ 200, @tags.map { |t| { "name" => t } }.to_json, { "content-type" => "application/json" } ]
+    end
+  end
+
+  teardown do
+    Notify.transport = nil
+    Web.transport = nil
+    Web.resolver = nil
+    Todos::Backends::Fake.reset!
+    %w[HOB_NOTIFY_URL HOB_WARD_TODO_BACKEND].each { |k| ENV.delete(k) }
+  end
+
+  def sync!
+    Ward::Inventory.sync!(client: @coolify)
+  end
+
+  def coolify_asset
+    WardAsset.find_by!(ref: "coolify")
+  end
+
+  def jenner
+    @principal
+  end
+
+  test "the inventory: Coolify's resources, images, and versions, its own stack, and what went away" do
+    result = sync!
+    assert_equal 5, result["assets"], "coolify, a server, an app, a service, a database; no scan targets"
+
+    coolify = coolify_asset
+    assert_equal({ "coolify" => "4.0.0-beta.420", "php" => nil, "laravel" => nil }, coolify.components)
+    assert_equal [ "public", "cadance" ], [ coolify.exposure, coolify.host ]
+    assert_equal [ "4.0.0-beta.420", "coolify" ], coolify.believed("coolify").first(1) + [ coolify.believed("coolify").second.source ]
+
+    wiki = WardAsset.find_by!(name: "wiki")
+    assert_equal [ "service", "cadance", "tailnet" ], [ wiki.kind, wiki.host, wiki.exposure ]
+    assert_equal({ "php" => "8.3.30" }, wiki.components)
+    assert_equal "localhost", WardAsset.find_by!(name: "hob-postgres").exposure
+    assert_equal "public", WardAsset.find_by!(name: "feedcurator").exposure
+    assert_equal "public", WardAsset.find_by!(ref: "server:s1").exposure
+
+    @coolify.services = []
+    sync!
+    assert wiki.reload.gone_at, "a resource Coolify no longer reports is gone, not deleted"
+    assert_empty WardAsset.present.with_component("php").where(name: "wiki")
+
+    refute Ward::Inventory::Coolify.method_defined?(:set_env), "the ward's client cannot write"
+    refute Ward::Inventory::Coolify.method_defined?(:restart)
+  end
+
+  test "versions: per branch, floating tags and unknown lines are never fixed" do
+    fixed = { "8.3" => "8.3.36", "8.4" => "8.4.27" }
+    assert_equal "vulnerable", Ward::Versions.verdict("8.3.30", fixed).first
+    assert_equal "fixed", Ward::Versions.verdict("8.3.36", fixed).first
+    assert_equal "fixed", Ward::Versions.verdict("8.4.30", fixed).first
+    assert_equal "unknown", Ward::Versions.verdict("8.3", fixed).first, "a floating tag says nothing about the patch"
+    assert_equal "unknown", Ward::Versions.verdict("8.2.29", fixed).first, "no fix named for 8.2"
+    assert_equal "fixed", Ward::Versions.verdict("8.5.0", fixed).first, "a newer line than any fixed"
+    assert_equal "unknown", Ward::Versions.verdict(nil, fixed).first
+    assert_equal "unknown", Ward::Versions.verdict("8.3.30", {}).first
+    assert_equal "vulnerable", Ward::Versions.verdict("4.0.0-beta.420", { "*" => "4.0.0-beta.421" }).first
+    assert_equal "8.3.30", Ward::Versions.from_tag("8.3.30-fpm-alpine")
+    assert_equal "4.0.0-beta.420", Ward::Versions.from_tag("v4.0.0-beta.420")
+    assert_nil Ward::Versions.from_tag("latest")
+  end
+
+  test "worked example 1, PHP2Shell: unverified, awaiting upstream, a confirmed upgrade, two fresh checks, the gotcha, then resolved" do
+    sync!
+    threat, merged = Ward::Threats.report!(PHP, by: @skipsy)
+    refute merged
+
+    assert_equal "exposed", threat.status
+    assert_equal "verified", threat.confidence, "the wiki's PHP is a known vulnerable version"
+    refute threat.exploited?, "an agent's word on exploitation is a claim"
+    assert_equal "high", threat.assessed_severity, "a claimed critical is capped at high without evidence of exploitation"
+    coolify_entry = threat.affected.find { |a| a["name"] == "coolify" }
+    assert_equal [ "unknown", "public" ], coolify_entry.values_at("verdict", "exposure"), "Coolify is PHP, but no one has probed which"
+    wiki_entry = threat.affected.find { |a| a["name"] == "wiki" }
+    assert_equal [ "8.3.30", "vulnerable" ], wiki_entry.values_at("version", "verdict")
+    assert_equal %w[reported transition triaged transition], threat.events.first(4).map(&:kind)
+    assert_equal %w[triaged exposed], threat.events.where(kind: "transition").pluck(:to_status)
+
+    actions = threat.posture.map { |p| p["action"] }
+    assert_equal [ "rescan", "raise scan cadence", "get the version", "open task", "notify" ], actions
+    mission = Mission.find(threat.posture.first["ref"])
+    assert_equal [ @worker, "ward.audit", "exposure" ], [ mission.assignee, mission.payload["kind"], mission.payload["check"] ]
+    schedule = Schedule.find(threat.schedule_id)
+    assert_equal [ "0 */6 * * *", "exposure" ], [ schedule.cron, schedule.payload["check"] ]
+    assert_match(/\Ajenner-of:/, threat.todo_id)
+    assert_equal 1, @pings.size
+    assert_match(/exposed: PHP2Shell/, @pings.last.first)
+
+    # Jenner's call: wait for the upstream image.
+    Ward::Threats.await_upstream!(threat, upstream: { "source" => "github", "repository" => "coollabsio/coolify", "current" => "4.0.0-beta.420" }, by: jenner)
+    assert_equal "awaiting_upstream", threat.reload.status
+    assert_equal 1, @pings.size, "no nagging while it waits"
+
+    assert_empty Ward::Resolver.call, "nothing upstream yet: quiet"
+    assert threat.reload.upstream["last_polled_at"]
+    assert_empty Ward::Resolver.call, "and not polled again before its cadence"
+
+    travel 7.hours
+    @tags << "v4.0.0-beta.421"
+    assert_equal [ [ threat.id, "landed" ] ], Ward::Resolver.call
+    threat.reload
+    assert_equal "v4.0.0-beta.421", threat.upstream.dig("landed", "tag")
+    upgrade = threat.pending_proposals.sole
+    assert_equal [ 2, "upgrade" ], upgrade.values_at("tier", "action")
+    assert_match(/proposes: Upgrade to v4.0.0-beta.421/, @pings.last.first)
+    assert_equal "awaiting_upstream", threat.status, "the upgrade is a person's call"
+
+    error = assert_raises(Ward::Invalid) { Ward::Threats.decide!(threat, upgrade["id"], decision: "confirm", by: @skipsy) }
+    assert_match(/only a person/, error.message)
+    Ward::Threats.decide!(threat, upgrade["id"], decision: "confirm", by: jenner)
+    assert_equal "mitigating", threat.reload.status
+
+    # The upgrade happens; Coolify says so, a probe sees the PHP inside, the
+    # wiki's image moves to a fixed tag.
+    @coolify.version = "4.0.0-beta.421"
+    @coolify.services.first["applications"].first["image"] = "php:8.3.36-fpm"
+    travel 10.minutes
+    sync!
+    coolify_asset.observe!(component: "php", version: "8.3.36", source: "probe", principal: @worker)
+    assert_equal [ [ threat.id, "monitoring" ] ], Ward::Resolver.call
+    threat.reload
+    assert_equal [ "monitoring", 1 ], [ threat.status, threat.passes.size ]
+    assert_equal "none", threat.assessed_severity
+
+    travel 30.minutes
+    sync!
+    assert_empty Ward::Resolver.call, "a second check needs an hour between"
+
+    travel 40.minutes
+    assert_empty Ward::Resolver.call, "and a fresh observation since the first"
+    sync!
+    coolify_asset.observe!(component: "php", version: "8.3.36", source: "probe", principal: @worker)
+    assert_empty Ward::Resolver.call, "two checks, but the gotcha is open"
+    threat.reload
+    assert_equal [ "monitoring", 2 ], [ threat.status, threat.passes.size ]
+    assert threat.events.where(kind: "note").where("body LIKE 'waiting on gotcha 0%'").exists?
+
+    assert_raises(Ward::Invalid) { Ward::Threats.satisfy!(threat, 0, evidence: "trust me", by: @skipsy) }
+    Ward::Threats.satisfy!(threat, 0, evidence: "php-fpm restarted 14:02; workers report 8.3.36", by: jenner)
+
+    travel 61.minutes
+    sync!
+    coolify_asset.observe!(component: "php", version: "8.3.36", source: "probe", principal: @worker)
+    assert_equal [ [ threat.id, "resolved" ] ], Ward::Resolver.call
+    threat.reload
+    assert_equal "resolved", threat.status
+    assert_match(/at or past the fixed version, on 3 checks/, threat.resolution["criteria"])
+    assert_equal 3, threat.resolution.dig("evidence", "passes").size
+    assert_equal "ward", threat.resolution["verified_by"]
+    assert_nil threat.schedule_id
+    refute Schedule.exists?(schedule.id), "the raised cadence ends with the threat"
+    assert_equal "done", Todos.find(threat.todo_id)["status"]
+    assert_match(/resolved: PHP2Shell/, @pings.last.first)
+
+    # A rollback: what answers on the wire is below the fix again.
+    travel 2.hours
+    coolify_asset.observe!(component: "php", version: "8.3.30", source: "probe", principal: @worker)
+    assert_equal [ [ threat.id, "reopened" ] ], Ward::Resolver.call
+    threat.reload
+    assert_equal [ "monitoring", [] ], [ threat.status, threat.passes ]
+    assert_nil threat.resolution
+    assert_match(/regression: coolify php 8.3.30/, threat.events.where(kind: "transition").last.body)
+    assert_equal "open", Todos.find(threat.todo_id)["status"]
+    assert_match(/reopened/, @pings.last.first)
+  end
+
+  test "a report naming an open CVE merges into it, and a person's word on exploitation is taken" do
+    sync!
+    first, _ = Ward::Threats.report!(PHP.merge("component" => nil, "fixed_versions" => nil), by: @skipsy)
+    assert_equal "not_exposed", first.events.where(kind: "triaged").sole.data["status"]
+    assert_equal "resolved", first.reload.status, "no component named: unmatched, said as such"
+    assert_match(/unmatched/, first.resolution["criteria"])
+
+    second, _ = Ward::Threats.report!(PHP, by: @skipsy)
+    refute_equal first.id, second.id, "a resolved threat is not merged into"
+
+    pings = @pings.size
+    again, merged = Ward::Threats.report!({ "kind" => "cve", "cve_ids" => [ "cve-2026-109619" ], "exploited" => true,
+                                            "source" => { "type" => "feed", "ref" => "https://www.cisa.gov/kev" } }, by: jenner)
+    assert merged
+    assert_equal second.id, again.id
+    assert again.exploited?
+    assert_equal %w[agent feed], again.sources.map { |s| s["type"] }
+    assert_equal "critical", again.assessed_severity, "known exploited, on a public asset"
+    assert_equal 1, WardThreat.open.count
+    assert_equal pings, @pings.size, "a merge that does not change the status says nothing new"
+  end
+
+  test "unmatched is resolved, said as such, and reopens when the inventory comes to match it" do
+    threat, _ = Ward::Threats.report!(PHP, by: @skipsy)
+    assert_equal "resolved", threat.status
+    assert_equal "not exposed (unmatched)", threat.resolution["criteria"]
+    assert_match(/not exposed: PHP2Shell/, @pings.last.first)
+
+    sync!
+    assert_equal [ [ threat.id, "reopened" ] ], Ward::Resolver.call
+    assert_equal "monitoring", threat.reload.status
+    assert_match(/the inventory now matches/, threat.events.where(kind: "transition").last.body)
+  end
+
+  test "worked example 2, an actor: Tier 1 at most on a stranger's word, a window, indicators, and a person's resolve" do
+    sync!
+    threat, _ = Ward::Threats.report!({ "kind" => "actor", "actor" => "h4x0r", "target" => "feedcurator", "claimed_severity" => "critical",
+                                        "source" => { "type" => "person", "ref" => "https://forum.example/t/1" } }, by: jenner)
+    assert_equal "monitoring", threat.status
+    assert_equal "medium", threat.assessed_severity, "a stranger's words alone never raise an actor past medium"
+    assert_in_delta 7.days.from_now, threat.expires_at, 5
+    assert_equal [ "feedcurator" ], threat.affected.filter_map { |a| a["name"] if a["asset"] }
+    assert_equal [ "rescan", "raise scan cadence", "notify" ], threat.posture.map { |p| p["action"] }
+    assert_empty threat.proposals, "no Tier 2 on a claim"
+
+    _, merged = Ward::Threats.report!({ "kind" => "actor", "actor" => "H4X0R", "target" => "feedcurator" }, by: @skipsy)
+    assert merged, "the same actor on the same surface, inside the window"
+
+    # An agent's flag resets the clock and is told, but proposes nothing.
+    travel 3.days
+    Ward::Threats.note!(threat, body: "they posted our IP again", by: @skipsy, indicator: true)
+    assert_in_delta 7.days.from_now, threat.reload.expires_at, 5
+    assert_empty threat.proposals
+    assert_match(/indicator reported/, @pings.last.first)
+
+    # Ward's own run: a new public port on the named surface is an observed indicator.
+    Ward::Ingest.call(check: "exposure", lines: "FAIL feedcurator: unexpected public TCP port 8080\n", exit_code: 1, triage: false)
+    threat.reload
+    assert_equal 2, threat.events.where(kind: "indicator").count
+    block = threat.pending_proposals.sole
+    assert_equal [ 2, "block" ], block.values_at("tier", "action")
+
+    travel 8.days
+    assert_includes Ward::Resolver.call, [ threat.id, "expired" ]
+    threat.reload
+    assert_equal "expired", threat.status
+    resolve = threat.pending_proposals.find { |p| p["action"] == "resolve" }
+    assert resolve
+
+    Ward::Threats.decide!(threat, resolve["id"], decision: "decline", by: jenner)
+    assert_equal "monitoring", threat.reload.status, "declining a quiet resolve watches another window"
+
+    travel 8.days
+    Ward::Resolver.call
+    resolve = threat.reload.pending_proposals.find { |p| p["action"] == "resolve" }
+    Ward::Threats.decide!(threat, resolve["id"], decision: "confirm", by: jenner)
+    threat.reload
+    assert_equal "resolved", threat.status
+    assert_equal "tester", threat.resolution["verified_by"]
+    assert_match(/quiet window/, threat.resolution["criteria"])
+    assert_nil threat.schedule_id
+  end
+
+  test "accepting a risk and standing down are a person's, with a reason; an accepted risk re-surfaces" do
+    sync!
+    threat, _ = Ward::Threats.report!(PHP, by: @skipsy)
+    assert_raises(WardThreat::BadTransition) { threat.move!("accepted_risk") }
+    assert_raises(Ward::Invalid) { Ward::Threats.accept_risk!(threat, reason: "fine", by: @skipsy) }
+    assert_raises(Ward::Invalid) { Ward::Threats.accept_risk!(threat, reason: " ", by: jenner) }
+
+    Ward::Threats.accept_risk!(threat, reason: "Coolify's panel is behind Authelia; patch with the next image", by: jenner, review_days: 14)
+    threat.reload
+    assert_equal [ "accepted_risk", jenner ], [ threat.status, threat.accepted_by ]
+    assert_in_delta 14.days.from_now, threat.review_at, 5
+
+    travel 15.days
+    pings = @pings.size
+    assert_includes Ward::Resolver.call, [ threat.id, "reviewed" ]
+    assert_equal pings + 1, @pings.size
+    assert_match(/still accepted/, @pings.last.first)
+    assert_equal "accepted_risk", threat.reload.status, "never auto-resolves on a clock"
+
+    assert_raises(Ward::Invalid) { Ward::Threats.standdown!(threat, reason: "x", by: jenner) }
+  end
+end

@@ -127,4 +127,47 @@ class WardControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ "error" ], body["open"].map { |f| f["level"] }
     assert_equal "attention", body["triage"]["severity"]
   end
+
+  test "threats over HTTP: a person reports and decides; the worker posts a probe; agents are turned away" do
+    coolify = WardAsset.create!(ref: "coolify", name: "coolify", kind: "control_plane", source: "coolify", exposure: "public",
+                                components: { "php" => nil })
+    post "/v1/ward/threats", params: { kind: "cve", title: "PHP2Shell", cve_ids: [ "CVE-2026-109618" ], component: "php",
+                                       fixed_versions: { "8.3" => "8.3.36" }, exploited: true }, headers: auth, as: :json
+    assert_response :created
+    id = body["id"]
+    assert_equal [ "exposed", "unverified", "critical", false ], body.values_at("status", "confidence", "assessed_severity", "merged")
+
+    post "/v1/ward/observations", params: { asset: "coolify", component: "php", version: "8.3.36" }, headers: worker_auth, as: :json
+    assert_response :created
+    assert_equal [ "probe", "ward" ], body.values_at("source", "by")
+    assert_equal "8.3.36", coolify.believed("php").first
+
+    post "/v1/ward/observations", params: { asset: "nope", component: "php", version: "1" }, headers: worker_auth, as: :json
+    assert_response :unprocessable_entity
+    get "/v1/ward/threats", headers: worker_auth
+    assert_response :forbidden, "the worker posts probes; it does not read threats"
+
+    post "/v1/ward/threats/#{id}/retriage", headers: auth, as: :json
+    assert_equal "not_exposed", WardThreat.find(id).events.where(kind: "triaged").last.data["status"]
+    assert_equal "exposed", body["status"], "a fix seen after triage is the resolver's to move, with fresh evidence"
+
+    get "/v1/ward/threats/#{id}", headers: auth
+    assert_response :ok
+    assert body["history"].any? { |e| e["kind"] == "reported" }
+
+    post "/v1/ward/threats/#{id}/accept_risk", params: {}, headers: auth, as: :json
+    assert_response :unprocessable_entity
+    assert_match(/reason is required/, body["error"])
+    post "/v1/ward/threats/#{id}/accept_risk", params: { reason: "for now" }, headers: auth, as: :json
+    assert_equal "accepted_risk", body["status"]
+
+    patch "/v1/ward/assets/#{coolify.id}", params: { components: %w[php laravel], exposure: "tailnet" }, headers: auth, as: :json
+    assert_equal "tailnet", body["exposure"]
+    get "/v1/ward/assets", headers: auth
+    assert_equal [ "coolify" ], body.map { |a| a["name"] }
+
+    _, agent_token = agent("skipsy", clearance: "personal")
+    get "/v1/ward/threats", headers: { "Authorization" => "Bearer #{agent_token}" }
+    assert_response :forbidden
+  end
 end

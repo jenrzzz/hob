@@ -25,6 +25,42 @@ module Ward
     schedule
   end
 
+  # A ward.audit mission for the worker to run `check` now (ward.audit.run,
+  # and Tier 0 posture for a threat). One at a time per check: a run already
+  # queued or leased is the answer. -> [mission, queued_before]
+  def queue_audit!(check, by: nil, reason: nil, request: nil)
+    raise Invalid, "#{check.slug} is disabled" unless check.enabled?
+
+    worker = Principal.find_by(name: ENV.fetch("HOB_WARD_PRINCIPAL", "ward"), kind: "worker")
+    raise Invalid, "no ward worker is set up (bin/rails \"hob:ward:setup[ward]\")" if worker.nil?
+
+    if (open = Mission.open.for(worker).where("payload->>'kind' = ? AND payload->>'check' = ?", Sentinel::Native::WardAuditRun::KIND, check.slug).first)
+      return [ open, true ]
+    end
+
+    mission = Mission.create!(
+      assignee: worker, created_by: by, title: "ward: run #{check.slug}", brief: reason.to_s.strip.truncate(200).presence,
+      payload: { "kind" => Sentinel::Native::WardAuditRun::KIND, "check" => check.slug, "request" => request }.compact, realm: "personal"
+    )
+    [ mission, false ]
+  end
+
+  # The threats' clock (THREATS.md): refresh the inventory when it is due
+  # (or just the scan targets, without a Coolify token), then let the
+  # resolver move threats along. A Coolify that cannot be reached is logged
+  # and the resolver runs on what is known.
+  def threat_upkeep!(now: Time.current)
+    inventory = begin
+      if Inventory.due?(now: now) then Inventory.sync!(now: now)
+      elsif !Inventory.configured? then { "assets" => Inventory.new(client: nil, now: now).sync_scan_targets.size }
+      end
+    rescue Ward::Error => e
+      Rails.logger.warn("ward inventory sync: #{e.message}")
+      { "error" => e.message }
+    end
+    { "inventory" => inventory, "threats" => Resolver.call(now: now) }.compact
+  end
+
   # The whole picture a person or `ward.status` wants: each check with its
   # last run and staleness, the open and acknowledged findings, the latest
   # triage. Sweeps first, so a stale check shows as one.
@@ -43,10 +79,12 @@ module Ward
       }.compact
     end
     latest = WardRun.where.not(triage: nil).recent.first
+    threats = WardThreat.open.by_severity.limit(findings_limit)
     {
       "checks" => checks,
       "open" => WardFinding.open.by_severity.limit(findings_limit).map(&:as_json_for_ward),
       "acknowledged" => WardFinding.acknowledged.by_severity.limit(findings_limit).map(&:as_json_for_ward),
+      "threats" => Threats.as_list(threats).presence,
       "triage" => latest && { "run" => latest.id, "at" => latest.created_at.utc.iso8601 }.merge(latest.triage.slice("severity", "headline", "summary", "next_steps", "error"))
     }.compact
   end

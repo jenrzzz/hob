@@ -1,0 +1,27 @@
+<%# A ward.threat.* request (THREATS.md), shown with the threat it acts on. %>
+<% args = request.arguments %>
+<% t = context[:threat] %>
+<%# Titles, sources, and notes were written by reporters: everything is escaped, never html_safe. %>
+<dl class="facts">
+  <% if t %>
+    <dt>Threat</dt><dd><%= t.title %> <span class="tag"><%= t.kind %></span> <span class="tag"><%= t.status.tr("_", " ") %></span></dd>
+    <% if t.cve_ids.any? %><dt>CVEs</dt><dd><%= t.cve_ids.join(", ") %></dd><% end %>
+    <dt>Severity</dt><dd><%= t.assessed_severity || "not assessed" %><% if t.confidence %> (<%= t.confidence %>)<% end %></dd>
+    <% if t.affected.any? %>
+      <dt>Affects</dt>
+      <dd><%= safe_join(t.affected.first(8).map { |a| [ a["name"], a["component"], a["version"], a["verdict"], a["exposure"] ].compact.join(" · ") }, tag.br) %></dd>
+    <% end %>
+    <% if t.actor? && t.expires_at %><dt>Window</dt><dd>until <%= t.expires_at.utc.iso8601 %></dd><% end %>
+  <% else %>
+    <dt>Threat</dt><dd><span class="muted">not found: <%= args["threat"] %></span></dd>
+  <% end %>
+  <dt>Then</dt>
+  <dd class="muted">
+    <% if request.capability.name == "ward.threat.accept_risk" %>
+      Accepted as a known risk; it re-surfaces every <%= args["review_days"] || 30 %> days until patched or stood down.
+    <% else %>
+      The watch ends now and the threat resolves as stood down.
+    <% end %>
+  </dd>
+  <% if args["reason"].present? %><dt>Why</dt><dd><%= args["reason"] %></dd><% end %>
+</dl>

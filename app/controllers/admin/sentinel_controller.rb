@@ -2,7 +2,7 @@ module Admin
   # What hob:sentinel:pending, :decide and :petition do from a terminal: the
   # requests and petitions waiting on a person, and deciding them.
   class SentinelController < BaseController
-    helper_method :existing_grant, :records_context, :people_context, :mail_send_files_context
+    helper_method :existing_grant, :records_context, :people_context, :mail_send_files_context, :ward_threat_context
 
     # Browsers render these inline from a data URI with no new dependency;
     # heic and pdf get a metadata-only placeholder (no renderer in this stack).
@@ -77,6 +77,16 @@ module Admin
       when "people.handle.add" then { person: find.call(args["person"]), owner: find.call(args["handle"]) }
       when "people.loop.dismiss" then { loop: PeopleLoop.outstanding.find_by(id: args["loop"].to_s.delete_prefix("loop:")) }
       end
+    end
+
+    # What a person needs to see to decide a ward.threat.* request held for
+    # them (THREATS.md): the threat it acts on, as the ward holds it. nil for
+    # anything else.
+    def ward_threat_context(request)
+      name = request.capability.name
+      return nil unless name.start_with?("ward.threat.") && name != "ward.threat.report"
+
+      { threat: WardThreat.find_by(id: request.arguments["threat"].to_s) }
     end
 
     # What a person needs to see to decide a pending hob.mail.send_files

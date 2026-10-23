@@ -1253,6 +1253,32 @@ ALTER SEQUENCE public.usage_events_id_seq OWNED BY public.usage_events.id;
 
 
 --
+-- Name: ward_assets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ward_assets (
+    id character varying NOT NULL,
+    ref character varying NOT NULL,
+    name character varying NOT NULL,
+    kind character varying NOT NULL,
+    host character varying,
+    role character varying,
+    source character varying NOT NULL,
+    exposure character varying,
+    image character varying,
+    tag character varying,
+    digest character varying,
+    components jsonb DEFAULT '{}'::jsonb NOT NULL,
+    declared jsonb DEFAULT '{}'::jsonb NOT NULL,
+    data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    last_seen_at timestamp(6) without time zone,
+    gone_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: ward_checks; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1310,6 +1336,27 @@ CREATE TABLE public.ward_notes (
 
 
 --
+-- Name: ward_observations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ward_observations (
+    id character varying NOT NULL,
+    asset_id character varying NOT NULL,
+    component character varying NOT NULL,
+    version character varying,
+    digest character varying,
+    source character varying NOT NULL,
+    principal_id bigint,
+    started_at timestamp(6) without time zone,
+    first_seen_at timestamp(6) without time zone NOT NULL,
+    last_seen_at timestamp(6) without time zone NOT NULL,
+    data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: ward_runs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1327,6 +1374,64 @@ CREATE TABLE public.ward_runs (
     triage jsonb,
     mission_id character varying,
     created_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: ward_threat_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ward_threat_events (
+    id character varying NOT NULL,
+    threat_id character varying NOT NULL,
+    kind character varying NOT NULL,
+    from_status character varying,
+    to_status character varying,
+    principal_id bigint,
+    body text,
+    data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: ward_threats; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ward_threats (
+    id character varying NOT NULL,
+    kind character varying NOT NULL,
+    title text NOT NULL,
+    cve_ids character varying[] DEFAULT '{}'::character varying[] NOT NULL,
+    component character varying,
+    fixed_versions jsonb DEFAULT '{}'::jsonb NOT NULL,
+    gotchas jsonb DEFAULT '[]'::jsonb NOT NULL,
+    sources jsonb DEFAULT '[]'::jsonb NOT NULL,
+    reported_by_id bigint,
+    claimed_severity character varying,
+    assessed_severity character varying,
+    confidence character varying,
+    exploited boolean DEFAULT false NOT NULL,
+    actor character varying,
+    target character varying,
+    affected jsonb DEFAULT '[]'::jsonb NOT NULL,
+    status character varying DEFAULT 'reported'::character varying NOT NULL,
+    posture jsonb DEFAULT '[]'::jsonb NOT NULL,
+    proposals jsonb DEFAULT '[]'::jsonb NOT NULL,
+    passes jsonb DEFAULT '[]'::jsonb NOT NULL,
+    resolution jsonb,
+    upstream jsonb,
+    enrichment jsonb,
+    expires_at timestamp(6) without time zone,
+    window_days integer,
+    review_at timestamp(6) without time zone,
+    accepted_reason text,
+    accepted_by_id bigint,
+    todo_id character varying,
+    schedule_id character varying,
+    resolved_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
 );
 
 
@@ -1814,6 +1919,14 @@ ALTER TABLE ONLY public.usage_events
 
 
 --
+-- Name: ward_assets ward_assets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_assets
+    ADD CONSTRAINT ward_assets_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ward_checks ward_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1838,11 +1951,42 @@ ALTER TABLE ONLY public.ward_notes
 
 
 --
+-- Name: ward_observations ward_observations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_observations
+    ADD CONSTRAINT ward_observations_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ward_runs ward_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ward_runs
     ADD CONSTRAINT ward_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ward_threat_events ward_threat_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_threat_events
+    ADD CONSTRAINT ward_threat_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ward_threats ward_threats_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_threats
+    ADD CONSTRAINT ward_threats_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_on_asset_id_component_last_seen_at_44a037c98e; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_asset_id_component_last_seen_at_44a037c98e ON public.ward_observations USING btree (asset_id, component, last_seen_at);
 
 
 --
@@ -2714,6 +2858,20 @@ CREATE INDEX index_usage_events_on_role_and_created_at ON public.usage_events US
 
 
 --
+-- Name: index_ward_assets_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_assets_on_name ON public.ward_assets USING btree (name);
+
+
+--
+-- Name: index_ward_assets_on_ref; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_ward_assets_on_ref ON public.ward_assets USING btree (ref);
+
+
+--
 -- Name: index_ward_findings_on_acknowledged_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2749,6 +2907,13 @@ CREATE INDEX index_ward_notes_on_subject_and_created_at ON public.ward_notes USI
 
 
 --
+-- Name: index_ward_observations_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_observations_on_principal_id ON public.ward_observations USING btree (principal_id);
+
+
+--
 -- Name: index_ward_runs_on_check_slug_and_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2760,6 +2925,48 @@ CREATE INDEX index_ward_runs_on_check_slug_and_created_at ON public.ward_runs US
 --
 
 CREATE INDEX index_ward_runs_on_principal_id ON public.ward_runs USING btree (principal_id);
+
+
+--
+-- Name: index_ward_threat_events_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_threat_events_on_principal_id ON public.ward_threat_events USING btree (principal_id);
+
+
+--
+-- Name: index_ward_threat_events_on_threat_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_threat_events_on_threat_id_and_created_at ON public.ward_threat_events USING btree (threat_id, created_at);
+
+
+--
+-- Name: index_ward_threats_on_accepted_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_threats_on_accepted_by_id ON public.ward_threats USING btree (accepted_by_id);
+
+
+--
+-- Name: index_ward_threats_on_cve_ids; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_threats_on_cve_ids ON public.ward_threats USING gin (cve_ids);
+
+
+--
+-- Name: index_ward_threats_on_reported_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_threats_on_reported_by_id ON public.ward_threats USING btree (reported_by_id);
+
+
+--
+-- Name: index_ward_threats_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ward_threats_on_status ON public.ward_threats USING btree (status);
 
 
 --
@@ -2912,6 +3119,14 @@ ALTER TABLE ONLY public.guidance_changes
 
 ALTER TABLE ONLY public.people
     ADD CONSTRAINT fk_rails_530d9e4397 FOREIGN KEY (created_by_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: ward_threat_events fk_rails_56cb770595; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_threat_events
+    ADD CONSTRAINT fk_rails_56cb770595 FOREIGN KEY (threat_id) REFERENCES public.ward_threats(id);
 
 
 --
@@ -3115,6 +3330,14 @@ ALTER TABLE ONLY public.group_memberships
 
 
 --
+-- Name: ward_threats fk_rails_adac254f52; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_threats
+    ADD CONSTRAINT fk_rails_adac254f52 FOREIGN KEY (accepted_by_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: sentinel_requests fk_rails_aed65976d5; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3152,6 +3375,14 @@ ALTER TABLE ONLY public.calendar_backends
 
 ALTER TABLE ONLY public.budget_backends
     ADD CONSTRAINT fk_rails_b4d50361d3 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: ward_threat_events fk_rails_bb15598651; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_threat_events
+    ADD CONSTRAINT fk_rails_bb15598651 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -3219,6 +3450,14 @@ ALTER TABLE ONLY public.mail_backends
 
 
 --
+-- Name: ward_threats fk_rails_d427b16927; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_threats
+    ADD CONSTRAINT fk_rails_d427b16927 FOREIGN KEY (reported_by_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: text_backends fk_rails_d8aac112e3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3240,6 +3479,14 @@ ALTER TABLE ONLY public.browse_sessions
 
 ALTER TABLE ONLY public.authorization_claims
     ADD CONSTRAINT fk_rails_dadeefcd8a FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: ward_observations fk_rails_ddc8b11a9a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_observations
+    ADD CONSTRAINT fk_rails_ddc8b11a9a FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -3320,6 +3567,14 @@ ALTER TABLE ONLY public.record_collections
 
 ALTER TABLE ONLY public.missions
     ADD CONSTRAINT fk_rails_f765c80df4 FOREIGN KEY (created_by_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: ward_observations fk_rails_f90f44b0cd; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ward_observations
+    ADD CONSTRAINT fk_rails_f90f44b0cd FOREIGN KEY (asset_id) REFERENCES public.ward_assets(id);
 
 
 --
@@ -3742,6 +3997,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261022000001'),
 ('20261016000001'),
 ('20261007140000'),
 ('20261007130000'),

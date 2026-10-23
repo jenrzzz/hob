@@ -1,6 +1,8 @@
 # THREATS.md — ward threat intake, defense posture, and resolution
 
-Status: proposal for jenrzzz/hob, drafted 2026-10-22 (Skipsy, at Jenner's request).
+Status: built (v1), 2026-10-22. Drafted the same day by Skipsy at Jenner's
+request; what was built, and where it differs from the draft, is in
+[As built](#as-built) at the end.
 Pattern follows PEOPLE.md: threats are **native from the start** — first-class
 records in hob, not a side file ward scrapes. Extends WARD.md: findings stay
 what they are, and the "Acting" horizon WARD.md sketches (confirm-gated
@@ -206,10 +208,152 @@ version (rollback, new unpatched container), the threat reopens at
 1. ~~Inventory source~~ — **decided 2026-10-22**: read-only Coolify API
    token (see Triage). Ward's grant stays read-only and separate from any
    write token minted for the sslip.io cleanup.
-2. Agent-filed threats at `review`: right default, or should Marley/Skipsy
-   reports about CVEs (vs. actor claims) be `allow` with ward-side triage
-   doing the filtering?
-3. Upstream watch: which registries does ward poll (Docker Hub, GHCR,
-   Coolify's release feed), and at what cadence before it counts as noise?
-4. Actor-threat default window: 7 days? And do indicators live in hob
-   (auth logs shipped there) or does ward just watch its own probes?
+2. ~~Agent-filed threats at `review`~~ — **as built**: policy is the
+   household's, as for every capability (no rule grants any of these by
+   default). The recommended rule for every agent is `review` for
+   `ward.threat.report`, CVEs included: the reviewer only checks the report
+   is well formed, and ward's triage does the filtering either way. An
+   agent's word never sets `exploited` (a person's or a feed's does), and a
+   claimed severity is capped at `high`, so an `allow` rule cannot let a
+   report push ward past Tier 1 on its own.
+3. ~~Upstream watch~~ — **as built**: GitHub tags (Coolify's release feed,
+   `coollabsio/coolify`) and Docker Hub tags, every 6 hours by default
+   (`poll_hours` per threat). Polls are silent; ward speaks once, when the
+   fix lands. GHCR is not polled: its tag list for Coolify is too long to
+   read through `Web` whole.
+4. ~~Actor-threat default window~~ — **as built**: 7 days
+   (`HOB_WARD_ACTOR_WINDOW_DAYS`, or `window_days` per report). Indicators
+   are what ward observes itself (a new or reopened finding during the
+   watch, from its own runs) and what a person or agent notes with
+   `indicator: true`. Auth logs are not shipped to hob; that is the next
+   source when they are.
+
+## As built
+
+What is here, as of v1. The design above stands; this is the reference.
+
+### Capabilities
+
+All five at `personal`, granted only by a person's rule:
+
+```sh
+bin/rails "hob:sentinel:policy[skipsy,ward.threat.report,review]"
+bin/rails "hob:sentinel:policy[skipsy,ward.threats,allow]"
+bin/rails "hob:sentinel:policy[skipsy,ward.threat.note,allow]"
+bin/rails "hob:sentinel:policy[skipsy,ward.threat.accept_risk,confirm]"   # requires_person: only confirm or deny
+bin/rails "hob:sentinel:policy[skipsy,ward.threat.standdown,confirm]"     # requires_person
+```
+
+`ward.status` now carries the open threats too.
+
+### Lifecycle, as the code holds it
+
+`WardThreat::TRANSITIONS` is the table; a move it does not have raises.
+Two places differ from the sketch above. `reopened` is an event, not a
+status: a regression puts a resolved threat back at `monitoring`. And
+`not_exposed → resolved` on the triage evidence happens only at intake;
+a threat that was `exposed` resolves the resolver's way, never on one
+re-triage.
+
+CVE resolution, precisely: every matched asset at or past its branch's
+fixed version, each asset's version **seen since the threat was reported**
+for the first check and **seen again since the previous check** for each
+one after, checks at least an hour apart, two of them, and every gotcha
+checked off by a person with evidence. A floating tag (`php:8.3`), a
+branch with no fix named, or a version that does not parse is `unknown`,
+never `fixed`.
+
+### Inventory and observations
+
+`Ward::Inventory` reads Coolify's `/version`, `/servers`,
+`/applications`, `/services`, and `/databases` with
+`HOB_WARD_COOLIFY_TOKEN` (and `HOB_WARD_COOLIFY_URL`, else `COOLIFY_URL`);
+its client has no method that writes. Images become components
+(`php:8.3.30-fpm` → `php 8.3.30`), Coolify itself implies `php` and
+`laravel`, and a person can add components or override exposure
+(`hob:ward:inventory:declare`). Exposure: an FQDN is public, none is
+tailnet, a database is localhost unless Coolify says it is public.
+Without a token, the scan targets alone are the inventory.
+
+Coolify's claims become observations on every sync. A **probe** (the ward
+worker) or a **person** posts what answers on the wire to
+`POST /v1/ward/observations`; a probe seen since Coolify's claim last
+changed wins, and any disagreement is shown on the threat.
+
+### Posture, as built
+
+- **Tier 0**: a `ward.audit` mission for the worker; a
+  `ward-threat-<id>` schedule running the exposure audit every 6 hours
+  (`HOB_WARD_WATCH_CRON`) until the threat resolves; an inventory refresh
+  and a standing ask for a probe when a match has no version; a note on
+  any open finding about a matched asset, and a step up in severity.
+- **Tier 1**: a task through Todos (`HOB_WARD_TODO_BACKEND`,
+  `HOB_WARD_TODO_LIST`), kept updated, completed at resolution, reopened
+  on regression; a ping (`Notify.person`); and, for each agent named in
+  `HOB_WARD_TELL` (`skipsy,marley`), a `ward.threat.notice` mission to
+  pass it on. Ward is a worker, not an agent, so it cannot send
+  `hob.agent.message`; a mission is how it reaches them.
+- **Tier 2**: proposals only (`upgrade` when an upstream fix lands,
+  `block` on an observed indicator, `resolve` when an actor window passes).
+  A person confirms or declines with `hob:ward:threat:decide` or
+  `POST /v1/ward/threats/:id/proposals/:proposal/confirm`. **Ward holds no
+  grant to carry a Tier 2 action out**: confirming records the decision,
+  moves the threat (an upgrade puts it at `mitigating`), and notes the task;
+  the doing is a person's, until a capability exists for it.
+
+Every action, taken or skipped, is on the threat's posture list and in its
+history with its result. A missing piece (no worker, no todo backend)
+is recorded as skipped and never hides the threat.
+
+### CVE lookup
+
+Off unless `HOB_WARD_CVE_LOOKUP=nvd`. NVD's CVE API, through `Web`, fills
+the component and per-branch fixed versions only where the report had
+none, and sets `exploited` when NVD carries CISA's KEV date. NVD's
+severity is kept on `enrichment` as evidence and never becomes ward's.
+
+### API and tasks
+
+```
+GET  /v1/ward/threats?state=open|closed|all|<status>  ·  GET /v1/ward/threats/:id    (with history)
+POST /v1/ward/threats                       { kind, title, cve_ids, component, fixed_versions, gotchas, source, claimed_severity, exploited, actor, target, window_days, upstream }
+POST /v1/ward/threats/:id/notes             { body, evidence?, indicator?, satisfies? }
+POST /v1/ward/threats/:id/retriage · /accept_risk { reason, review_days? } · /standdown { reason } · /extend { days? }
+POST /v1/ward/threats/:id/await_upstream    { source: github|dockerhub, repository, current?, fixed?, poll_hours? }
+POST /v1/ward/threats/:id/gotchas/:index    { evidence }
+POST /v1/ward/threats/:id/proposals/:proposal/confirm|decline   { note? }
+GET  /v1/ward/assets · POST /v1/ward/assets/sync · PATCH /v1/ward/assets/:id { components?, exposure? }
+POST /v1/ward/observations                  { asset, component, version, digest?, started_at? }    (the worker, or a person)
+```
+
+```sh
+bin/rails hob:ward:inventory:sync · :assets · "observe[coolify,php,8.3.36]" · "declare[coolify]" COMPONENTS=php,laravel
+bin/rails hob:ward:threat:report · :list · "show[<id>]" · "note[<id>]" · "retriage[<id>]"
+bin/rails "hob:ward:threat:await[<id>]" · "accept[<id>]" · "standdown[<id>]" · "extend[<id>,7]" · "gotcha[<id>,0]" · "decide[<id>,<proposal>,confirm]"
+bin/rails hob:ward:sweep                    # the sweep, then the threats' upkeep; WardSweepJob does both hourly
+```
+
+### Schema
+
+```
+ward_threats        ulid, kind, title, cve_ids[], component, fixed_versions, gotchas, sources, reported_by, claimed/assessed_severity,
+                    confidence, exploited, actor, target, affected, status, posture, proposals, passes, resolution, upstream,
+                    enrichment, expires_at, window_days, review_at, accepted_reason, accepted_by, todo_id, schedule_id, resolved_at
+ward_threat_events  ulid, threat, kind, from/to_status, principal?, body, data           (append-only)
+ward_assets         ulid, ref (unique), name, kind, host, role, source, exposure, image, tag, digest, components, declared, last_seen_at, gone_at
+ward_observations   ulid, asset, component, version, digest, source (coolify|probe|person), principal?, started_at, first/last_seen_at
+```
+
+Not realm-scoped, like the rest of the ward.
+
+### Not yet
+
+- **The worker's probes.** `security/ward.py` (infra) does not post
+  observations yet. Until it does, a person posts what a probe shows
+  (`hob:ward:inventory:observe`), and Coolify's version and image tags
+  are the only automatic readings. The worker today fails a mission kind
+  it does not know, so ward does not queue probe missions for it.
+- **Tier 2 execution.** Proposals are confirmed, not carried out.
+- **A model in triage.** Threat pings are mechanical; `Ward::Triage`
+  still reads findings only.
+- **Auth-log indicators.** See open question 4.

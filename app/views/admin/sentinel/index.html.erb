@@ -21,6 +21,8 @@
       <%= render "records_context", request: r, context: records %>
     <% elsif (people = people_context(r)) %>
       <%= render "people_context", request: r, context: people %>
+    <% elsif (ward_threat = ward_threat_context(r)) %>
+      <%= render "ward_threat_context", request: r, context: ward_threat %>
     <% elsif (mail_send_files = mail_send_files_context(r)) %>
       <%= render "mail_send_files_context", request: r, context: mail_send_files %>
     <% else %>

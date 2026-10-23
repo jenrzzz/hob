@@ -29,21 +29,11 @@ module Sentinel
       def call
         check = WardCheck.find_by(slug: require_argument(:check).to_s.strip)
         raise Error, "no ward check named #{arguments['check'].inspect}" if check.nil?
-        raise Error, "#{check.slug} is disabled" unless check.enabled?
 
-        worker = Principal.find_by(name: ENV.fetch("HOB_WARD_PRINCIPAL", "ward"), kind: "worker")
-        raise Error, "no ward worker is set up (bin/rails \"hob:ward:setup[ward]\")" if worker.nil?
-
-        if (open = Mission.open.for(worker).where("payload->>'kind' = ? AND payload->>'check' = ?", KIND, check.slug).first)
-          return { "mission" => open.id, "status" => open.status, "check" => check.slug, "queued_before" => true }
-        end
-
-        mission = Mission.create!(
-          assignee: worker, created_by: request.principal, title: "ward: run #{check.slug}",
-          brief: arguments["reason"].to_s.strip.truncate(200).presence,
-          payload: { "kind" => KIND, "check" => check.slug, "request" => request.id }, realm: "personal"
-        )
-        { "mission" => mission.id, "status" => mission.status, "check" => check.slug }
+        mission, queued_before = Ward.queue_audit!(check, by: request.principal, reason: arguments["reason"], request: request.id)
+        { "mission" => mission.id, "status" => mission.status, "check" => check.slug, "queued_before" => queued_before || nil }.compact
+      rescue Ward::Invalid => e
+        raise Error, e.message
       end
     end
   end

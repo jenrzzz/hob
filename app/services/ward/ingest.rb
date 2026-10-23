@@ -58,6 +58,7 @@ module Ward
       end
       Sweep.call(now: now, into: run)
       Triage.call(run) if @triage && run.any_changes?
+      Threats.after_run(run)
       run
     end
 

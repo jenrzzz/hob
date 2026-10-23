@@ -812,13 +812,182 @@ namespace :hob do
       end
     end
 
-    desc "The ward's clock: raise stale checks, expire acknowledgements, triage what changed. WardSweepJob runs it hourly; this is by hand."
+    desc "The ward's clock: raise stale checks, expire acknowledgements, triage what changed, then the threats' upkeep " \
+         "(inventory, resolver). WardSweepJob runs it hourly; this is by hand."
     task sweep: :environment do
       Clearance.with("intimate") do
         Current.set(surface: Ward::SURFACE) do
           run = Ward::Sweep.call
           puts run ? "sweep: #{run.mechanical_summary}" : "sweep: nothing changed"
+          upkeep = Ward.threat_upkeep!
+          puts "inventory: #{upkeep['inventory'].to_json}" if upkeep["inventory"]
+          upkeep["threats"].each { |id, what| puts "threat #{id}: #{what}" }
         end
+      end
+    end
+
+    # Threats (THREATS.md): what the ward is told, and a person's decisions on them.
+    namespace :threat do
+      ward_person = lambda do
+        person = Principal.find_by!(name: ENV.fetch("HOB_PERSON", "jenner"))
+        abort "#{person.name} is not a person" unless person.trusted?
+        person
+      end
+      ward_threat = lambda do |id|
+        abort "usage: give the threat's id (bin/rails hob:ward:threat:list)" if id.blank?
+        WardThreat.find(id)
+      end
+      ward_print = lambda do |threat|
+        puts "#{threat.id}  #{threat.kind}  #{threat.status}  #{threat.assessed_severity || '-'}#{" (#{threat.confidence})" if threat.confidence}  #{threat.title}"
+        puts "  cves: #{threat.cve_ids.join(', ')}" if threat.cve_ids.any?
+        puts "  component: #{threat.component}, fixed: #{threat.fixed_versions.map { |b, v| "#{b}→#{v}" }.join(', ').presence || 'unknown'}" if threat.component
+        puts "  actor: #{threat.actor}#{" on #{threat.target}" if threat.target}, window until #{threat.expires_at&.utc&.iso8601}" if threat.actor?
+        threat.affected.each { |a| puts "  - #{[ a['name'], a['component'], a['version'], a['verdict'], a['exposure'], a['why'], a['disagreement'] ].compact.join(' · ')}" }
+        threat.gotchas.each_with_index { |g, i| puts "  gotcha #{i}: #{g['text']}#{g['satisfied_at'] ? " ✓ #{g['satisfied_by']}: #{g['evidence']}" : ' (open)'}" }
+        threat.pending_proposals.each { |p| puts "  proposal #{p['id']} (tier #{p['tier'] || 'person'}): #{p['title']} — #{p['detail']} [blast radius: #{p['blast_radius']}]" }
+        puts "  upstream: #{threat.upstream.to_json}" if threat.upstream
+        puts "  resolution: #{threat.resolution['criteria']} (#{threat.resolution['verified_by']}, #{threat.resolution['resolved_at']})" if threat.resolution
+        puts "  accepted by #{threat.accepted_by&.name}: #{threat.accepted_reason}; review #{threat.review_at&.utc&.to_date}" if threat.status == "accepted_risk"
+      end
+
+      desc "List threats. bin/rails \"hob:ward:threat:list[open|closed|all|<status>]\""
+      task :list, [ :state ] => :environment do |_task, args|
+        rows = WardThreat.in_state(args[:state]).by_severity
+        puts "no threats" if rows.empty?
+        rows.each { |t| puts "#{t.id}  #{t.status.ljust(17)} #{(t.assessed_severity || '-').ljust(8)} #{t.kind.ljust(8)} #{t.title}" }
+      end
+
+      desc "One threat and its history. bin/rails \"hob:ward:threat:show[<id>]\""
+      task :show, [ :id ] => :environment do |_task, args|
+        threat = ward_threat.call(args[:id])
+        ward_print.call(threat)
+        puts "\nhistory:"
+        threat.events.includes(:principal).each do |e|
+          puts "  #{e.created_at.utc.iso8601}  #{e.kind.ljust(10)} #{e.principal&.name || 'ward'}#{" #{e.from_status}→#{e.to_status}" if e.to_status}: #{e.body}"
+        end
+      end
+
+      desc "Report a threat as a person. bin/rails hob:ward:threat:report KIND=cve TITLE='PHP2Shell RCE in PHP core' " \
+           "CVES=CVE-2026-109618,CVE-2026-109619 COMPONENT=php FIXED='8.3=8.3.36,8.4=8.4.27' GOTCHAS='FPM workers restarted after the patch' " \
+           "SEVERITY=critical EXPLOITED=1 SOURCE='https://...'  ·  KIND=actor ACTOR=handle TARGET=hob WINDOW_DAYS=7"
+      task report: :environment do
+        Clearance.with("intimate") do
+          Current.set(surface: Ward::SURFACE) do
+            fixed = ENV["FIXED"].to_s.split(",").to_h { |pair| pair.split("=", 2).map(&:strip) }.compact_blank
+            attributes = {
+              "kind" => ENV["KIND"], "title" => ENV["TITLE"], "cve_ids" => ENV["CVES"].to_s.split(","), "component" => ENV["COMPONENT"],
+              "fixed_versions" => fixed.presence, "gotchas" => ENV["GOTCHAS"].to_s.split("|").presence, "claimed_severity" => ENV["SEVERITY"],
+              "exploited" => ENV["EXPLOITED"] == "1" || nil, "source" => ENV["SOURCE"].presence && { "ref" => ENV["SOURCE"] },
+              "actor" => ENV["ACTOR"], "target" => ENV["TARGET"], "window_days" => ENV["WINDOW_DAYS"]
+            }.compact_blank
+            threat, merged = Ward::Threats.report!(attributes, by: ward_person.call)
+            puts merged ? "merged into an open threat:" : "reported:"
+            ward_print.call(threat)
+          end
+        end
+      rescue Ward::Invalid => e
+        abort e.message
+      end
+
+      desc "Add a note to a threat. bin/rails \"hob:ward:threat:note[<id>]\" BODY='...' EVIDENCE= INDICATOR=1"
+      task :note, [ :id ] => :environment do |_task, args|
+        Clearance.with("intimate") do
+          threat = ward_threat.call(args[:id])
+          Ward::Threats.note!(threat, body: ENV["BODY"], by: ward_person.call, evidence: ENV["EVIDENCE"], indicator: ENV["INDICATOR"] == "1")
+          puts "#{threat.id}: noted"
+        end
+      end
+
+      desc "Match a threat against the inventory again. bin/rails \"hob:ward:threat:retriage[<id>]\""
+      task :retriage, [ :id ] => :environment do |_task, args|
+        Clearance.with("intimate") { ward_print.call(Ward::Threats.triage!(ward_threat.call(args[:id]), by: ward_person.call)) }
+      end
+
+      desc "Accept a threat as a known risk. bin/rails \"hob:ward:threat:accept[<id>]\" REASON='...' REVIEW_DAYS=30"
+      task :accept, [ :id ] => :environment do |_task, args|
+        Clearance.with("intimate") do
+          ward_print.call(Ward::Threats.accept_risk!(ward_threat.call(args[:id]), reason: ENV["REASON"], by: ward_person.call, review_days: ENV["REVIEW_DAYS"]))
+        end
+      end
+
+      desc "End an actor watch early. bin/rails \"hob:ward:threat:standdown[<id>]\" REASON='...'"
+      task :standdown, [ :id ] => :environment do |_task, args|
+        Clearance.with("intimate") { ward_print.call(Ward::Threats.standdown!(ward_threat.call(args[:id]), reason: ENV["REASON"], by: ward_person.call)) }
+      end
+
+      desc "Wait for the fix upstream, and watch for it. bin/rails \"hob:ward:threat:await[<id>]\" SOURCE=github|dockerhub " \
+           "REPOSITORY=coollabsio/coolify CURRENT=4.0.0-beta.420 FIXED= POLL_HOURS=6"
+      task :await, [ :id ] => :environment do |_task, args|
+        Clearance.with("intimate") do
+          spec = { "source" => ENV["SOURCE"], "repository" => ENV["REPOSITORY"], "current" => ENV["CURRENT"], "fixed" => ENV["FIXED"], "poll_hours" => ENV["POLL_HOURS"] }
+          ward_print.call(Ward::Threats.await_upstream!(ward_threat.call(args[:id]), upstream: spec.compact_blank, by: ward_person.call))
+        end
+      end
+
+      desc "Keep an actor watch going: another window from now. bin/rails \"hob:ward:threat:extend[<id>,7]\""
+      task :extend, [ :id, :days ] => :environment do |_task, args|
+        Clearance.with("intimate") { ward_print.call(Ward::Threats.extend!(ward_threat.call(args[:id]), by: ward_person.call, days: args[:days])) }
+      end
+
+      desc "Check off a gotcha. bin/rails \"hob:ward:threat:gotcha[<id>,0]\" EVIDENCE='php-fpm restarted 14:02, workers 8.3.36'"
+      task :gotcha, [ :id, :index ] => :environment do |_task, args|
+        Clearance.with("intimate") do
+          threat = ward_threat.call(args[:id])
+          Ward::Threats.satisfy!(threat, args[:index], evidence: ENV["EVIDENCE"], by: ward_person.call)
+          ward_print.call(threat)
+        end
+      end
+
+      desc "Confirm or decline what the ward proposed. bin/rails \"hob:ward:threat:decide[<id>,<proposal>,confirm|decline]\" NOTE="
+      task :decide, [ :id, :proposal, :decision ] => :environment do |_task, args|
+        Clearance.with("intimate") do
+          Current.set(surface: Ward::SURFACE) do
+            ward_print.call(Ward::Threats.decide!(ward_threat.call(args[:id]), args[:proposal], decision: args[:decision], by: ward_person.call, note: ENV["NOTE"]))
+          end
+        end
+      end
+    end
+
+    # The inventory threats are matched against (THREATS.md, "Triage").
+    namespace :inventory do
+      desc "Pull the inventory from Coolify with the ward's read-only token (HOB_WARD_COOLIFY_TOKEN). bin/rails hob:ward:inventory:sync"
+      task sync: :environment do
+        puts Ward::Inventory.sync!.to_json
+      rescue Ward::Error => e
+        abort e.message
+      end
+
+      desc "What the ward knows the household runs. bin/rails hob:ward:inventory:assets ALL=1"
+      task assets: :environment do
+        rows = WardAsset.by_name
+        rows = rows.present unless ENV["ALL"] == "1"
+        puts "no assets (bin/rails hob:ward:inventory:sync)" if rows.empty?
+        rows.each do |a|
+          components = a.component_names.map { |c| "#{c} #{a.believed(c).first || '?'}" }.join(", ")
+          puts "#{a.name.ljust(24)} #{a.kind.ljust(14)} #{(a.host || '-').ljust(10)} #{(a.effective_exposure || '-').ljust(9)} #{components}#{' (gone)' if a.gone_at}"
+        end
+      end
+
+      desc "Record what a probe saw. bin/rails \"hob:ward:inventory:observe[coolify,php,8.3.36]\" STARTED_AT="
+      task :observe, [ :asset, :component, :version ] => :environment do |_task, args|
+        asset = WardAsset.find_by(ref: args[:asset]) || WardAsset.present.find_by!(name: args[:asset])
+        person = Principal.find_by!(name: ENV.fetch("HOB_PERSON", "jenner"))
+        observation = asset.observe!(component: args[:component], version: args[:version], source: "person", principal: person,
+                                     started_at: ENV["STARTED_AT"].presence && Time.zone.parse(ENV["STARTED_AT"]))
+        puts "#{asset.name}: #{observation.component} #{observation.version} (#{observation.source}, #{observation.last_seen_at.utc.iso8601})"
+      end
+
+      desc "Say what an asset runs or how exposed it is, over what the inventory implies. " \
+           "bin/rails \"hob:ward:inventory:declare[coolify]\" COMPONENTS=php,laravel EXPOSURE=public|tailnet|localhost"
+      task :declare, [ :asset ] => :environment do |_task, args|
+        asset = WardAsset.find_by(ref: args[:asset]) || WardAsset.present.find_by(name: args[:asset]) ||
+                WardAsset.create!(ref: "manual:#{args[:asset]}", name: args[:asset], kind: ENV.fetch("KIND", "application"), source: "person",
+                                  host: ENV["HOST"], last_seen_at: Time.current)
+        declared = asset.declared.dup
+        declared["components"] = ENV["COMPONENTS"].split(",").map { |c| c.strip.downcase }.compact_blank if ENV.key?("COMPONENTS")
+        declared["exposure"] = ENV["EXPOSURE"].presence if ENV.key?("EXPOSURE")
+        asset.update!(declared: declared.compact_blank)
+        puts "#{asset.name}: #{asset.declared.to_json}"
       end
     end
   end

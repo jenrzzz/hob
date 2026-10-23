@@ -36,6 +36,8 @@ The horizon, so v1's shapes are chosen with it in mind:
   could revoke a key, cancel a mission, quarantine a container, or queue a
   forge build for a fix. Every one of those is a sentinel capability with a
   `confirm` rule, so nothing new is needed to gate them.
+  [THREATS.md](THREATS.md) gives it the trigger: a **threat**, something
+  the ward is told rather than scans for, is what it acts *on*.
 - **A screen.** The companion app (clients/ios) shows petitions and
   requests; a ward screen with acknowledge-from-the-phone is the obvious
   next surface.
@@ -171,6 +173,10 @@ bin/rails "hob:sentinel:policy[butler,ward.status,allow]"
 bin/rails "hob:sentinel:policy[butler,ward.audit.run,confirm]"
 bin/rails "hob:sentinel:policy[butler,hob.ward.portcheck,allow]"
 ```
+
+Threats add five more (`ward.threat.report`, `ward.threats`,
+`ward.threat.note`, `ward.threat.accept_risk`, `ward.threat.standdown`);
+see [THREATS.md](THREATS.md).
 
 `hob.ward.portcheck`'s `host` is never the agent's word: it must already be
 a literal address in **`HOB_WARD_SCAN_TARGETS`** (comma-separated), the

@@ -360,3 +360,63 @@ Not realm-scoped, like the rest of the ward.
 - **A model in triage.** Threat pings are mechanical; `Ward::Triage`
   still reads findings only.
 - **Auth-log indicators.** See open question 4.
+- **Native threat sourcing.** See the sourcing section at the end.
+  Interim: Skipsy bellwether (external, since 2026-10-25).
+
+## Threat sourcing — proposed (decided 2026-10-25, not yet built)
+
+How ward learns about new threats on its own, instead of waiting for a
+person or an agent to read the news. Jenner's call, 2026-10-25: build this
+into hob natively; until it lands, Skipsy bellwethers externally (below).
+
+### Sources
+
+- **CISA KEV — primary.** Actively exploited is the bar for a feed to open
+  a threat unprompted, and KEV is the catalog of exactly that. Small
+  (under two thousand entries), updated roughly daily, plain JSON.
+- **NVD — secondary, watched components only.** A new CVE naming a
+  component in ward's inventory but not (yet) in KEV opens as an
+  `advisory`-grade candidate at low confidence, or enriches an existing
+  threat — it never sets `exploited` on its own. This is the existing
+  `HOB_WARD_CVE_LOOKUP` path widened from lookup-at-triage to a watch.
+- **Vendor advisories** for inventoried components with no CVE yet
+  (a Coolify security release, a Docker bulletin) — `kind: advisory`,
+  same matching rules.
+
+### Mechanics
+
+- A sourcing poll rides the hourly sweep (`WardSweepJob`): fetch KEV,
+  diff `cveID`s against every CVE ward has ever seen (open or resolved —
+  the threats table is the watermark, no separate seen-list), and match
+  survivors against `ward_assets.components`.
+- **Match → threat.** `kind: cve`, `reported_by` = ward itself,
+  `source` = the feed entry. A feed's word may set `exploited` (open
+  question 2), and KEV listing is exactly that case. Claimed severity is
+  the feed's, capped as usual; ward assesses its own from inventory.
+  Dedupe is free: a CVE already on an open threat merges by `cve_ids`.
+- **No match → dismissed, but on the record.** A candidate that matches
+  no inventoried component is logged as a sourcing event (feed, CVE,
+  date), never a threat. The "never silently dropped" rule binds
+  *reports*; a feed of thousands cannot be allowed to become a threat
+  queue of thousands. The dismissal log is what makes the filter
+  auditable when a match is later declared (an asset gains a component →
+  re-run the log against it).
+- **Noise bound.** Sourcing opens threats silently into triage, like
+  upstream-watch polls. The household hears about a sourced threat when
+  triage finds an exposed asset, or in the next posture summary —
+  never one message per CVE.
+- **Cadence.** KEV every 6 hours (aligned with the upstream-watch
+  default); NVD watch daily is plenty. A poll that errors is silent
+  once and loud on the third consecutive failure.
+
+### Interim: the bellwether (external, running since 2026-10-25)
+
+Until this ships, Skipsy polls KEV every 12 hours, filters new entries
+against a household-stack keyword list, and files matches through
+`ward.threat.report` at `review` — the ordinary agent intake above.
+Known limits, accepted for the interim: the keyword list is a blunt
+stand-in for inventory matching (it over-reports; ward's triage is the
+real filter), it depends on Skipsy's scheduler being up, and its
+watermark is a local file, not the threats table. When native sourcing
+lands, the bellwether stands down and this section's "proposed" comes
+off.

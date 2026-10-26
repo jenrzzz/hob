@@ -1,6 +1,6 @@
 module V1
   # POST /v1/completions — the door for one-shot, usually structured, calls.
-  # { role, operation?, system? | persona?, messages[], schema?, tools?,
+  # { role, operation?, system? | persona?, messages[], schema?, tools?, situation?,
   #   tool_choice?, max_iterations?, params?, metadata?, ref?, realm? }
   # → 200 { id, status: success|refused|tool_calls, content, parsed?,
   #         tool_calls?, usage, model, provider, snapshot, node }
@@ -25,7 +25,7 @@ module V1
           schema: hash_param(:schema), tools: array_param(:tools), tool_choice: params[:tool_choice].presence,
           max_iterations: params[:max_iterations].presence,
           params: hash_param(:params) || {}, metadata: hash_param(:metadata) || {},
-          ref: params[:ref].presence, realm: requested_realm
+          ref: params[:ref].presence, realm: requested_realm, situation: situation_param
         )
         ->(&on_event) { completion.call(&on_event) }
       end
@@ -63,6 +63,14 @@ module V1
 
     def messages_param
       Array(params[:messages]).map { |m| m.respond_to?(:permit) ? m.permit(:role, :content).to_h : m.to_h }
+    end
+
+    def situation_param
+      value = params[:situation]
+      return false if value.nil? || value == false
+      return true if value == true
+
+      raise Gateway::Invalid, "situation is true or false"
     end
 
     def usage_json(response)

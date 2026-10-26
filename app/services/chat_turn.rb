@@ -35,7 +35,7 @@ class ChatTurn
   # new reply lands as a *sibling* of prior ones (a swipe).
   # tools / tool_choice / tool_results / max_iterations: see ToolExchange.
   def initialize(conversation:, branch:, content: nil, persona: nil, personas: nil, context: nil,
-                 instruction: nil, role: nil, regenerate_at: nil, preset: nil,
+                 instruction: nil, role: nil, regenerate_at: nil, preset: nil, situation: nil,
                  tools: nil, tool_choice: nil, tool_results: nil, max_iterations: nil)
     @conversation = conversation
     @branch = branch
@@ -43,6 +43,7 @@ class ChatTurn
     @personas = Array(personas.presence || persona).compact
     @context = context
     @instruction = instruction
+    @situation = situation
     @regenerate_at = regenerate_at
     @preset = preset
     @role = role || @personas.filter_map(&:model_role).first || DEFAULT_ROLE
@@ -57,7 +58,7 @@ class ChatTurn
 
     assembly = Assembly::Pipeline.new(
       conversation: @conversation, head: anchor,
-      personas: @personas, context: @context, instruction: @instruction, preset: @preset
+      personas: @personas, context: @context, instruction: @instruction, preset: @preset, situation: @situation
     ).assemble
 
     unless %w[user tool].include?(assembly.messages.last&.dig("role"))

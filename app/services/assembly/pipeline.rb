@@ -9,6 +9,7 @@ module Assembly
       { "name" => "persona", "enabled" => true, "budget" => 2_000 },
       { "name" => "scenario", "enabled" => true, "budget" => 2_000 },
       { "name" => "history", "enabled" => true, "budget" => 8_000 },
+      { "name" => "situation", "enabled" => true, "budget" => 400 },
       { "name" => "instruction", "enabled" => true, "budget" => 1_000 }
     ].freeze
 
@@ -20,12 +21,13 @@ module Assembly
     # personas: [] / [one] / [many] (an ensemble, B5)
     # context: String | Hash | [{ name, body, budget, volatile }] (B4)
     # instruction: trailing user-turn text; falls back to the persona's (B3)
-    def initialize(conversation:, head:, personas: [], context: nil, instruction: nil, preset: nil)
+    def initialize(conversation:, head:, personas: [], context: nil, instruction: nil, preset: nil, situation: nil)
       @conversation = conversation
       @head = head
       @personas = Array(personas).compact
       @context = context
       @instruction = instruction.presence || @personas.filter_map(&:instruction).first
+      @situation = situation
       @preset = preset
       @stage_config = preset&.stage_config || STAGE_DEFAULTS
     end
@@ -59,6 +61,7 @@ module Assembly
       when "persona" then persona_stage
       when "scenario" then scenario_stage(config["budget"])
       when "history" then history_stage(config["budget"] || 8_000)
+      when "situation" then situation_stage(config["budget"] || 400)
       when "instruction" then instruction_stage
       end
     end
@@ -157,6 +160,43 @@ module Assembly
       tag_speakers = @personas.size > 1 || kept.filter_map(&:speaker).uniq.size > 1
       messages = Transcript.render(kept.reverse, tag_speakers: tag_speakers)
       { "name" => "history", "count" => messages.size, tokens: spent, messages: messages }
+    end
+
+    # The person's volatile present moment belongs after history, beside the
+    # trailing instruction, so it does not churn the provider's cacheable
+    # system prefix. Per-turn `situation: false` opts out; { person: name }
+    # handles a shared surface until conversations carry participants. Only a
+    # person's key may name someone: an agent reads situation.get through the
+    # sentinel, not by asking chat to render it.
+    def situation_stage(budget)
+      return nil if @situation == false
+
+      options = case @situation
+      when nil, true then {}
+      when Hash then @situation.to_h.deep_stringify_keys
+      else raise ArgumentError, "situation must be false, true, or { person }"
+      end
+      unknown = options.keys - %w[person]
+      raise ArgumentError, "unknown situation option: #{unknown.join(', ')}" if unknown.any?
+
+      person = options["person"].presence
+      if person && !Current.principal&.trusted?
+        raise Situation::Invalid, "situation: { person } needs a person's key"
+      end
+      person ||= Current.principal&.name if Current.principal&.trusted?
+      return nil if person.nil?
+
+      now = Time.current
+      answer = Situation.get({ "person" => person }, requester: Current.principal, surface: Current.surface, now: now)
+      state = answer["people"].first
+      text = Situation::Renderer.render(state, budget: budget, now: now)
+      return nil if text.blank?
+
+      realms = (state["facets"] + state["topics"]).map { |row| row["realm"] }.uniq
+      highest = realms.max_by { |realm| Realm.rank_of(realm) }
+      @conversation.taint!(highest) if highest
+      { "name" => "situation", "person" => state["person"], "realms" => realms,
+        tokens: Assembly.estimate_tokens(text), messages: [ { "role" => "user", "content" => text } ] }
     end
 
     # Post-history text as the final user turn: "ask the next question", "the

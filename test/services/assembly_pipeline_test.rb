@@ -82,4 +82,56 @@ class AssemblyPipelineTest < ActiveSupport::TestCase
     result = assemble(conversation: convo, head: e)
     assert_equal [ "add soup" ], result.messages.map { |m| m["content"] }
   end
+
+  test "situation is volatile trailing context, snapshotted after history and before instruction" do
+    writer = Situation::Writer.new(principal: @principal, surface: "app:Test iPhone", clearance: "intimate")
+    Situation.observe(person: @principal, observations: [
+      { "kind" => "location", "value" => { "place" => "home" } },
+      { "kind" => "company", "value" => { "with" => [ "kids" ] } },
+      { "kind" => "topic", "slot" => "permit", "value" => { "text" => "the ADU permit" }, "realm" => "personal" }
+    ], by: writer)
+    convo = conversation(realm: "household")
+    user = MessageNode.append!(conversation: convo, parent_hash: MessageNode::ROOT, role: "user", content: "What now?")
+
+    result = assemble(conversation: convo, head: user, instruction: "Keep it short.")
+    assert_equal %w[user user user], result.messages.map { |message| message["role"] }
+    assert_equal "What now?", result.messages.first["content"]
+    assert_includes result.messages.second["content"], "[Situation: tester"
+    assert_includes result.messages.second["content"], "company: with kids"
+    assert_includes result.messages.second["content"], "topic (tester"
+    assert_equal "Keep it short.", result.messages.last["content"]
+    assert_equal %w[history situation instruction], result.snapshot.assembled["stages"].last(3).map { |stage| stage["name"] }
+    assert_equal %w[household personal], result.snapshot.assembled["stages"].find { |stage| stage["name"] == "situation" }["realms"].sort
+    assert_equal "personal", convo.reload.taint_realm
+  end
+
+  test "a turn can opt out of situation or select another household person" do
+    tessa = Principal.create!(name: "tessa", kind: "human", max_clearance: "household")
+    writer = Situation::Writer.new(principal: tessa, surface: "shortcuts", clearance: "household")
+    Situation.observe(person: tessa, observations: [ { "kind" => "location", "value" => { "place" => "home" } } ], by: writer)
+    convo = conversation
+    user = MessageNode.append!(conversation: convo, parent_hash: MessageNode::ROOT, role: "user", content: "Dinner?")
+
+    selected = assemble(conversation: convo, head: user, situation: { person: "tessa" })
+    assert_includes selected.messages.last["content"], "Situation: tessa"
+    assert_includes selected.messages.last["content"], "location: home"
+
+    opted_out = assemble(conversation: convo, head: user, situation: false)
+    assert_equal [ "Dinner?" ], opted_out.messages.map { |message| message["content"] }
+    assert_nil opted_out.snapshot.assembled["stages"].find { |stage| stage["name"] == "situation" }
+  end
+
+  test "only a person's key may name whose situation a turn renders" do
+    writer = Situation::Writer.new(principal: @principal, surface: "test", clearance: "intimate")
+    Situation.observe(person: @principal, observations: [
+      { "kind" => "topic", "slot" => "permit", "value" => { "text" => "the ADU permit" } }
+    ], by: writer)
+    convo = conversation
+    user = MessageNode.append!(conversation: convo, parent_hash: MessageNode::ROOT, role: "user", content: "Hi")
+    Current.principal = Principal.create!(name: "helper", kind: "agent", max_clearance: "intimate")
+
+    error = assert_raises(Situation::Invalid) { assemble(conversation: convo, head: user, situation: { person: "tester" }) }
+    assert_match "person's key", error.message
+    assert_equal [ "Hi" ], assemble(conversation: convo, head: user).messages.map { |message| message["content"] }
+  end
 end

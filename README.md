@@ -9,7 +9,8 @@ full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 [BUDGET.md](BUDGET.md) for its budget, [CALENDARS.md](CALENDARS.md) for its
 calendars, [MAIL.md](MAIL.md) for its mail, [TEXTS.md](TEXTS.md) for its
 text messages, [RECORDS.md](RECORDS.md) for what
-its agents keep, [PEOPLE.md](PEOPLE.md) for who it knows, mise's `docs/HOB.md` for its kitchen,
+its agents keep, [PEOPLE.md](PEOPLE.md) for who it knows,
+[SITUATION.md](SITUATION.md) for each person's present moment, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure,
 [THREATS.md](THREATS.md) for the threats it is told about,
 [SCHEDULES.md](SCHEDULES.md) for its clock,
@@ -481,7 +482,7 @@ public names and addresses as well (domains, addresses, or CIDR ranges).
 ```
 POST /v1/completions                   { role, operation, system | persona, messages,
                                          schema, tools, tool_choice, max_iterations,
-                                         params, metadata, ref, realm }
+                                         params, metadata, ref, realm, situation? }
                                        → { id, status: success|refused|tool_calls, content,
                                            parsed, tool_calls, usage, model, provider,
                                            snapshot, node }
@@ -492,11 +493,14 @@ POST /v1/conversations                 { title, realm }
 GET  /v1/conversations?kind=chat|pipeline|all
 GET  /v1/conversations/:id?branch=main
 POST /v1/conversations/:id/chat        { content?, branch, persona | personas[], context,
-                                         instruction, role, preset, regenerate_at,
+                                         instruction, role, preset, situation, regenerate_at,
                                          tools, tool_choice, tool_results, max_iterations }
                                        Accept: text/event-stream → delta… tool_call… usage done
                                        no content: the assistant speaks at the branch head
                                        context: string | hash | [{ name, body, budget, volatile }]
+GET  /v1/situation                     the signed-in person's visible facets and topics
+POST /v1/situation                     { observations: [{ kind, slot?, value, realm?, basis?, observed_at?, ttl?, ref? }] }
+POST /v1/situation/end                 { kind, slot? }
 POST /v1/conversations/:id/events      { content, branch, meta }   # role: event node
 POST /v1/conversations/:id/branches    { name, at: <node hash> }   # fork = ref
 GET  /v1/usage?ref=&role=&operation=&since=&surface=

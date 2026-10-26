@@ -100,9 +100,14 @@ default_preset = Preset.find_or_create_by!(key: "default") do |p|
   p.name = "Default"
   p.stages = Assembly::Pipeline::STAGE_DEFAULTS.map(&:dup)
 end
-# Upgrade: presets seeded before the instruction stage existed gain it.
-if default_preset.stages.none? { |s| s["name"] == "instruction" }
-  default_preset.update!(stages: default_preset.stages + [ Assembly::Pipeline::STAGE_DEFAULTS.last.dup ])
+# Upgrade older default presets in canonical order as new default stages land.
+missing = Assembly::Pipeline::STAGE_DEFAULTS.reject do |stage|
+  default_preset.stages.any? { |existing| existing["name"] == stage["name"] }
+end
+if missing.any?
+  by_name = (default_preset.stages + missing.map(&:dup)).index_by { |stage| stage["name"] }
+  known = Assembly::Pipeline::STAGE_DEFAULTS.filter_map { |stage| by_name.delete(stage["name"]) }
+  default_preset.update!(stages: known + by_name.values)
 end
 
 Persona.find_or_create_by!(key: "hob") do |p|

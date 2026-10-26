@@ -90,6 +90,25 @@ class CompletionsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     assert_empty @fake.calls
   end
+
+  test "situation true opts a one-shot into the person's current context" do
+    Situation.observe(
+      person: @principal, observations: [ { "kind" => "location", "value" => { "place" => "home" } } ],
+      by: Situation::Writer.new(principal: @principal, surface: "test", clearance: "intimate")
+    )
+    @fake.reply("Hi.")
+    post "/v1/completions", params: {
+      role: "chat-default", messages: [ { role: "user", content: "hi" } ], situation: true
+    }, headers: auth, as: :json
+    assert_response :ok
+    assert_includes @fake.calls.last.system, "location: home"
+
+    post "/v1/completions", params: {
+      role: "chat-default", messages: [ { role: "user", content: "hi" } ], situation: "sometimes"
+    }, headers: auth, as: :json
+    assert_response :unprocessable_entity
+    assert_equal "situation is true or false", body["error"]
+  end
 end
 
 class CompletionsControllerToolsTest < ActionDispatch::IntegrationTest

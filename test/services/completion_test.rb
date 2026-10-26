@@ -50,6 +50,26 @@ class CompletionTest < ActiveSupport::TestCase
     assert_equal [ "user" ], result.conversation.message_nodes.pluck(:role)
     assert_equal "refused", Completion.find(result.conversation.id)[:reply].nil? ? "refused" : "success"
   end
+
+  test "situation is opt-in leading system context for a one-shot" do
+    Situation.observe(
+      person: @principal, observations: [ { "kind" => "company", "value" => { "with" => [ "kids" ] } } ],
+      by: Situation::Writer.new(principal: @principal, surface: "test", clearance: "intimate")
+    )
+    @fake.reply("Short answer.")
+    result = Completion.new(role: "chat-default", realm: "household", system: "Answer plainly.", situation: true,
+                            messages: [ user_message("what now?") ]).call
+
+    assert @fake.calls.last.system.start_with?("[Situation: tester")
+    assert_includes @fake.calls.last.system, "company: with kids"
+    assert @fake.calls.last.system.end_with?("Answer plainly.")
+    assert_equal @fake.calls.last.system, result.snapshot.assembled["system"]
+
+    @fake.reply("No context.")
+    Completion.new(role: "chat-default", realm: "household", system: "Answer plainly.",
+                   messages: [ user_message("again") ]).call
+    assert_equal "Answer plainly.", @fake.calls.last.system
+  end
 end
 
 class CompletionToolsTest < ActiveSupport::TestCase

@@ -72,6 +72,17 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     get "/v1/conversations", params: { kind: "all" }, headers: auth
     assert_equal %w[chat pipeline], body.map { |c| c["kind"] }.sort.uniq
   end
+
+  test "a chat can opt out of the default situation stage" do
+    Situation.observe(
+      person: @principal, observations: [ { "kind" => "location", "value" => { "place" => "home" } } ],
+      by: Situation::Writer.new(principal: @principal, surface: "test", clearance: "intimate")
+    )
+    @fake.reply("Hello.")
+    post "/v1/conversations/#{@convo.id}/chat", params: { content: "hi", situation: false }, headers: auth, as: :json
+    assert_response :ok
+    assert_equal [ "hi" ], @fake.calls.last.messages.map { |message| message["content"] }
+  end
 end
 
 class ChatsControllerToolsTest < ActionDispatch::IntegrationTest

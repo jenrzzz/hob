@@ -1,5 +1,11 @@
 # situation
 
+Status: phase 1 server built, 2026-10-25. The native table and RLS,
+person API, `situation.get`, prompt stage, rake entry points, and bounded
+retention are in hob. Shortcuts are the first deployment writer. Agent
+writes/change feeds, notification holds, the iOS reporter, and the admin
+surface remain the later prototype phases below.
+
 *The weather in the house. Where each person is, what they are in the
 middle of, who is around, and what is on their mind right now: the
 things a good housemate knows without being told, and an agent
@@ -466,7 +472,7 @@ only writer, before the companion app learns to report.
 
 ## Prototype path
 
-1. **The table, the endpoint, the stage.** `situation.get` and
+1. **The table, the endpoint, the stage.** **Built (server), 2026-10-25.** `situation.get` and
    `POST /v1/situation`; the stage's line renderer; the stage in the
    default preset. Writers: four Shortcuts on Jenner's phone and the
    rake tasks. Measure: does the kat companion's register change

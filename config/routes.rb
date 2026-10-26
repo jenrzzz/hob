@@ -59,6 +59,10 @@ Rails.application.routes.draw do
     get "models", to: "models#index"
     resources :prices, only: %i[index show update destroy], param: :model, constraints: { model: /[^\/]+/ }
     get "usage", to: "usage#show"
+    # A signed-in person's present moment (SITUATION.md); agents ask the sentinel.
+    resource :situation, only: %i[show create], controller: "situation" do
+      post :end, action: :end_observation
+    end
     # Phones running the companion app (clients/ios): where people are pinged.
     resources :devices, only: %i[index create destroy], param: :token do
       post :ping, on: :member

@@ -89,7 +89,8 @@ module Sentinel
       "people_loop_snooze" => "Sentinel::Native::PeopleLoopSnooze",
       "people_handle_add" => "Sentinel::Native::PeopleHandleAdd",
       "people_merge" => "Sentinel::Native::PeopleMerge",
-      "people_loop_dismiss" => "Sentinel::Native::PeopleLoopDismiss"
+      "people_loop_dismiss" => "Sentinel::Native::PeopleLoopDismiss",
+      "situation_get" => "Sentinel::Native::SituationGet"
     }.freeze
 
     module_function

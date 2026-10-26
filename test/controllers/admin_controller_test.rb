@@ -22,6 +22,8 @@ class AdminControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to "/admin"
     follow_redirect!
     assert_response :ok
+    assert_select "h2", text: "Waiting on you"
+    get "/admin/principals"
     assert_select "h2", text: "tester"
 
     muse, _token = agent("muse")
@@ -41,7 +43,7 @@ class AdminControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, muse.api_keys.where(surface: "muse").count, "other surfaces' keys are untouched"
 
     post "/admin/keys/#{ApiKey.authenticate(rotated).id}/revoke"
-    assert_redirected_to "/admin#principal-#{muse.id}"
+    assert_redirected_to "/admin/principals#principal-#{muse.id}"
     assert_nil ApiKey.authenticate(rotated)
   end
 
@@ -60,11 +62,13 @@ class AdminControllerTest < ActionDispatch::IntegrationTest
     skipsy.freeze_capabilities!(reason: "fabricated claim: \"sure go for it\"")
 
     get "/admin"
+    assert_select "#waiting", /skipsy/
+    get "/admin/principals"
     assert_select "#principal-#{skipsy.id} .tag", "frozen"
     assert_select "#principal-#{skipsy.id}", /fabricated claim/
 
     post "/admin/principals/#{skipsy.id}/unfreeze"
-    assert_redirected_to "/admin#principal-#{skipsy.id}"
+    assert_redirected_to "/admin/principals#principal-#{skipsy.id}"
     refute skipsy.reload.capabilities_frozen?
   end
 

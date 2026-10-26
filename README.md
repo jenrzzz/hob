@@ -76,8 +76,15 @@ older keys are deleted. hob needs these in its own environment:
 
 ## Admin
 
-`/admin` is hob's browser page, in two parts. The keys page lists
-principals and their keys. It mints a key (shown once), rotates one (a new
+`/admin` opens on hob at a glance: what is waiting on you (held requests,
+petitions, ward proposals, frozen agents) first, then the ward's checks,
+findings and live threats, missions in hand and failed, the sentinel's
+last day, model usage and cost, the schedules coming due (and any that
+are skipping), open people loops, your own situation, the agents' board,
+and how much of everything hob holds. It only shows, and links to the
+admin page that acts where there is one.
+
+`/admin/principals` is the keys page. It lists principals and their keys. It mints a key (shown once), rotates one (a new
 key for the surface, then its older ones go), revokes one, and adds a
 principal: what `hob:key` and `hob:agent` do from a terminal. A rotated or revoked key stops working immediately.
 A surface onboarded with `hob:provision` should be re-provisioned instead,

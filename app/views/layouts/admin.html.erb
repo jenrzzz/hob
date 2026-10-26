@@ -43,6 +43,15 @@
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
     .card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 8px; }
     .tag { font-size: 12px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+    .tag.bad { color: var(--danger); border-color: currentColor; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 0 14px; }
+    .stats { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 4px 0 8px; }
+    .stat { display: flex; flex-direction: column; color: var(--ink); text-decoration: none; }
+    .stat b { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+    .stat span { color: var(--muted); font-size: 13px; }
+    ul.list { list-style: none; margin: 6px 0; padding: 0; font-size: 14px; }
+    ul.list li { padding: 4px 0; border-top: 1px solid var(--line); }
+    ul.list li:first-child { border-top: 0; }
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { text-align: left; padding: 6px 8px 6px 0; border-top: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
@@ -65,7 +74,8 @@
     <nav>
       <a class="brand" href="<%= current_person ? admin_root_path : login_path %>">hob admin</a>
       <% if current_person %>
-        <%= link_to "Keys", admin_root_path, class: ("current" if current_page?(admin_root_path)) %>
+        <%= link_to "Home", admin_root_path, class: ("current" if controller_name == "dashboard") %>
+        <%= link_to "Keys", admin_principals_path, class: ("current" if controller_name == "principals") %>
         <%= link_to admin_sentinel_path, class: ("current" if current_page?(admin_sentinel_path)) do %>Sentinel<% if (waiting = SentinelRequest.pending.count + Petition.where(status: %w[pending failed]).count).positive? %> <span class="badge"><%= waiting %></span><% end %><% end %>
         <%= link_to "Grants", admin_grants_path, class: ("current" if controller_name == "grants") %>
         <%= link_to "Gofer keys", admin_gofer_keys_path, class: ("current" if controller_name == "gofer_keys") %>

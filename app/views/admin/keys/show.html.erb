@@ -4,5 +4,5 @@
     <% if @rotated.positive? %><%= pluralize(@rotated, "older key") %> for this surface revoked.<% end %></p>
   <p>This is the only time it is shown. Copy it now.</p>
   <code class="token"><%= @token %></code>
-  <p><%= link_to "Done", admin_root_path(anchor: "principal-#{@principal.id}") %></p>
+  <p><%= link_to "Done", admin_principals_path(anchor: "principal-#{@principal.id}") %></p>
 </div>

@@ -1,0 +1,277 @@
+<% ago = ->(t) { t ? "#{time_ago_in_words(t)} ago" : "never" } %>
+<% from_now = ->(t) { t.nil? ? "—" : (t > @now ? "in #{time_ago_in_words(t)}" : "due") } %>
+<% money = ->(n) { n.to_f < 0.01 && n.to_f.positive? ? "<$0.01" : number_to_currency(n.to_f) } %>
+
+<h1>hob</h1>
+
+<% waiting = @requests_waiting + @petitions_waiting + @proposals.sum { |t| t.pending_proposals.size } + @frozen.size %>
+<section class="card" id="waiting">
+  <div class="card-head">
+    <h2>Waiting on you</h2>
+    <% if waiting.positive? %><span class="badge"><%= waiting %></span><% end %>
+  </div>
+  <% if waiting.zero? %>
+    <p class="muted">Nothing is waiting.</p>
+  <% else %>
+    <div class="stats">
+      <%= link_to admin_sentinel_path, class: "stat" do %><b><%= @requests_waiting %></b><span>requests</span><% end %>
+      <%= link_to admin_sentinel_path, class: "stat" do %><b><%= @petitions_waiting %></b><span>petitions</span><% end %>
+      <div class="stat"><b><%= @proposals.sum { |t| t.pending_proposals.size } %></b><span>ward proposals</span></div>
+      <%= link_to admin_principals_path, class: "stat" do %><b><%= @frozen.size %></b><span>frozen agents</span><% end %>
+    </div>
+    <% if @requests.any? %>
+      <ul class="list">
+        <% @requests.each do |r| %>
+          <li><%= link_to admin_sentinel_path(anchor: "request-#{r.id}") do %><%= r.principal.name %> → <code><%= r.capability.name %></code><% end %>
+            <span class="muted"><%= ago.(r.created_at) %><% if r.reason.present? %> · <%= r.reason.truncate(90) %><% end %></span></li>
+        <% end %>
+      </ul>
+    <% end %>
+    <% @proposals.each do |t| %>
+      <% t.pending_proposals.each do |p| %>
+        <p><span class="tag">tier <%= p["tier"] || "—" %></span> <%= p["title"] %> <span class="muted">· <%= t.title.truncate(80) %> · <code>v1/ward/threats/<%= t.id %></code></span></p>
+      <% end %>
+    <% end %>
+    <% @frozen.each do |a| %>
+      <p><%= link_to a.name, admin_principals_path(anchor: "principal-#{a.id}") %> <span class="muted">frozen <%= ago.(a.capabilities_frozen_at) %>: <%= a.capabilities_freeze_reason.to_s.truncate(120) %></span></p>
+    <% end %>
+  <% end %>
+</section>
+
+<div class="grid">
+  <section class="card" id="ward">
+    <div class="card-head"><h2>Ward</h2>
+      <% stale = @checks.select(&:stale?) %>
+      <% if stale.any? %><span class="tag bad"><%= stale.size %> stale</span><% end %>
+    </div>
+    <div class="stats">
+      <div class="stat"><b><%= @findings["fail"].to_i %></b><span>failing</span></div>
+      <div class="stat"><b><%= @findings["error"].to_i %></b><span>errors</span></div>
+      <div class="stat"><b><%= @findings["warn"].to_i %></b><span>warnings</span></div>
+      <div class="stat"><b><%= @acknowledged %></b><span>acked</span></div>
+    </div>
+    <% if @triage %>
+      <p><span class="tag"><%= @triage.triage["severity"] || "triage" %></span> <%= @triage.triage["headline"] %>
+        <span class="muted">· <%= ago.(@triage.created_at) %></span></p>
+    <% end %>
+    <% if @worst_findings.any? %>
+      <ul class="list">
+        <% @worst_findings.each do |f| %>
+          <li><span class="tag <%= 'bad' if f.level == 'fail' %>"><%= f.level %></span> <%= f.subject.presence || f.message.truncate(80) %> <span class="muted">· <%= f.check_slug %></span></li>
+        <% end %>
+      </ul>
+    <% end %>
+    <% if @checks.any? %>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Check</th><th>Last complete</th><th>Next due</th></tr>
+          <% @checks.each do |c| %>
+            <tr>
+              <td><%= c.slug %><% unless c.enabled? %> <span class="tag">off</span><% end %><% if c.stale? %> <span class="tag bad">stale</span><% end %></td>
+              <td title="<%= c.last_completed_at&.utc&.iso8601 %>"><%= ago.(c.last_completed_at) %></td>
+              <td><%= c.enabled? ? from_now.(c.deadline) : "—" %></td>
+            </tr>
+          <% end %>
+        </table>
+      </div>
+    <% else %>
+      <p class="muted">No checks report yet.</p>
+    <% end %>
+  </section>
+
+  <section class="card" id="threats">
+    <div class="card-head"><h2>Threats</h2><span class="muted"><%= @threats.size %> live</span></div>
+    <% if @threats.empty? %>
+      <p class="muted">Nothing being watched.</p>
+    <% else %>
+      <ul class="list">
+        <% @threats.each do |t| %>
+          <li><span class="tag <%= 'bad' if %w[critical high].include?(t.assessed_severity) %>"><%= t.assessed_severity || t.claimed_severity || "?" %></span>
+            <%= t.title.truncate(80) %>
+            <span class="muted">· <%= t.status.tr("_", " ") %><% if t.exploited %> · exploited<% end %> · <%= ago.(t.updated_at) %></span></li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+
+  <section class="card" id="usage">
+    <div class="card-head"><h2>Model usage</h2></div>
+    <div class="table-wrap">
+      <table>
+        <tr><th></th><th>Calls</th><th>Tokens in / out</th><th>Cost</th><th>Failed</th></tr>
+        <% @usage.each do |label, u| %>
+          <tr>
+            <td><%= label %></td>
+            <td><%= number_with_delimiter(u[:calls]) %></td>
+            <td><%= number_to_human(u[:input_tokens], format: "%n%u", units: { thousand: "k", million: "M", billion: "B" }) %> / <%= number_to_human(u[:output_tokens], format: "%n%u", units: { thousand: "k", million: "M", billion: "B" }) %></td>
+            <td><%= money.(u[:cost]) %><% unless u[:priced] %> <span class="muted" title="some calls have no price">+?</span><% end %></td>
+            <td><%= u[:calls] - u[:by_status]["success"].to_i %></td>
+          </tr>
+        <% end %>
+      </table>
+    </div>
+    <% if @models.any? %>
+      <p class="muted" style="margin-bottom: 0">Last 30 days by model</p>
+      <ul class="list">
+        <% @models.each do |model, calls, cost| %>
+          <li><code><%= model || "—" %></code> <span class="muted"><%= number_with_delimiter(calls) %> calls · <%= money.(cost) %></span></li>
+        <% end %>
+      </ul>
+    <% end %>
+    <% if @usage_errors.any? %>
+      <details><summary><%= @usage_errors.size %> recent failures</summary>
+        <ul class="list">
+          <% @usage_errors.each do |e| %>
+            <li><span class="tag"><%= e.status.tr("_", " ") %></span> <code><%= e.model %></code> <span class="muted"><%= e.surface %> · <%= ago.(e.created_at) %><% if e.error.present? %> · <%= e.error.truncate(100) %><% end %></span></li>
+          <% end %>
+        </ul>
+      </details>
+    <% end %>
+  </section>
+
+  <section class="card" id="sentinel">
+    <div class="card-head"><h2>Sentinel</h2><span class="muted">last 24 hours</span></div>
+    <div class="stats">
+      <% %w[completed denied pending failed].each do |status| %>
+        <div class="stat"><b><%= @sentinel_day[status].to_i %></b><span><%= status %></span></div>
+      <% end %>
+    </div>
+    <% if @top_capabilities.any? %>
+      <p class="muted" style="margin-bottom: 0">Most asked, last 7 days</p>
+      <ul class="list">
+        <% @top_capabilities.each do |name, count| %>
+          <li><code><%= name %></code> <span class="muted"><%= count %></span></li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+
+  <section class="card" id="missions">
+    <div class="card-head"><h2>Missions</h2>
+      <span class="muted"><%= @missions["queued"].to_i %> queued · <%= @missions["leased"].to_i %> in hand · <%= @missions["completed"].to_i %> done</span>
+    </div>
+    <% if @open_missions.empty? %>
+      <p class="muted">Nothing queued.</p>
+    <% else %>
+      <ul class="list">
+        <% @open_missions.each do |m| %>
+          <li><span class="tag"><%= m.status == "leased" ? "working" : "queued" %></span> <%= m.title.truncate(80) %>
+            <span class="muted">· <%= m.assignee.name %> · <%= ago.(m.leased_at || m.created_at) %><% if m.attempts > 1 %> · try <%= m.attempts %><% end %></span></li>
+        <% end %>
+      </ul>
+    <% end %>
+    <% if @failed_missions.any? %>
+      <p class="muted" style="margin-bottom: 0">Failed this week</p>
+      <ul class="list">
+        <% @failed_missions.each do |m| %>
+          <li><%= m.title.truncate(70) %> <span class="muted">· <%= m.assignee.name %> · <%= ago.(m.updated_at) %><% if m.error.present? %> · <%= m.error.truncate(80) %><% end %></span></li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+
+  <section class="card" id="schedules">
+    <div class="card-head"><h2>Coming up</h2><span class="muted">schedules</span></div>
+    <% if @skipping.any? %>
+      <% @skipping.each do |s| %>
+        <p><span class="tag bad">skipping</span> <%= s.name %> <span class="muted">· <%= s.assignee.name %> hasn't finished the last one</span></p>
+      <% end %>
+    <% end %>
+    <% if @schedules.empty? %>
+      <p class="muted">No schedules.</p>
+    <% else %>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Schedule</th><th>For</th><th>Next</th></tr>
+          <% @schedules.each do |s| %>
+            <tr>
+              <td title="<%= s.cron %> (<%= s.time_zone %>)"><%= s.name %></td>
+              <td><%= s.assignee.name %></td>
+              <td title="<%= s.next_fire_at&.utc&.iso8601 %>"><%= from_now.(s.next_fire_at) %></td>
+            </tr>
+          <% end %>
+        </table>
+      </div>
+    <% end %>
+  </section>
+
+  <section class="card" id="agents">
+    <div class="card-head"><h2>Agents</h2></div>
+    <% if @agents.empty? %>
+      <p class="muted">No agents yet.</p>
+    <% else %>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Agent</th><th>Clearance</th><th>Last seen</th></tr>
+          <% @agents.each do |a| %>
+            <% seen = a.api_keys.filter_map(&:last_used_at).max %>
+            <tr>
+              <td><%= link_to a.name, admin_principals_path(anchor: "principal-#{a.id}") %><% if a.capabilities_frozen? %> <span class="tag bad">frozen</span><% end %></td>
+              <td><%= a.max_clearance %></td>
+              <td title="<%= seen&.utc&.iso8601 %>"><%= ago.(seen) %></td>
+            </tr>
+          <% end %>
+        </table>
+      </div>
+    <% end %>
+  </section>
+
+  <section class="card" id="people">
+    <div class="card-head"><h2>Open loops</h2>
+      <% if @loops["matched"].positive? %><span class="muted"><%= @loops["matched"] %> open</span><% end %>
+    </div>
+    <% if @loops["loops"].empty? %>
+      <p class="muted">Nothing open.</p>
+    <% else %>
+      <ul class="list">
+        <% @loops["loops"].each do |l| %>
+          <li><% if (p = l["person"]) %><%= link_to p["display_name"], admin_person_path(p["id"]) %><% else %><%= l.dig("group", "name") %><% end %>
+            <span class="muted">· <%= l["kind"].tr("_", " ") %> · <%= l["age_days"] %>d<% if l["summary"].present? %> · <%= l["summary"].truncate(80) %><% end %></span></li>
+        <% end %>
+      </ul>
+      <p><%= link_to "All loops", admin_people_path %></p>
+    <% end %>
+  </section>
+
+  <section class="card" id="situation">
+    <div class="card-head"><h2>Your situation</h2>
+      <% if (d = @situation&.dig("derived")) %><span class="muted"><%= d["day_part"] %></span><% end %>
+    </div>
+    <% if @situation.nil? || (@situation["facets"].empty? && @situation["topics"].empty?) %>
+      <p class="muted">Nothing observed right now.</p>
+    <% else %>
+      <ul class="list">
+        <% @situation["facets"].each do |f| %>
+          <li><%= Situation::Renderer.facet_line(f) %></li>
+        <% end %>
+        <% @situation["topics"].first(3).each do |t| %>
+          <li><%= Situation::Renderer.topic_line(t, now: @now) %></li>
+        <% end %>
+      </ul>
+    <% end %>
+    <% if @devices.any? %>
+      <p class="muted" style="margin-bottom: 0">Phones: <%= @devices.map { |d| "#{d.principal.name}’s #{d.name.presence || d.platform} (#{ago.(d.last_seen_at)})" }.join(" · ") %></p>
+    <% end %>
+  </section>
+
+  <section class="card" id="board">
+    <div class="card-head"><h2>Board</h2><span class="muted">what the agents are telling each other</span></div>
+    <% if @board.empty? %>
+      <p class="muted">Quiet.</p>
+    <% else %>
+      <ul class="list">
+        <% @board.each do |b| %>
+          <li><b><%= b.sender_agent.name %></b> <span class="muted">in <%= b.thread_slug %> · <%= ago.(b.created_at) %></span><br><%= b.body.truncate(160) %></li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+</div>
+
+<section class="card" id="inventory">
+  <div class="stats">
+    <% @counts.each do |label, n| %>
+      <div class="stat"><b><%= number_with_delimiter(n) %></b><span><%= label.downcase %></span></div>
+    <% end %>
+  </div>
+</section>

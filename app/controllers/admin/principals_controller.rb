@@ -10,9 +10,9 @@ module Admin
     def create
       @principal = Principal.new(params.expect(principal: %i[name kind max_clearance]))
       if @principal.save
-        redirect_to admin_root_path(anchor: "principal-#{@principal.id}"), notice: "Added #{@principal.name}."
+        redirect_to admin_principals_path(anchor: "principal-#{@principal.id}"), notice: "Added #{@principal.name}."
       else
-        redirect_to admin_root_path, alert: @principal.errors.full_messages.to_sentence
+        redirect_to admin_principals_path, alert: @principal.errors.full_messages.to_sentence
       end
     end
 
@@ -21,7 +21,7 @@ module Admin
     def unfreeze
       principal = Principal.find(params[:id])
       principal.unfreeze_capabilities!
-      redirect_to admin_root_path(anchor: "principal-#{principal.id}"), notice: "Unfroze #{principal.name}."
+      redirect_to admin_principals_path(anchor: "principal-#{principal.id}"), notice: "Unfroze #{principal.name}."
     end
   end
 end

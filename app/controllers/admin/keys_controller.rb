@@ -11,7 +11,7 @@ module Admin
       token = ApiKey.issue!(principal: principal, surface: surface, default_clearance: clearance)
       show_token(principal, surface, clearance, token, rotated: 0)
     rescue ArgumentError, ActiveRecord::RecordInvalid, ActionController::ParameterMissing => e
-      redirect_to admin_root_path, alert: "Couldn't mint a key: #{e.message}"
+      redirect_to admin_principals_path, alert: "Couldn't mint a key: #{e.message}"
     end
 
     def rotate
@@ -23,7 +23,7 @@ module Admin
     def revoke
       key = ApiKey.find(params[:id])
       key.destroy!
-      redirect_to admin_root_path(anchor: "principal-#{key.principal_id}"),
+      redirect_to admin_principals_path(anchor: "principal-#{key.principal_id}"),
                   notice: "Revoked #{key.principal.name}'s #{key.surface} key."
     end
 

@@ -11,8 +11,8 @@ Rails.application.routes.draw do
   post "app/sign_in", to: "app_sign_ins#create"
   post "logout", to: "sessions#destroy"
   namespace :admin do
-    root "principals#index"
-    resources :principals, only: :create do
+    root "dashboard#index"
+    resources :principals, only: %i[index create] do
       resources :keys, only: :create
     end
     post "principals/:id/unfreeze", to: "principals#unfreeze", as: :unfreeze_principal

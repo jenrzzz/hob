@@ -108,6 +108,14 @@ class PeopleSyncTest < ActiveSupport::TestCase
     assert_equal "Eugene Fox", People.person!("+15550001111").display_name
   end
 
+  test "a group chat named by everyone in it is clipped to fit" do
+    @herald.chat("any;+;chat-crowd", name: Array.new(40) { |i| "Person Number #{i}" }.join(", "), group: true, handles: %w[+15550003333])
+    Clearance.with("intimate") { People::Sync.seed!(@backend) }
+    name = PeopleGroup.find_by!(chat_ref: "text:jenner-messages:any;+;chat-crowd").name
+    assert_equal PeopleGroup::NAME_LIMIT, name.length
+    assert name.end_with?("...")
+  end
+
   test "an unreachable herald is reported and remembered, and the next run picks up where it was" do
     sync
     @herald.respond(503, { "error" => { "code" => "unavailable", "message" => "Full Disk Access" } })

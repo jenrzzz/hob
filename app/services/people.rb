@@ -374,11 +374,11 @@ module People
     if handle
       person = live(handle.person)
       # Made from a bare number before anyone's Contacts had a name for it.
-      person.update!(display_name: name.strip) if name.present? && [ address, normalized ].include?(person.display_name)
+      person.update!(display_name: name.strip.truncate(Person::DISPLAY_NAME_LIMIT)) if name.present? && [ address, normalized ].include?(person.display_name)
       return [ person, handle ]
     end
 
-    person = Person.create!(display_name: name.presence || address, realm: realm, principal: principal, created_by: by,
+    person = Person.create!(display_name: (name.presence || address).strip.truncate(Person::DISPLAY_NAME_LIMIT), realm: realm, principal: principal, created_by: by,
                             automated: Handles.automated?(kind, normalized))
     [ person, attach!(person, kind: kind, address: normalized) ]
   end
@@ -387,7 +387,8 @@ module People
   # joined as they are seen.
   def group_for_chat!(chat_ref, name:, realm:, principal:)
     PeopleGroup.find_by(chat_ref: chat_ref) ||
-      PeopleGroup.create!(chat_ref: chat_ref, name: name.presence || "group chat", realm: realm, principal: principal)
+      PeopleGroup.create!(chat_ref: chat_ref, name: name.to_s.strip.truncate(PeopleGroup::NAME_LIMIT).presence || "group chat",
+                          realm: realm, principal: principal)
   end
 
   def member!(group, person)

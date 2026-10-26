@@ -1,7 +1,7 @@
 module V1
   # POST /v1/conversations/:conversation_id/chat
   # { content?, branch: "main", persona? | personas[]?, context?, instruction?,
-  #   role?, preset?, regenerate_at?, tools?, tool_choice?, tool_results?,
+  #   role?, preset?, situation?, regenerate_at?, tools?, tool_choice?, tool_results?,
   #   max_iterations? }
   # Accept: text/event-stream streams `delta` events, then any `tool_call`
   # events, `usage`, and `done`; anything else blocks and returns the full
@@ -20,7 +20,7 @@ module V1
         conversation: conversation, branch: branch, persona: persona, personas: personas,
         content: params[:content], context: context_param, instruction: params[:instruction].presence,
         role: params[:role].presence, regenerate_at: params[:regenerate_at].presence,
-        preset: preset, tools: array_param(:tools), tool_choice: params[:tool_choice].presence,
+        preset: preset, situation: situation_param, tools: array_param(:tools), tool_choice: params[:tool_choice].presence,
         tool_results: array_param(:tool_results), max_iterations: params[:max_iterations].presence
       )
 
@@ -45,6 +45,16 @@ module V1
       return raw if raw.is_a?(String)
 
       raw.respond_to?(:permit!) ? raw.permit!.to_h : raw.map { |b| b.respond_to?(:permit!) ? b.permit!.to_h : b }
+    end
+
+    def situation_param
+      raw = params[:situation]
+      return raw unless raw.respond_to?(:permit)
+
+      unknown = raw.keys.map(&:to_s) - %w[person]
+      raise Gateway::Invalid, "unknown situation option: #{unknown.join(', ')}" if unknown.any?
+
+      raw.permit(:person).to_h
     end
 
     def serialize_result(result)

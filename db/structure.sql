@@ -1171,6 +1171,50 @@ ALTER SEQUENCE public.sign_in_grants_id_seq OWNED BY public.sign_in_grants.id;
 
 
 --
+-- Name: situation_observations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.situation_observations (
+    id character varying NOT NULL,
+    person_id bigint NOT NULL,
+    kind character varying NOT NULL,
+    slot character varying,
+    value jsonb DEFAULT '{}'::jsonb NOT NULL,
+    realm character varying NOT NULL,
+    basis character varying NOT NULL,
+    source jsonb DEFAULT '{}'::jsonb NOT NULL,
+    observed_at timestamp(6) without time zone NOT NULL,
+    expires_at timestamp(6) without time zone NOT NULL,
+    ended_at timestamp(6) without time zone,
+    ended_by_id bigint,
+    txid bigint DEFAULT ((pg_current_xact_id())::text)::bigint NOT NULL,
+    seq bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.situation_observations FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: situation_observations_seq_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.situation_observations_seq_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: situation_observations_seq_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.situation_observations_seq_seq OWNED BY public.situation_observations.seq;
+
+
+--
 -- Name: text_backends; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1517,6 +1561,13 @@ ALTER TABLE ONLY public.sentinel_policies ALTER COLUMN id SET DEFAULT nextval('p
 --
 
 ALTER TABLE ONLY public.sign_in_grants ALTER COLUMN id SET DEFAULT nextval('public.sign_in_grants_id_seq'::regclass);
+
+
+--
+-- Name: situation_observations seq; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.situation_observations ALTER COLUMN seq SET DEFAULT nextval('public.situation_observations_seq_seq'::regclass);
 
 
 --
@@ -1892,6 +1943,14 @@ ALTER TABLE ONLY public.sentinel_requests
 
 ALTER TABLE ONLY public.sign_in_grants
     ADD CONSTRAINT sign_in_grants_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: situation_observations situation_observations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.situation_observations
+    ADD CONSTRAINT situation_observations_pkey PRIMARY KEY (id);
 
 
 --
@@ -2413,7 +2472,7 @@ CREATE INDEX index_people_events_on_recorded_by_id ON public.people_events USING
 -- Name: index_people_events_on_source_kind_and_source_ref; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY ((ARRAY['text'::character varying, 'mail'::character varying, 'calendar'::character varying])::text[])));
+CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY (ARRAY[('text'::character varying)::text, ('mail'::character varying)::text, ('calendar'::character varying)::text])));
 
 
 --
@@ -2802,6 +2861,34 @@ CREATE INDEX index_sign_in_grants_on_principal_id ON public.sign_in_grants USING
 
 
 --
+-- Name: index_situation_changes; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_situation_changes ON public.situation_observations USING btree (person_id, txid, seq);
+
+
+--
+-- Name: index_situation_current; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_situation_current ON public.situation_observations USING btree (person_id, kind, realm, slot, observed_at);
+
+
+--
+-- Name: index_situation_observations_on_ended_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_situation_observations_on_ended_by_id ON public.situation_observations USING btree (ended_by_id);
+
+
+--
+-- Name: index_situation_observations_on_observed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_situation_observations_on_observed_at ON public.situation_observations USING btree (observed_at);
+
+
+--
 -- Name: index_text_backends_on_name; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3015,6 +3102,14 @@ ALTER TABLE ONLY public.browsers
 
 ALTER TABLE ONLY public.petitions
     ADD CONSTRAINT fk_rails_1915a4ce8c FOREIGN KEY (sentinel_policy_id) REFERENCES public.sentinel_policies(id);
+
+
+--
+-- Name: situation_observations fk_rails_19eee16cca; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.situation_observations
+    ADD CONSTRAINT fk_rails_19eee16cca FOREIGN KEY (person_id) REFERENCES public.principals(id);
 
 
 --
@@ -3375,6 +3470,14 @@ ALTER TABLE ONLY public.calendar_backends
 
 ALTER TABLE ONLY public.budget_backends
     ADD CONSTRAINT fk_rails_b4d50361d3 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: situation_observations fk_rails_baefe80638; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.situation_observations
+    ADD CONSTRAINT fk_rails_baefe80638 FOREIGN KEY (ended_by_id) REFERENCES public.principals(id);
 
 
 --
@@ -3931,6 +4034,15 @@ CREATE POLICY realm_visibility ON public.sentinel_requests USING ((( SELECT real
 
 
 --
+-- Name: situation_observations realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.situation_observations USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (situation_observations.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
 -- Name: text_backends realm_visibility; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -3979,6 +4091,12 @@ ALTER TABLE public.schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: situation_observations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.situation_observations ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: text_backends; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3997,6 +4115,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261025000001'),
 ('20261022000001'),
 ('20261016000001'),
 ('20261007140000'),

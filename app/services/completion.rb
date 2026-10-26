@@ -31,7 +31,7 @@ class Completion
   # messages: [{ role: user|assistant|system, content: }] — system-role
   # messages fold into `system`; `persona` supplies it when given instead.
   def initialize(role:, messages:, system: nil, persona: nil, schema: nil, tools: nil, tool_choice: nil,
-                 max_iterations: nil, params: {}, operation: nil, metadata: {}, ref: nil, realm:)
+                 max_iterations: nil, params: {}, operation: nil, metadata: {}, ref: nil, realm:, situation: false)
     @role = role
     @messages = Array(messages).map { |m| m.to_h.deep_stringify_keys }
     system_messages, @messages = @messages.partition { |m| m["role"].to_s == "system" }
@@ -46,15 +46,23 @@ class Completion
     @metadata = metadata || {}
     @ref = ref
     @realm = realm
+    raise Gateway::Invalid, "situation is true or false" unless [ true, false, nil ].include?(situation)
+
+    @situation = situation == true
   end
 
   def call(&on_event)
+    if @situation && !Current.principal&.trusted?
+      raise Gateway::Invalid, "situation: true needs a person's key"
+    end
+
     conversation = Conversation.create!(
       kind: "pipeline", surface: Current.surface, realm: @realm, taint_realm: @realm,
       title: @operation.presence
     )
     branch = conversation.branch
     append_input(conversation, branch)
+    add_situation!(conversation)
     run(conversation, branch, &on_event)
   end
 
@@ -101,6 +109,23 @@ class Completion
   end
 
   private
+
+  # One-shots are usually extraction, so Situation is opt-in. When asked,
+  # its volatile block leads the system text rather than becoming another
+  # user message. A resumed tool exchange reuses the snapshotted system text
+  # and does not read the person's situation again.
+  def add_situation!(conversation)
+    return unless @situation
+
+    state = Situation.get({ "person" => Current.principal.name }, requester: Current.principal,
+                                                                  surface: Current.surface)["people"].sole
+    text = Situation::Renderer.render(state)
+    return if text.blank?
+
+    @system = [ text, @system ].compact_blank.join("\n\n")
+    realms = (state["facets"] + state["topics"]).map { |row| row["realm"] }
+    conversation.taint!(realms.max_by { |realm| Realm.rank_of(realm) }) if realms.any?
+  end
 
   # One model call at the branch head; the transcript is whatever the branch
   # holds (input messages, and on a resume the calls and results too).

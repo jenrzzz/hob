@@ -14,6 +14,8 @@ class Principal < ApplicationRecord
                                  dependent: :restrict_with_exception
   has_many :received_agent_messages, class_name: "AgentMessage", foreign_key: :recipient_id, inverse_of: :recipient,
                                      dependent: :restrict_with_exception
+  has_many :situation_observations, foreign_key: :person_id, inverse_of: :person,
+                                    dependent: :restrict_with_exception
 
   validates :kind, inclusion: { in: KINDS }
   validates :name, presence: true, uniqueness: true

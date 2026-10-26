@@ -1307,3 +1307,87 @@ namespace :hob do
     end
   end
 end
+
+# Situation (SITUATION.md): a household person's expiring present moment.
+namespace :hob do
+  desc "Show a person's current facets and topics: bin/rails \"hob:situation[jenner]\""
+  task :situation, [ :person ] => :environment do |_task, args|
+    abort "usage: bin/rails \"hob:situation[person]\"" if args[:person].blank?
+
+    Clearance.with("intimate") do
+      person = Principal.find_by!(name: args[:person], kind: "human")
+      Current.set(principal: person, clearance: "intimate", surface: "terminal") do
+        puts JSON.pretty_generate(Situation.get({ "person" => person.name }))
+      end
+    end
+  end
+
+  namespace :situation do
+    desc "Set a facet: bin/rails \"hob:situation:set[jenner,availability]\" VALUE='{" \
+         "\"state\":\"do_not_disturb\"}' REALM=personal BASIS=stated TTL=7200 OBSERVED_AT=..."
+    task :set, [ :person, :kind ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:situation:set[person,kind]\" VALUE='{" \
+            "\"state\":\"busy\"}' [REALM=] [BASIS=] [TTL=]" if args[:person].blank? || args[:kind].blank? || ENV["VALUE"].blank?
+
+      Clearance.with("intimate") do
+        person = Principal.find_by!(name: args[:person], kind: "human")
+        writer = Principal.find_by!(name: ENV["BY"].presence || person.name, kind: "human")
+        Current.set(principal: writer, clearance: "intimate", surface: "terminal") do
+          observation = { "kind" => args[:kind], "value" => JSON.parse(ENV.fetch("VALUE")) }
+          observation["realm"] = ENV["REALM"] if ENV["REALM"].present?
+          observation["basis"] = ENV["BASIS"] if ENV["BASIS"].present?
+          observation["ttl"] = ENV["TTL"] if ENV["TTL"].present?
+          observation["observed_at"] = ENV["OBSERVED_AT"] if ENV["OBSERVED_AT"].present?
+          row = Situation.observe(person: person, observations: [ observation ],
+                                  by: Situation::Writer.new(principal: writer, surface: "terminal", clearance: "intimate")).sole
+          puts "#{person.name}: #{row.kind} at #{row.realm} until #{row.expires_at.utc.iso8601} (#{row.id})"
+        end
+      end
+    rescue JSON::ParserError => e
+      abort "VALUE is not JSON: #{e.message}"
+    rescue Situation::Error => e
+      abort e.message
+    end
+
+    desc "Set or refresh a topic: bin/rails \"hob:situation:topic[jenner,adu-permit]\" TEXT='county says two more weeks'"
+    task :topic, [ :person, :slot ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:situation:topic[person,slot]\" TEXT=... [DETAIL=] [REALM=] [TTL=]" \
+        if args[:person].blank? || args[:slot].blank? || ENV["TEXT"].blank?
+
+      Clearance.with("intimate") do
+        person = Principal.find_by!(name: args[:person], kind: "human")
+        writer = Principal.find_by!(name: ENV["BY"].presence || person.name, kind: "human")
+        Current.set(principal: writer, clearance: "intimate", surface: "terminal") do
+          observation = { "kind" => "topic", "slot" => args[:slot],
+                          "value" => { "text" => ENV["TEXT"], "detail" => ENV["DETAIL"].presence }.compact }
+          observation["realm"] = ENV["REALM"] if ENV["REALM"].present?
+          observation["ttl"] = ENV["TTL"] if ENV["TTL"].present?
+          row = Situation.observe(person: person, observations: [ observation ],
+                                  by: Situation::Writer.new(principal: writer, surface: "terminal", clearance: "intimate")).sole
+          puts "#{person.name}: topic #{row.slot} at #{row.realm} until #{row.expires_at.utc.iso8601} (#{row.id})"
+        end
+      end
+    rescue Situation::Error => e
+      abort e.message
+    end
+
+    desc "End a facet or topic: bin/rails \"hob:situation:end[jenner,topic,adu-permit]\""
+    task :end, [ :person, :kind, :slot ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:situation:end[person,kind,slot?]\"" if args[:person].blank? || args[:kind].blank?
+
+      Clearance.with("intimate") do
+        person = Principal.find_by!(name: args[:person], kind: "human")
+        writer = Principal.find_by!(name: ENV["BY"].presence || person.name, kind: "human")
+        Current.set(principal: writer, clearance: "intimate", surface: "terminal") do
+          rows = Situation.end_observation(
+            person: person, kind: args[:kind], slot: args[:slot],
+            by: Situation::Writer.new(principal: writer, surface: "terminal", clearance: "intimate")
+          )
+          puts rows.any? ? "#{person.name}: ended #{rows.size} #{args[:kind]} observation(s)" : "#{person.name}: nothing current to end"
+        end
+      end
+    rescue Situation::Error => e
+      abort e.message
+    end
+  end
+end

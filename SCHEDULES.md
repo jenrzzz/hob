@@ -25,6 +25,9 @@ the household's schedules:
 |---|---|---|
 | `ScheduleTickJob` | every minute | fires every schedule that is due (`Schedule.tick!`) |
 | `WardSweepJob` | hourly at :07 | the ward's sweep (WARD.md), formerly a Coolify scheduled task |
+| `PeopleSyncJob` | every 10 minutes | derives people events and loops from text streams (PEOPLE.md) |
+| `SituationSweepJob` | daily at 03:17 | deletes situation observations older than 30 days (SITUATION.md) |
+| `UpkeepDiscoverJob` | Sundays at 01:00 | reconciles repository upkeep schedules |
 | `clear_solid_queue_finished_jobs` | hourly at :12 | Solid Queue's own housekeeping |
 
 The queue lives in its own database (`hob_production_queue`, schema in

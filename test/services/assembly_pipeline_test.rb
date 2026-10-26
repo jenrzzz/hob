@@ -120,4 +120,18 @@ class AssemblyPipelineTest < ActiveSupport::TestCase
     assert_equal [ "Dinner?" ], opted_out.messages.map { |message| message["content"] }
     assert_nil opted_out.snapshot.assembled["stages"].find { |stage| stage["name"] == "situation" }
   end
+
+  test "only a person's key may name whose situation a turn renders" do
+    writer = Situation::Writer.new(principal: @principal, surface: "test", clearance: "intimate")
+    Situation.observe(person: @principal, observations: [
+      { "kind" => "topic", "slot" => "permit", "value" => { "text" => "the ADU permit" } }
+    ], by: writer)
+    convo = conversation
+    user = MessageNode.append!(conversation: convo, parent_hash: MessageNode::ROOT, role: "user", content: "Hi")
+    Current.principal = Principal.create!(name: "helper", kind: "agent", max_clearance: "intimate")
+
+    error = assert_raises(Situation::Invalid) { assemble(conversation: convo, head: user, situation: { person: "tester" }) }
+    assert_match "person's key", error.message
+    assert_equal [ "Hi" ], assemble(conversation: convo, head: user).messages.map { |message| message["content"] }
+  end
 end

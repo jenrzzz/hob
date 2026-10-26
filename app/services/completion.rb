@@ -117,9 +117,10 @@ class Completion
   def add_situation!(conversation)
     return unless @situation
 
+    now = Time.current
     state = Situation.get({ "person" => Current.principal.name }, requester: Current.principal,
-                                                                  surface: Current.surface)["people"].sole
-    text = Situation::Renderer.render(state)
+                                                                  surface: Current.surface, now: now)["people"].sole
+    text = Situation::Renderer.render(state, now: now)
     return if text.blank?
 
     @system = [ text, @system ].compact_blank.join("\n\n")

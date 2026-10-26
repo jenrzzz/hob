@@ -7,12 +7,7 @@ module Situation
   class Invalid < Error; end
   class NotFound < Error; end
 
-  Writer = Struct.new(:principal, :surface, :request_id, :clearance, keyword_init: true) do
-    def self.from(request)
-      new(principal: request.principal, surface: request.surface, request_id: request.id,
-          clearance: request.respond_to?(:realm) ? request.realm : Current.clearance)
-    end
-  end
+  Writer = Struct.new(:principal, :surface, :clearance, keyword_init: true)
 
   OBSERVATION_FIELDS = %w[kind slot value realm basis observed_at ttl ref].freeze
   GET_ARGUMENTS = %w[person].freeze

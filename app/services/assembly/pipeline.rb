@@ -165,7 +165,9 @@ module Assembly
     # The person's volatile present moment belongs after history, beside the
     # trailing instruction, so it does not churn the provider's cacheable
     # system prefix. Per-turn `situation: false` opts out; { person: name }
-    # handles a shared surface until conversations carry participants.
+    # handles a shared surface until conversations carry participants. Only a
+    # person's key may name someone: an agent reads situation.get through the
+    # sentinel, not by asking chat to render it.
     def situation_stage(budget)
       return nil if @situation == false
 
@@ -178,12 +180,16 @@ module Assembly
       raise ArgumentError, "unknown situation option: #{unknown.join(', ')}" if unknown.any?
 
       person = options["person"].presence
+      if person && !Current.principal&.trusted?
+        raise Situation::Invalid, "situation: { person } needs a person's key"
+      end
       person ||= Current.principal&.name if Current.principal&.trusted?
       return nil if person.nil?
 
-      answer = Situation.get({ "person" => person }, requester: Current.principal, surface: Current.surface)
+      now = Time.current
+      answer = Situation.get({ "person" => person }, requester: Current.principal, surface: Current.surface, now: now)
       state = answer["people"].first
-      text = Situation::Renderer.render(state, budget: budget)
+      text = Situation::Renderer.render(state, budget: budget, now: now)
       return nil if text.blank?
 
       realms = (state["facets"] + state["topics"]).map { |row| row["realm"] }.uniq

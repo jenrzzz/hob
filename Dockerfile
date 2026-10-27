@@ -79,5 +79,16 @@ CMD ["./bin/thrust", "./bin/rails", "server"]
 FROM app AS jobs
 CMD ["./bin/jobs"]
 
-# The web server, and what a build with no target gets.
+# Healthy while this container's worker, dispatcher, and scheduler beat
+# (bin/jobs-healthcheck). Coolify reads the first of these two checks for
+# how long a deploy waits on the new container, so they share their timing:
+# Coolify sleeps the whole start period before its first look, so the grace
+# is short and the patience is in the retries: ten misses ten seconds apart.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=10 \
+  CMD ["./bin/jobs-healthcheck"]
+
+# The web server, and what a build with no target gets. Healthy once Rails
+# answers /up through Thruster, after the entrypoint's db:prepare.
 FROM app
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=10 \
+  CMD ["curl", "-fsS", "-o", "/dev/null", "http://localhost/up"]

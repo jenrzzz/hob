@@ -33,7 +33,11 @@ In production the clock ([SCHEDULES.md](SCHEDULES.md)) is a second
 process from the same image, `bin/jobs` (Solid Queue: the schedule tick
 every minute, the ward's hourly sweep), with the app's environment and
 the queue database (`hob_production_queue`) the app's `db:prepare`
-loads. Keep `SOLID_QUEUE_IN_PUMA` unset. Schedules made by rake read
+loads. Keep `SOLID_QUEUE_IN_PUMA` unset. Each container's healthcheck is
+in the Dockerfile (the web one's `/up`, the jobs one's
+`bin/jobs-healthcheck`, which reads Solid Queue's heartbeats over
+`QUEUE_DATABASE_URL`); leave Coolify's own health check off on both apps,
+since an enabled one replaces the Dockerfile's. Schedules made by rake read
 their times in `HOB_TIME_ZONE` (an IANA zone, default UTC). Upkeep
 discovery reads `HOB_UPKEEP_OWNERS` (the GitHub owners whose repos on
 Coolify the forge keeps current) and `HOB_FORGE_PRINCIPAL` (default

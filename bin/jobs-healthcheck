@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# The jobs container's healthcheck (Dockerfile): healthy while this
+# container's Solid Queue worker, dispatcher, and scheduler have each
+# heartbeated in the last three minutes (they beat every minute). Solid
+# Queue records Socket.gethostname, which is the container's $HOSTNAME, so a
+# container being replaced in a deploy never vouches for its successor. A
+# psql query, not bin/rails runner: booting Rails every check costs more
+# than the check is worth.
+
+alive=$(psql "${QUEUE_DATABASE_URL:?}" -X -q -t -A -v ON_ERROR_STOP=1 -v host="$HOSTNAME" <<'SQL'
+SELECT count(DISTINCT kind) FROM solid_queue_processes
+ WHERE hostname = :'host'
+   AND kind IN ('Worker', 'Dispatcher', 'Scheduler')
+   AND last_heartbeat_at > (now() AT TIME ZONE 'utc') - interval '3 minutes';
+SQL
+) || exit 1  # Docker reserves 2, which is psql's for no connection
+
+if [ "$alive" != 3 ]; then
+  echo "$alive of 3 Solid Queue processes alive on $HOSTNAME"
+  exit 1
+fi

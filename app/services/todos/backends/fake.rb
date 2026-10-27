@@ -141,7 +141,7 @@ module Todos
       def assign(record, attributes)
         raise Todos::Invalid, "give a list or a parent_id, not both" if attributes["list"].present? && attributes["parent_id"].present?
 
-        record.merge!(attributes.slice("title", "notes", "flagged", "estimate_minutes"))
+        record.merge!(attributes.slice("title", "notes", "flagged", "estimate_minutes", "repeat"))
         record["notes"] = [ record["notes"].presence, attributes["notes_append"] ].compact.join("\n") if attributes["notes_append"]
         %w[due_at start_at planned_at].each { |name| record[name] = stamp(attributes[name]) if attributes.key?(name) }
         record["tags"] = attributes["tags"].uniq if attributes["tags"]
@@ -178,7 +178,7 @@ module Todos
           "list" => list && { "id" => list_id(list["id"]), "name" => list["name"] },
           "parent_id" => todo_id(record["parent"]),
           "has_children" => store.todos.values.any? { |other| other["parent"] == record["id"] },
-          "estimate_minutes" => record["estimate_minutes"], "repeats" => false,
+          "estimate_minutes" => record["estimate_minutes"], "repeats" => record["repeat"].present?, "repeat" => record["repeat"],
           "url" => "fake:///task/#{record['id']}", "created_at" => record["created_at"], "updated_at" => record["updated_at"]
         }
       end
@@ -193,6 +193,7 @@ module Todos
         return false unless status == "all" || record["status"] == status
         return false if !filters["actionable"].nil? && actionable?(record) != filters["actionable"]
         return false if !filters["flagged"].nil? && (record["flagged"] ? true : false) != filters["flagged"]
+        return false if !filters["repeats"].nil? && record["repeat"].present? != filters["repeats"]
         return false if filters["list"].present? && record["list"] != list_native!(filters["list"])
         return false unless Array(filters["tag"]).all? { |tag| record["tags"].include?(tag) }
         return false if filters["due_before"] && !(record["due_at"] && record["due_at"] < stamp(filters["due_before"]))

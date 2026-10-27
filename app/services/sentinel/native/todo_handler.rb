@@ -24,7 +24,23 @@ module Sentinel
         "list" => { "type" => %w[string null],
                     "description" => "A list id from todo.lists (\"<backend>:<id>\", or \"<backend>:inbox\"), or a project's " \
                                      "exact name; null is the inbox" },
-        "parent_id" => { "type" => "string", "description" => "Nest it under this todo (same backend); instead of list" }
+        "parent_id" => { "type" => "string", "description" => "Nest it under this todo (same backend); instead of list" },
+        "repeat" => {
+          "type" => %w[object null],
+          "description" => "Make it repeat; null stops it repeating. Completing it then completes one occurrence and makes the " \
+                           "next. The schedule moves its due_at and start_at, so give it the first occurrence's.",
+          "properties" => {
+            "rule" => { "type" => "string",
+                        "description" => "An iCalendar RRULE: \"FREQ=WEEKLY;BYDAY=MO\" every Monday, \"FREQ=MONTHLY;BYMONTHDAY=1\" " \
+                                         "the first of the month, \"FREQ=DAILY;INTERVAL=3\" every three days" },
+            "method" => { "type" => "string", "enum" => Todos::REPEAT_METHODS, "default" => "fixed",
+                          "description" => "What the next occurrence counts from. fixed: the schedule, however late this one " \
+                                           "was done (rent). due: when this one was done, setting the next due date (a haircut " \
+                                           "every 6 weeks). start: when this one was done, setting the next start date" }
+          },
+          "required" => %w[rule],
+          "additionalProperties" => false
+        }
       }.freeze
 
       private

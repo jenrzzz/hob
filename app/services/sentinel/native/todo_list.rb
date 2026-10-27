@@ -6,11 +6,12 @@ module Sentinel
       CAPABILITY = {
         "name" => "todo.list",
         "description" => "List todos from the household's todo backends visible at the agent's clearance (OmniFocus, by way " \
-                         "of hob). Open todos by default; filter by what can be done now, list, tags, flag, dates, or text. " \
+                         "of hob). Open todos by default; filter by what can be done now, list, tags, flag, repeating, dates, or text. " \
                          "Returns { todos: [{ id, backend, title, notes, status, actionable, blocked, flagged, due_at, start_at, " \
-                         "planned_at, completed_at, tags, list, parent_id, has_children, estimate_minutes, repeats, url, " \
-                         "created_at, updated_at }], count, unavailable: [{ backend, error }], notice }. A backend listed in " \
-                         "`unavailable` could not be reached: its todos are missing from the answer, not absent.",
+                         "planned_at, completed_at, tags, list, parent_id, has_children, estimate_minutes, repeats, repeat: " \
+                         "{ rule, method } or null, url, created_at, updated_at }], count, unavailable: [{ backend, error }], " \
+                         "notice }. A backend listed in `unavailable` could not be reached: its todos are missing from the " \
+                         "answer, not absent.",
         "kind" => "read",
         "realm" => "household",
         "input_schema" => {
@@ -24,6 +25,7 @@ module Sentinel
             "list" => { "type" => "string", "description" => "A list id from todo.lists; \"<backend>:inbox\" is that backend's inbox" },
             "tag" => { "type" => "array", "items" => { "type" => "string" }, "description" => "Tag names; a todo must carry every one" },
             "flagged" => { "type" => "boolean" },
+            "repeats" => { "type" => "boolean", "description" => "true: only repeating todos; false: only one-off ones" },
             "due_before" => { "type" => "string", "description" => DATE },
             "due_after" => { "type" => "string", "description" => DATE },
             "start_before" => { "type" => "string", "description" => "Start (defer) date before this. #{DATE}" },

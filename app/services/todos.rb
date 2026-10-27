@@ -24,16 +24,22 @@ module Todos
   LIST_STATUSES = %w[active on_hold done dropped all].freeze
   SORTS = { "due" => "due_at", "start" => "start_at", "created" => "created_at", "updated" => "updated_at",
             "title" => "title" }.freeze
-  FILTERS = %w[backend status actionable list tag flagged due_before due_after start_before q updated_after sort limit].freeze
+  FILTERS = %w[backend status actionable list tag flagged repeats due_before due_after start_before q updated_after sort
+               limit].freeze
   LIST_FILTERS = %w[backend status q].freeze
   DEFAULT_LIMIT = 100
   MAX_LIMIT = 500
 
-  SHARED_ATTRIBUTES = %w[title notes flagged due_at start_at planned_at estimate_minutes tags list parent_id].freeze
+  SHARED_ATTRIBUTES = %w[title notes flagged due_at start_at planned_at estimate_minutes tags list parent_id repeat].freeze
   CREATE_ATTRIBUTES = (SHARED_ATTRIBUTES + %w[backend]).freeze
   UPDATE_ATTRIBUTES = (SHARED_ATTRIBUTES + %w[notes_append add_tags remove_tags]).freeze
   DATES = %w[due_at start_at planned_at].freeze
   TAG_LISTS = %w[tags add_tags remove_tags].freeze
+  # What a repeating todo's next occurrence counts from: `fixed`, the
+  # schedule, whenever this one was done; `due` and `start`, the moment this
+  # one was done, setting the next due date or start date from there.
+  REPEAT_METHODS = %w[fixed due start].freeze
+  REPEAT_FREQUENCIES = %w[MINUTELY HOURLY DAILY WEEKLY MONTHLY YEARLY].freeze
 
   # Rides on what agents are handed (Sentinel::Native::Todo*): a todo's
   # words came from somewhere else.
@@ -200,6 +206,7 @@ module Todos
     out["list"] = filters["list"].to_s if filters["list"].present?
     out["tag"] = strings!(filters["tag"], "tag") if filters["tag"].present?
     out["flagged"] = boolean!(filters["flagged"], "flagged") unless filters["flagged"].nil?
+    out["repeats"] = boolean!(filters["repeats"], "repeats") unless filters["repeats"].nil?
     %w[due_before due_after start_before updated_after].each do |name|
       out[name] = date!(filters[name], name) if filters[name].present?
     end
@@ -232,6 +239,7 @@ module Todos
         elsif name == "estimate_minutes" then value.nil? ? nil : minutes!(value)
         elsif name == "list" then value.nil? ? nil : string!(value, name)
         elsif name == "parent_id" then value.nil? ? nil : string!(value, name)
+        elsif name == "repeat" then value.nil? ? nil : repeat!(value)
         elsif name == "notes" then value.nil? ? "" : string!(value, name, blank: true)
         else string!(value, name, blank: name == "title")
         end
@@ -281,6 +289,25 @@ module Todos
     value
   rescue ArgumentError
     raise Invalid, "#{what} must be an ISO8601 time or date, got #{value.inspect}"
+  end
+
+  # { rule, method }: an iCalendar RRULE ("FREQ=WEEKLY;BYDAY=MO", an
+  # "RRULE:" in front is let go) and REPEAT_METHODS, fixed by default.
+  # Only its shape is checked here; whether the backend can keep that
+  # schedule is the backend's to say.
+  def repeat!(value)
+    raise Invalid, "repeat must be { rule, method } or null, got #{value.inspect}" unless value.is_a?(Hash)
+
+    repeat = known!(value, %w[rule method], "repeat field")
+    rule = string!(repeat["rule"], "repeat.rule").strip.upcase.delete_prefix("RRULE:")
+    parts = rule.split(";").map { |part| part.split("=", 2) }
+    frequency = parts.find { |name, _| name == "FREQ" }&.last
+    unless parts.all? { |name, setting| name.to_s.match?(/\A[A-Z]+\z/) && setting.present? } && REPEAT_FREQUENCIES.include?(frequency)
+      raise Invalid, "repeat.rule must be an iCalendar RRULE with a FREQ of #{REPEAT_FREQUENCIES.join(', ')} " \
+                     "(\"FREQ=WEEKLY;BYDAY=MO\"), got #{repeat['rule'].inspect}"
+    end
+
+    { "rule" => rule, "method" => one_of!(repeat["method"].presence || "fixed", REPEAT_METHODS, "repeat.method") }
   end
 
   def minutes!(value)

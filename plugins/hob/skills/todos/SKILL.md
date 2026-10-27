@@ -41,6 +41,15 @@ and schema say exactly what it takes; this is how to use them well.
 - `todo_delete` is for good, children included, and a backend's key may not
   allow it at all. Use it only when the person says delete, and offer `todo_drop`
   otherwise.
+- **Repeating.** "Every Monday", "on the 1st", "every six weeks" is `repeat:
+  { rule, method }` on create or update, with the first occurrence's `due_at`
+  or `start_at`. `rule` is an iCalendar RRULE: `FREQ=WEEKLY;BYDAY=MO`,
+  `FREQ=MONTHLY;BYMONTHDAY=1`, `FREQ=WEEKLY;INTERVAL=6`, `FREQ=YEARLY`.
+  `method` is `fixed` (the default: the schedule holds however late it was
+  done, like rent) or counts from when it was last done: `due` sets the next
+  due date (a haircut), `start` the next start date (watering the ferns). Pick
+  `fixed` unless the person's words tie the next one to doing this one.
+  `repeat: null` stops it repeating; `repeats: true` lists the repeating ones.
 - Titles start with a verb and stand on their own in a list read weeks later:
   "Call the plumber about the leak under the sink", not "plumber".
 

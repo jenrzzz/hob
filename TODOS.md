@@ -41,7 +41,9 @@ actually live is a **backend**: a row, not code.
   tags: ["Phone", ...],                           names
   list: { id: "<backend>:<native list id>", name } | null,     null is the inbox
   parent_id: "<backend>:<id>" | null,  has_children: bool,
-  estimate_minutes, repeats: bool, url, created_at, updated_at }
+  estimate_minutes, repeats: bool,
+  repeat: { rule, method } | null,                see Repeating
+  url, created_at, updated_at }
 ```
 
 An id says where a todo lives: the backend's name, a colon, and the
@@ -72,6 +74,7 @@ and none is listed for it.
 | `list` | a list id; `"<backend>:inbox"` is that backend's inbox. Names the backend, so `backend` is not needed |
 | `tag` | a tag name, repeatable (`tag[]=` over HTTP); a todo must carry every one |
 | `flagged` | `true` / `false` |
+| `repeats` | `true`: only repeating todos; `false`: only one-off ones |
 | `due_before`, `due_after`, `start_before`, `updated_after` | an ISO8601 time, or a bare date |
 | `q` | words that must all appear in the title or notes |
 | `sort` | `due`, `start`, `created`, `updated`, `title`; prefix `-` to reverse. Nulls last either way |
@@ -86,19 +89,44 @@ asked for by name is the whole question, so its failure fails the call.
 ### Writable attributes
 
 `title`, `notes`, `flagged`, `due_at`, `start_at`, `planned_at`,
-`estimate_minutes`, `tags` (replaces the set), `list`, `parent_id`; on
+`estimate_minutes`, `tags` (replaces the set), `list`, `parent_id`, `repeat`; on
 create also `backend`; on update also `notes_append`, `add_tags`,
 `remove_tags`. `list` is a list id or a project's plain name (it is an id
 only when it starts with a backend's name and a colon, so `"Home :
 Garden"` is a name); null is the inbox. `parent_id` nests a todo under
 another in the same backend, instead of `list`. A null clears a date or
-an estimate. **An unknown attribute or filter is refused, never ignored**,
+an estimate, and stops a `repeat`. **An unknown attribute or filter is refused, never ignored**,
 so a typo cannot silently do nothing.
 
 Where a create lands when it names no `backend`: the backend its
 `parent_id` or `list` id names; else the caller's own *primary* backend
 (enabled, visible, owned by the calling principal); else the only backend
 in sight; else a 422 that lists the names to choose from.
+
+### Repeating
+
+```
+repeat: { rule: "FREQ=WEEKLY;BYDAY=MO",      an iCalendar RRULE (RFC 5545)
+          method: "fixed" | "due" | "start" }      what the next occurrence counts from; fixed if left out
+```
+
+The rule is the standard one because every place todos live speaks it, or
+something it maps onto (Reminders' recurrence rules are modelled on it; OmniFocus
+takes them as they are). hob checks its shape, `KEY=VALUE` parts with a
+`FREQ` of `MINUTELY` through `YEARLY`, upper-cases it, and lets an
+`RRULE:` prefix go; whether a backend can keep that schedule is the
+backend's to say, and a refusal is a 422 with its reason.
+
+| method | the next occurrence | for |
+|---|---|---|
+| `fixed` | the next date on the schedule, however late this one was done | rent on the 1st, bins on Tuesday |
+| `due` | due one interval after this one was done | a haircut every 6 weeks |
+| `start` | starts one interval after this one was done | water the ferns 4 days after they were last watered |
+
+A repeat moves the todo's dates, so a repeating todo wants a `due_at` or
+`start_at` for its first occurrence. Completing it completes that
+occurrence and hands back the next as `next`; dropping it drops that
+occurrence. `repeat: null` ends the series, leaving the todo as a one-off.
 
 ### Operations
 
@@ -110,11 +138,11 @@ to agents. Completing a repeating todo completes that occurrence, and the
 next one rides back on the answer as `next`.
 
 ```
-GET    /v1/todos?backend=&status=&actionable=&list=&tag[]=&flagged=&due_before=&due_after=
+GET    /v1/todos?backend=&status=&actionable=&list=&tag[]=&flagged=&repeats=&due_before=&due_after=
                 &start_before=&q=&updated_after=&sort=&limit=     → { todos, unavailable }
 GET    /v1/todos/:id
 POST   /v1/todos                  { title, notes?, flagged?, due_at?, start_at?, planned_at?,
-                                    estimate_minutes?, tags?, list?, parent_id?, backend? }   → 201
+                                    estimate_minutes?, tags?, list?, parent_id?, repeat?, backend? }   → 201
 PATCH  /v1/todos/:id              the same, plus notes_append, add_tags, remove_tags
 POST   /v1/todos/:id/complete · /reopen · /drop
 DELETE /v1/todos/:id
@@ -232,7 +260,8 @@ writes syncs like any other edit. Its API is its own document; the
 | `status` | `completed` → `done`, `dropped` → `dropped`, anything else `open` |
 | `actionable` | task status `available`, `next`, `due_soon`, `overdue`; filter `actionable=true` → `status=available`, `false` → `status=blocked` |
 | list | project; `path` ← its folder's path, `open_count` ← `remaining_count`; the inbox from `GET /v1/status` (its count, and whether the key is scoped) |
-| filters | `list` → `project=` or `inbox=true`, `tag` → `tag=` (`tag_mode=all` for several), `start_before` → `defer_before`, `updated_after` → `modified_after`, `sort` `start/created/updated/title` → `defer/added/modified/name` |
+| `repeat` | `repetition`; `rule` as it is, `method` `fixed`/`due` the same, `start` ↔ `defer`; null stops it repeating |
+| filters | `list` → `project=` or `inbox=true`, `tag` → `tag=` (`tag_mode=all` for several), `repeats` → `repeating`, `start_before` → `defer_before`, `updated_after` → `modified_after`, `sort` `start/created/updated/title` → `defer/added/modified/name` |
 | errors | 404 → NotFound; 400, 409, 422 → Invalid with tally's message (and the candidates of an ambiguous name); 401, 403 → Forbidden; 503, 5xx, refused connections, timeouts → Unavailable |
 
 Timeouts are short (5 seconds to connect, 30 to answer): OmniFocus
@@ -336,10 +365,13 @@ One table. Todos, lists, and tags are the backend's; hob holds no copy.
 5. **Idempotent creates.** tally honours an `Idempotency-Key` header. hob
    does not retry today, so it sends none; the sentinel request id is the
    natural key if it ever does.
-6. **More of OmniFocus.** Repetition rules, notifications, sequential
-   projects, review, perspectives, and the forecast are tally features the
-   contract leaves out on purpose: each would have to mean something in
-   Reminders too. `repeats` and `url` are the pointers back to the app.
+6. **More of OmniFocus.** Notifications, sequential projects, review,
+   perspectives, and the forecast are tally features the contract leaves
+   out on purpose: each would have to mean something in Reminders too.
+   `url` is the pointer back to the app. Repetition made it in because an
+   RRULE does mean something everywhere; what it leaves behind is a drop
+   of every occurrence at once (tally's `all_occurrences`), which is
+   `repeat: null` and then a drop.
 7. **Who owns what, beyond one person.** `principal` is the owner, and
    only "my primary" uses it. "Tessa's todos" as a filter across backends
    (`owner=`) is one line when someone wants it.

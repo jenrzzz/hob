@@ -12,6 +12,8 @@ Capture this as a todo with the hob server's `todo_create` tool: $ARGUMENTS
 - No `list` and no `backend`: it belongs in the inbox, and the person files it.
 - Set `due_at`, `start_at`, `flagged`, or `tags` only if the person said so.
   "Tomorrow" or "next week" with no deadline is `start_at`, not `due_at`.
+- "Every Monday", "monthly", "every six weeks" is a `repeat` (an RRULE, as
+  the `todo_create` schema describes), with the first occurrence's date.
 - If this came out of the work in this session, put what is needed to pick it
   up cold in `notes`: repository and branch, file and line, the failing
   command, a PR or issue link.

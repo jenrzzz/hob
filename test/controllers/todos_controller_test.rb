@@ -36,6 +36,14 @@ class TodosControllerTest < ActionDispatch::IntegrationTest
     assert_nil body["due_at"]
     assert_equal %w[Phone Waiting], body["tags"]
 
+    patch "/v1/todos/jenner.of:t1", params: { repeat: { rule: "FREQ=MONTHLY;BYMONTHDAY=1", method: "due" } }, headers: auth, as: :json
+    assert_response :ok
+    assert_equal [ true, { "rule" => "FREQ=MONTHLY;BYMONTHDAY=1", "method" => "due" } ], body.values_at("repeats", "repeat")
+    get "/v1/todos", params: { repeats: "true" }, headers: auth
+    assert_equal [ "jenner.of:t1" ], body["todos"].map { |t| t["id"] }
+    patch "/v1/todos/jenner.of:t1", params: { repeat: nil }, headers: auth, as: :json
+    assert_nil body["repeat"]
+
     post "/v1/todos/jenner.of:t1/complete", headers: auth
     assert_response :ok
     assert_equal "done", body["status"]

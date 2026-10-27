@@ -22,7 +22,7 @@ class TodosTest < ActiveSupport::TestCase
     assert_equal "jenner-of:t1", todo["id"], "no backend named: the caller's primary"
     assert_equal "jenner-of", todo["backend"]
     assert_equal %w[id backend title notes status actionable blocked flagged due_at start_at planned_at completed_at tags list
-                    parent_id has_children estimate_minutes repeats url created_at updated_at], todo.keys
+                    parent_id has_children estimate_minutes repeats repeat url created_at updated_at], todo.keys
     assert_equal "open", todo["status"]
     assert todo["actionable"]
     refute todo["blocked"]
@@ -108,6 +108,38 @@ class TodosTest < ActiveSupport::TestCase
     assert_equal "Garden", Todos.update(id, "list" => "jenner-of:#{garden}").dig("list", "name")
     assert_nil Todos.update(id, "list" => "jenner-of:inbox")["list"]
     assert_equal [ "Only" ], Todos.update(id, "tags" => [ "Only" ], "notes" => nil).then { |t| t["notes"].empty? && t["tags"] }
+  end
+
+  test "repeat: an RRULE and what the next occurrence counts from; null stops it" do
+    todo = Todos.create("title" => "Take out the recycling", "due_at" => "2026-10-27", "repeat" => { "rule" => "FREQ=WEEKLY;BYDAY=TU" })
+    assert todo["repeats"]
+    assert_equal({ "rule" => "FREQ=WEEKLY;BYDAY=TU", "method" => "fixed" }, todo["repeat"], "fixed unless said")
+
+    haircut = Todos.create("title" => "Get a haircut", repeat: { rule: "rrule:freq=weekly;interval=6", method: "due" })
+    assert_equal({ "rule" => "FREQ=WEEKLY;INTERVAL=6", "method" => "due" }, haircut["repeat"], "symbols, case, and an RRULE: prefix are fine")
+    assert_equal({ "rule" => "FREQ=MONTHLY;BYMONTHDAY=1", "method" => "start" },
+                 Todos.update(haircut["id"], "repeat" => { "rule" => "FREQ=MONTHLY;BYMONTHDAY=1", "method" => "start" })["repeat"])
+
+    stopped = Todos.update(todo["id"], "repeat" => nil)
+    refute stopped["repeats"]
+    assert_nil stopped["repeat"]
+    assert_equal [ "Get a haircut" ], titles(Todos.list("repeats" => true))
+    assert_equal [ "Take out the recycling" ], titles(Todos.list("repeats" => "false"))
+
+    {
+      "FREQ=WEEKLY" => nil,
+      { "rule" => "every week" } => /repeat.rule must be an iCalendar RRULE/,
+      { "rule" => "FREQ=FORTNIGHTLY" } => /RRULE with a FREQ of MINUTELY, HOURLY/,
+      { "rule" => "BYDAY=MO" } => /must be an iCalendar RRULE/,
+      { "rule" => "FREQ=WEEKLY;BYDAY" } => /must be an iCalendar RRULE/,
+      { "rule" => "" } => /repeat.rule cannot be blank/,
+      { "method" => "fixed" } => /repeat.rule must be a string/,
+      { "rule" => "FREQ=DAILY", "method" => "completion" } => /repeat.method must be one of fixed, due, start/,
+      { "rule" => "FREQ=DAILY", "every" => 2 } => /unknown repeat field every/
+    }.each do |repeat, message|
+      error = assert_raises(Todos::Invalid) { Todos.create("title" => "x", "repeat" => repeat) }
+      assert_match(message || /repeat must be \{ rule, method \} or null/, error.message, repeat.inspect)
+    end
   end
 
   test "complete, reopen, drop, destroy" do

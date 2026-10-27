@@ -511,17 +511,19 @@ POST /v1/situation/end                 { kind, slot? }
 POST /v1/conversations/:id/events      { content, branch, meta }   # role: event node
 POST /v1/conversations/:id/branches    { name, at: <node hash> }   # fork = ref
 GET  /v1/usage?ref=&role=&operation=&since=&surface=
-GET  /v1/todos?backend=&status=open|done|dropped|all&actionable=&list=&tag[]=&flagged=
+GET  /v1/todos?backend=&status=open|done|dropped|all&actionable=&list=&tag[]=&flagged=&repeats=
               &due_before=&due_after=&start_before=&q=&updated_after=&sort=&limit=
                                        → { todos: [{ id: "<backend>:<id>", backend, title, notes, status,
                                            actionable, blocked, flagged, due_at, start_at, planned_at,
                                            completed_at, tags, list, parent_id, has_children,
-                                           estimate_minutes, repeats, url, created_at, updated_at }],
+                                           estimate_minutes, repeats, repeat: { rule, method } | null,
+                                           url, created_at, updated_at }],
                                            unavailable: [{ backend, error }] }
 GET  /v1/todos/:id
 POST /v1/todos                         { title, notes, flagged, due_at, start_at, planned_at, estimate_minutes,
-                                         tags, list, parent_id, backend }        unknown attributes are a 422
-PATCH /v1/todos/:id                    the same, plus notes_append, add_tags, remove_tags; null clears a date
+                                         tags, list, parent_id, repeat: { rule: RRULE, method: fixed|due|start },
+                                         backend }                               unknown attributes are a 422
+PATCH /v1/todos/:id                    the same, plus notes_append, add_tags, remove_tags; null clears a date or a repeat
 POST /v1/todos/:id/complete|reopen|drop · DELETE /v1/todos/:id
 GET  /v1/todo_lists?backend=&status=&q= → { lists: [{ id, backend, name, kind: project|inbox, path, status, open_count }], unavailable }
 GET/POST/PATCH/DELETE /v1/todo_backends[/:name] · POST /v1/todo_backends/:name/check   (a person)

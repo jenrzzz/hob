@@ -109,13 +109,15 @@ hob.todos.list(actionable: true, tag: ["Phone"], sort: "due")     # => Hob::Todo
 hob.todos.list(list: "house-omnifocus:inbox").map(&:title)
 todo = hob.todos.create(title: "Call the plumber", due_at: 2.days.from_now, tags: ["Phone"], list: "House")
 hob.todos.update(todo.id, notes_append: "Tried twice", due_at: nil)   # nil clears; only what is named changes
+hob.todos.create(title: "Pay rent", due_at: "2026-11-01",
+                 repeat: { rule: "FREQ=MONTHLY;BYMONTHDAY=1" })    # an RRULE; method: fixed (default) | due | start
 hob.todos.complete(todo.id)                                        # reopen(id), drop(id), delete(id)
 hob.todos.lists(backend: "house-omnifocus")                        # projects and the inbox: Hob::TodoList
 hob.todos.backends                                                 # a person's key
 ```
 
 Filters: `backend`, `status` (`open` | `done` | `dropped` | `all`),
-`actionable`, `list`, `tag`, `flagged`, `due_before`, `due_after`,
+`actionable`, `list`, `tag`, `flagged`, `repeats`, `due_before`, `due_after`,
 `start_before`, `q`, `updated_after`, `sort`, `limit`. With no `backend`
 every visible one answers; a listing is `partial?` when one could not, and
 `unavailable` names it. An unknown filter or attribute is `Hob::Invalid`,

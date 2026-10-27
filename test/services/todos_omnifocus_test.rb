@@ -70,7 +70,7 @@ class TodosOmnifocusTest < ActiveSupport::TestCase
       "notes" => "Leak under the sink", "status" => "open", "actionable" => true, "blocked" => false, "flagged" => true,
       "due_at" => "2026-09-22T00:00:00Z", "start_at" => nil, "planned_at" => nil, "completed_at" => nil,
       "tags" => [ "Phone" ], "list" => { "id" => "jenner-omnifocus:pQ7", "name" => "House" }, "parent_id" => nil,
-      "has_children" => false, "estimate_minutes" => 15, "repeats" => false, "url" => "omnifocus:///task/kXv3mPq9LQe",
+      "has_children" => false, "estimate_minutes" => 15, "repeats" => false, "repeat" => nil, "url" => "omnifocus:///task/kXv3mPq9LQe",
       "created_at" => "2026-09-01T16:20:11Z", "updated_at" => "2026-09-19T02:11:40Z"
     }, todo)
 
@@ -109,6 +109,9 @@ class TodosOmnifocusTest < ActiveSupport::TestCase
     assert_equal "jenner-omnifocus:par1", nested["parent_id"]
     assert nested["has_children"]
     assert nested["repeats"]
+    assert_equal({ "rule" => "FREQ=WEEKLY", "method" => "fixed" }, nested["repeat"])
+    assert_equal({ "rule" => "FREQ=DAILY", "method" => "start" },
+                 map.("repetition" => { "rule" => "FREQ=DAILY", "method" => "defer" })["repeat"], "start is the defer date")
     assert_equal "", nested["notes"]
     assert_empty nested["tags"]
   end
@@ -132,6 +135,7 @@ class TodosOmnifocusTest < ActiveSupport::TestCase
       { "status" => "done" } => %w[status completed], { "status" => "dropped" } => %w[status dropped], { "status" => "all" } => %w[status all],
       { "actionable" => false } => %w[status blocked], { "list" => "jenner-omnifocus:inbox" } => %w[inbox true],
       { "tag" => "Phone" } => %w[tag Phone], { "flagged" => false } => %w[flagged false],
+      { "repeats" => true } => %w[repeating true], { "repeats" => "false" } => %w[repeating false],
       { "sort" => "due" } => %w[sort due], { "sort" => "created" } => %w[sort added], { "sort" => "-updated" } => %w[sort -modified],
       { "sort" => "title" } => %w[sort name]
     }.each do |filters, pair|
@@ -167,6 +171,12 @@ class TodosOmnifocusTest < ActiveSupport::TestCase
 
     assert_match(/not both/, assert_raises(Todos::Invalid) { Todos.create("title" => "x", "list" => "House", "parent_id" => "jenner-omnifocus:par1") }.message)
 
+    Todos.create("title" => "Recycling", "due_at" => "2026-10-27", "repeat" => { "rule" => "FREQ=WEEKLY;BYDAY=TU" })
+    assert_equal({ "name" => "Recycling", "due" => "2026-10-27", "repetition" => { "rule" => "FREQ=WEEKLY;BYDAY=TU", "method" => "fixed" } },
+                 @calls.last.json)
+    Todos.create("title" => "Water the ferns", "repeat" => { "rule" => "FREQ=DAILY;INTERVAL=4", "method" => "start" })
+    assert_equal({ "rule" => "FREQ=DAILY;INTERVAL=4", "method" => "defer" }, @calls.last.json["repetition"])
+
     @backend.update!(config: @backend.config.merge("create_tags" => true))
     Todos.create("title" => "New tag", "tags" => [ "Errands" ])
     assert_equal({ "name" => "New tag", "tags" => [ "Errands" ], "create_tags" => true }, @calls.last.json)
@@ -178,6 +188,11 @@ class TodosOmnifocusTest < ActiveSupport::TestCase
     assert_equal [ "PATCH", "/v1/tasks/kXv3mPq9LQe" ], [ @calls.last.verb, @calls.last.path ]
     assert_equal({ "name" => "Call a plumber", "note_append" => "Tried twice", "due" => nil, "add_tags" => [ "Waiting" ],
                    "remove_tags" => [ "Phone" ], "estimated_minutes" => nil }, @calls.last.json)
+
+    Todos.update("jenner-omnifocus:kXv3mPq9LQe", "repeat" => { "rule" => "FREQ=WEEKLY;INTERVAL=6", "method" => "due" })
+    assert_equal({ "repetition" => { "rule" => "FREQ=WEEKLY;INTERVAL=6", "method" => "due" } }, @calls.last.json)
+    Todos.update("jenner-omnifocus:kXv3mPq9LQe", "repeat" => nil)
+    assert_equal({ "repetition" => nil }, @calls.last.json, "null stops it repeating")
 
     Todos.update("jenner-omnifocus:kXv3mPq9LQe", "list" => nil)
     assert_equal({ "inbox" => true }, @calls.last.json)

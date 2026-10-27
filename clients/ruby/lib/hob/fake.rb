@@ -312,9 +312,10 @@ module Hob
 
     class FakeTodos < Todos
       BACKEND = "fake".freeze
-      CREATE = %i[title notes flagged due_at start_at planned_at estimate_minutes tags list parent_id backend].freeze
+      CREATE = %i[title notes flagged due_at start_at planned_at estimate_minutes tags list parent_id repeat backend].freeze
       UPDATE = (CREATE - %i[backend] + %i[notes_append add_tags remove_tags]).freeze
-      FILTERS = %i[backend status actionable list tag flagged due_before due_after start_before q updated_after sort limit].freeze
+      FILTERS = %i[backend status actionable list tag flagged repeats due_before due_after start_before q updated_after sort
+                   limit].freeze
       SORTS = { "due" => "due_at", "start" => "start_at", "created" => "created_at", "updated" => "updated_at", "title" => "title" }.freeze
 
       def initialize(fake)
@@ -339,6 +340,7 @@ module Hob
             (filters[:backend].nil? || filters[:backend].to_s == BACKEND) &&
             (filters[:actionable].nil? || t["actionable"] == filters[:actionable]) &&
             (filters[:flagged].nil? || t["flagged"] == filters[:flagged]) &&
+            (filters[:repeats].nil? || t["repeats"] == filters[:repeats]) &&
             (filters[:list].nil? || (t["list"] ? t["list"]["id"] : "#{BACKEND}:inbox") == filters[:list]) &&
             Array(filters[:tag]).all? { |tag| t["tags"].include?(tag) } &&
             (filters[:due_before].nil? || (t["due_at"] && t["due_at"] < stamp(filters[:due_before]))) &&
@@ -364,7 +366,7 @@ module Hob
         data = { "id" => id, "backend" => BACKEND, "title" => nil, "notes" => "", "status" => "open", "actionable" => true,
                  "blocked" => false, "flagged" => false, "due_at" => nil, "start_at" => nil, "planned_at" => nil,
                  "completed_at" => nil, "tags" => [], "list" => nil, "parent_id" => nil, "has_children" => false,
-                 "estimate_minutes" => nil, "repeats" => false, "url" => "fake:///task/#{id}", "created_at" => now, "updated_at" => now }
+                 "estimate_minutes" => nil, "repeats" => false, "repeat" => nil, "url" => "fake:///task/#{id}", "created_at" => now, "updated_at" => now }
         @store[id] = assign(data, attributes)
         Todo.new(data)
       end
@@ -426,6 +428,11 @@ module Hob
         attributes = attributes.transform_keys(&:to_s)
         data.merge!(attributes.slice("title", "flagged", "estimate_minutes"))
         data["notes"] = attributes["notes"].to_s if attributes.key?("notes")
+        if attributes.key?("repeat")
+          repeat = attributes["repeat"]&.transform_keys(&:to_s)
+          data["repeat"] = repeat && { "rule" => repeat["rule"].to_s, "method" => (repeat["method"] || "fixed").to_s }
+          data["repeats"] = !repeat.nil?
+        end
         data["notes"] = [ data["notes"], attributes["notes_append"] ].reject { |n| n.to_s.empty? }.join("\n") if attributes["notes_append"]
         %w[due_at start_at planned_at].each { |name| data[name] = stamp(attributes[name]) if attributes.key?(name) }
         data["tags"] = Array(attributes["tags"]).map(&:to_s) if attributes.key?("tags")

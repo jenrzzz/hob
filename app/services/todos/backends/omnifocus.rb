@@ -34,6 +34,8 @@ module Todos
                  "due_at" => "due", "start_at" => "defer", "planned_at" => "planned",
                  "estimate_minutes" => "estimated_minutes", "tags" => "tags", "add_tags" => "add_tags",
                  "remove_tags" => "remove_tags" }.freeze
+      # hob's repeat.method → tally's repetition.method: start is the defer date.
+      REPEAT_METHOD = { "fixed" => "fixed", "due" => "due", "start" => "defer" }.freeze
 
       def self.config_errors(config)
         errors = []
@@ -125,6 +127,7 @@ module Todos
           query["tag_mode"] = "all" if filters["tag"].size > 1
         end
         query["flagged"] = filters["flagged"] unless filters["flagged"].nil?
+        query["repeating"] = filters["repeats"] unless filters["repeats"].nil?
         { "due_before" => "due_before", "due_after" => "due_after", "start_before" => "defer_before",
           "updated_after" => "modified_after", "q" => "q" }.each { |ours, theirs| query[theirs] = filters[ours] if filters[ours].present? }
         if filters["sort"].present?
@@ -145,6 +148,7 @@ module Todos
       def task_body(attributes, creating:)
         body = attributes.slice(*FIELDS.keys).transform_keys { |name| FIELDS.fetch(name) }
         body["create_tags"] = true if backend.config["create_tags"] && (body.key?("tags") || body.key?("add_tags"))
+        body["repetition"] = repetition(attributes["repeat"]) if attributes.key?("repeat")
         raise Todos::Invalid, "give a list or a parent_id, not both" if attributes["list"].present? && attributes["parent_id"].present?
 
         body["parent"] = native_id!(attributes["parent_id"], "parent_id") if attributes["parent_id"].present?
@@ -161,6 +165,11 @@ module Todos
         else
           body["project"] = value
         end
+      end
+
+      # null stops it repeating.
+      def repetition(repeat)
+        repeat && { "rule" => repeat["rule"], "method" => REPEAT_METHOD.fetch(repeat["method"]) }
       end
 
       # --- tally → hob ---
@@ -181,8 +190,15 @@ module Todos
           "parent_id" => task["parent"].is_a?(Hash) ? todo_id(task["parent"]["id"]) : nil,
           "has_children" => task["has_children"] ? true : false,
           "estimate_minutes" => task["estimated_minutes"], "repeats" => task["repetition"].present?,
+          "repeat" => repeat(task["repetition"]),
           "url" => task["url"], "created_at" => iso(task["added"]), "updated_at" => iso(task["modified"])
         }
+      end
+
+      def repeat(repetition)
+        return nil unless repetition.is_a?(Hash) && repetition["rule"].present?
+
+        { "rule" => repetition["rule"], "method" => REPEAT_METHOD.key(repetition["method"]) || "fixed" }
       end
 
       def task_status(task)

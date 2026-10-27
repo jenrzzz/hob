@@ -6,7 +6,8 @@ module Sentinel
         "name" => "todo.get",
         "description" => "Read one todo by id, live from its backend. Returns { todo: { id, backend, title, notes, status, " \
                          "actionable, blocked, flagged, due_at, start_at, planned_at, completed_at, tags, list, parent_id, " \
-                         "has_children, estimate_minutes, repeats, url, created_at, updated_at }, notice }.",
+                         "has_children, estimate_minutes, repeats, repeat: { rule, method } or null, url, created_at, " \
+                         "updated_at }, notice }.",
         "kind" => "read",
         "realm" => "household",
         "input_schema" => {

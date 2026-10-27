@@ -3,13 +3,14 @@ module V1
   # visible at the key's clearance. Surfaces' and people's keys only: an
   # agent asks the sentinel for todo.list, todo.create, and the rest.
   #
-  # GET    /v1/todos?backend=&status=open|done|dropped|all&actionable=&list=&tag[]=&flagged=
+  # GET    /v1/todos?backend=&status=open|done|dropped|all&actionable=&list=&tag[]=&flagged=&repeats=
   #                 &due_before=&due_after=&start_before=&q=&updated_after=&sort=&limit=
   #                                  → { todos: [...], unavailable: [{ backend, error }] }
   # GET    /v1/todos/:id             an id is "<backend>:<the backend's own id>"
   # POST   /v1/todos                 { title, notes?, flagged?, due_at?, start_at?, planned_at?, estimate_minutes?,
-  #                                    tags?, list?, parent_id?, backend? } → 201 the todo
+  #                                    tags?, list?, parent_id?, repeat?: { rule, method? }, backend? } → 201 the todo
   # PATCH  /v1/todos/:id             the same, plus notes_append, add_tags, remove_tags; null clears a date
+  #                                  or stops a repeat
   # POST   /v1/todos/:id/complete · /reopen · /drop
   # DELETE /v1/todos/:id             gone for good, children included
   #

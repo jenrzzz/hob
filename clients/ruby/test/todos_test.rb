@@ -127,6 +127,13 @@ class FakeTodosTest < Minitest::Test
     assert @hob.todos.drop(milk.id).dropped?
     assert_equal 2, @hob.todos.list(status: "all").size
 
+    rent = @hob.todos.create(title: "Pay rent", due_at: "2026-11-01", repeat: { rule: "FREQ=MONTHLY;BYMONTHDAY=1" })
+    assert rent.repeats?
+    assert_equal({ "rule" => "FREQ=MONTHLY;BYMONTHDAY=1", "method" => "fixed" }, rent.repeat)
+    assert_equal [ "Pay rent" ], @hob.todos.list(repeats: true).map(&:title)
+    refute @hob.todos.update(rent, repeat: nil).repeats?
+    @hob.todos.delete(rent)
+
     child = @hob.todos.create(title: "Find the shears", parent_id: roses.id)
     assert_equal roses.id, child.parent_id
     assert @hob.todos.find(roses.id).has_children

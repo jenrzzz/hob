@@ -4,11 +4,12 @@ module Hob
   # One todo in hob's normalized shape, wherever it lives (OmniFocus, say).
   # `id` is "<backend>:<the backend's own id>"; `start_at` is when it becomes
   # actionable (OmniFocus's defer date); `list` is { "id", "name" } or nil
-  # for the inbox. `next` is set on the answer to `complete` when a
-  # repeating todo made its next occurrence.
+  # for the inbox. `repeat` is { "rule" => an iCalendar RRULE, "method" =>
+  # fixed | due | start } or nil. `next` is set on the answer to `complete`
+  # when a repeating todo made its next occurrence.
   class Todo < Record
     attribute :id, :backend, :title, :notes, :status, :actionable, :blocked, :flagged, :due_at, :start_at, :planned_at,
-              :completed_at, :tags, :list, :parent_id, :has_children, :estimate_minutes, :repeats, :url,
+              :completed_at, :tags, :list, :parent_id, :has_children, :estimate_minutes, :repeats, :repeat, :url,
               :created_at, :updated_at
 
     def open?
@@ -29,6 +30,10 @@ module Hob
 
     def flagged?
       flagged == true
+    end
+
+    def repeats?
+      repeats == true
     end
 
     def next
@@ -100,7 +105,7 @@ module Hob
 
     # GET /v1/todos → Hob::TodoListing of Hob::Todo.
     #   backend:, status: open (default) | done | dropped | all, actionable:, list: (a list id; "<backend>:inbox"),
-    #   tag: (a name or several; a todo must carry every one), flagged:, due_before:, due_after:, start_before:,
+    #   tag: (a name or several; a todo must carry every one), flagged:, repeats:, due_before:, due_after:, start_before:,
     #   q:, updated_after:, sort: due | start | created | updated | title ("-" reverses), limit: (100; at most 500)
     # Times may be Time objects. An unknown filter is Hob::Invalid.
     def list(**filters)
@@ -113,13 +118,14 @@ module Hob
     end
 
     # POST /v1/todos. title:, and any of notes:, flagged:, due_at:, start_at:, planned_at:, estimate_minutes:,
-    # tags:, list: (a list id or a project's name), parent_id:, backend: (default: your primary, or the only one).
+    # tags:, list: (a list id or a project's name), parent_id:, backend: (default: your primary, or the only one),
+    # repeat: { rule: "FREQ=WEEKLY;BYDAY=MO", method: "fixed" | "due" | "start" } (method defaults to fixed).
     def create(**attributes)
       Todo.new(@http.post("/v1/todos", body(attributes)))
     end
 
     # PATCH /v1/todos/:id. The same attributes, plus notes_append:, add_tags:, remove_tags:. Only what is named
-    # changes; nil clears a date or an estimate, and `list: nil` moves it to the inbox.
+    # changes; nil clears a date or an estimate, `repeat: nil` stops it repeating, and `list: nil` moves it to the inbox.
     def update(id, **attributes)
       Todo.new(@http.patch(path(id), body(attributes)))
     end

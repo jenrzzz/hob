@@ -114,6 +114,12 @@ class TodoCapabilitiesTest < ActiveSupport::TestCase
     assert_equal Todos::NOTICE, created["notice"]
     assert_equal todo, Todos.find(todo["id"])
 
+    weekly = completed("todo.create", "title" => "Water the plants", "start_at" => "2026-10-28",
+                                      "repeat" => { "rule" => "FREQ=WEEKLY;BYDAY=WE" })["todo"]
+    assert_equal({ "rule" => "FREQ=WEEKLY;BYDAY=WE", "method" => "fixed" }, weekly["repeat"])
+    assert_nil completed("todo.update", "id" => weekly["id"], "repeat" => nil).dig("todo", "repeat")
+    assert_match(/repeat.method must be one of/, failed("todo.create", "title" => "x", "repeat" => { "rule" => "FREQ=DAILY", "method" => "soon" }))
+
     assert_match(/title is required/, failed("todo.create", "notes" => "untitled"))
     assert_match(/Invalid: unknown attribute priority/, failed("todo.create", "title" => "x", "priority" => 1))
     assert_match(/NotFound: no todo backend named "jenner-of"/, failed("todo.create", "title" => "planted", "backend" => "jenner-of"))

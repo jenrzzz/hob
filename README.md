@@ -41,7 +41,8 @@ since an enabled one replaces the Dockerfile's. Schedules made by rake read
 their times in `HOB_TIME_ZONE` (an IANA zone, default UTC). Upkeep
 discovery reads `HOB_UPKEEP_OWNERS` (the GitHub owners whose repos on
 Coolify the forge keeps current) and `HOB_FORGE_PRINCIPAL` (default
-`forge`).
+`forge`). The red-branch watch reads `HOB_GITHUB_TOKEN` (read access to
+checks, commit statuses, and metadata on those repos).
 
 Providers resolve API keys from env at request time (`ANTHROPIC_API_KEY`,
 `HOB_OPENAI_COMPAT_KEY` + `HOB_OPENAI_COMPAT_BASE`). A model role with no

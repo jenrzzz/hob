@@ -15,6 +15,9 @@ production:
   upkeep_discover:
     class: UpkeepDiscoverJob
     schedule: every sunday at 1am
+  upkeep_checks:
+    class: UpkeepChecksJob
+    schedule: every 15 minutes
   situation_sweep:
     class: SituationSweepJob
     schedule: every day at 3:17am

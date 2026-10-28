@@ -29,6 +29,7 @@ class ForgeUpkeepTest < ActiveSupport::TestCase
     @files = { "Gemfile" => "gem 'rails'\n", "Gemfile.lock" => OLD_GEMS, "bin/rails" => "", "test/x_test.rb" => "" }
     @edits = { "Gemfile.lock" => OLD_GEMS.sub("rails (8.1.3)", "rails (8.1.4)").sub("pg (1.5.9)", "pg (1.6.0)") }
     @now = Time.utc(2026, 10, 1)
+    @head = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
   end
 
   teardown { FileUtils.rm_rf(@root) }
@@ -63,6 +64,9 @@ class ForgeUpkeepTest < ActiveSupport::TestCase
       when /\Agit status --porcelain/ then [ 0, @edits.keys.map { |f| " M #{f}\n" }.join, "" ]
       when /\Agit diff --name-only/ then [ 0, @edits.keys.map { |f| "#{f}\n" }.join, "" ]
       when /\Agit rev-parse --abbrev-ref HEAD/ then [ 0, "main\n", "" ]
+      when /\Agit rev-parse HEAD/ then [ 0, "#{@head}\n", "" ]
+      when /\Agh run view --repo \S+ --job (\d+) --log-failed/
+        @answers.fetch("log", [ 0, "test\tRun tests\t2026-10-01T00:00:00Z Error: expected 2, got 3\n", "" ])
       when /\Agit show origin\/main:(\S+)/ then [ 0, @files.fetch(Regexp.last_match(1), ""), "" ]
       when /\Abin\/rails test/ then @answers.fetch("test", [ 0, "10 runs, 0 failures\n", "" ])
       when /\Abundle install/ then @answers.fetch("bundle install", [ 0, "", "" ])
@@ -361,5 +365,76 @@ class ForgeUpkeepTest < ActiveSupport::TestCase
     ws = Forge::Workspace.new(payload: payload, mission: "01JABCDEFGH12345", runner: runner, log: nil)
     assert_equal "forge-fgh12345", ws.name, "named for the mission, like a capability build"
     assert_empty @commands
+  end
+
+  def fix_payload(**over)
+    payload(scope: "fix", sha: @head, failures: [
+      { "name" => "test", "url" => "https://github.com/jenrzzz/airing/actions/runs/11/job/22", "summary" => "1 failing test" },
+      { "name" => "ci/circle", "url" => "https://circleci.com/x", "summary" => "broke" }
+    ], **over)
+  end
+
+  test "fix: the failed jobs' logs go to the implementer, and the PR always waits for a person" do
+    @files["app/models/show.rb"] = "class Show\nend\n"
+    @edits = { "app/models/show.rb" => "class Show; end\n" }
+    @checks = [ [ 0, [ { "bucket" => "pass" } ].to_json, "" ] ]
+    result = upkeep(fix_payload).call
+
+    assert_equal "review", result["status"]
+    assert result["notify"]
+    refute result["merged"]
+    assert_equal [ "scope is fix: always reviewed" ], result["review"], "a fix may touch code"
+    assert_equal [ "test", "ci/circle" ], result["failing"]
+    assert_equal @head, result["sha"]
+    assert_match(/pull\/7 would fix main \(test, ci\/circle\): its tests and checks pass/, result["summary"])
+    refute ran?(/\Agh pr merge/)
+    refute ran?(/\Agh pr list/), "no Dependabot pass for a fix"
+    assert ran?(/\Agh run view --repo jenrzzz\/airing --job 22 --log-failed/)
+    assert_equal 1, @commands.count { |argv, _, _| argv.take(3) == %w[gh run view] }, "only Actions jobs have a log to read"
+    assert ran?(/\Agit push --quiet --force -u origin upkeep\/fix/)
+
+    claude = @commands.find { |argv, _, _| argv.first == "claude" }
+    assert_match(/fix the failing checks on main of jenrzzz\/airing/, claude[2])
+    assert_match(/Never\*\* delete, skip, or loosen a test/, claude[2])
+    assert_match(/CI workflows \(unless the failure is in the workflow itself\)/, claude[2])
+    pr = @commands.find { |argv, _, _| argv.take(3) == %w[gh pr create] }
+    assert_includes pr[0], "Upkeep: fix the failing checks on main"
+    assert_match(/- \[test\]\(https:\/\/github.com\/jenrzzz\/airing\/actions\/runs\/11\/job\/22\): 1 failing test/, pr[2])
+    assert_match(/never merges a fix itself/, pr[2])
+  end
+
+  test "fix: the failures file carries each log's end, without GitHub's job and step columns" do
+    u = upkeep(fix_payload)
+    u.clone
+    report = u.failures_report
+    assert_match(/^## test\n\nhttps:\/\/github.com\/jenrzzz\/airing\/actions\/runs\/11\/job\/22\n\n1 failing test\n\n```\n2026-10-01T00:00:00Z Error: expected 2, got 3/, report)
+    assert_match(/^## ci\/circle\n\nhttps:\/\/circleci.com\/x\n\nbroke\n/, report)
+    @answers["log"] = [ 1, "", "HTTP 404" ]
+    assert_match(/could not read the log: HTTP 404/, u.failures_report)
+  end
+
+  test "fix: a branch that moved on is not this mission's; CI edits, failing checks, and refusals say so" do
+    @head = "f" * 40
+    result = upkeep(fix_payload(sha: "a1b2c3d4e5f6")).call
+    assert_equal "moved", result["status"]
+    refute result["notify"]
+    assert_match(/main moved on from a1b2c3d to fffffff/, result["summary"])
+    refute ran?(/\Aclaude/)
+
+    @head = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+    @files[".github/workflows/ci.yml"] = "on: pull_request\n"
+    @edits = { ".github/workflows/ci.yml" => "on: push\n" }
+    @checks = [ [ 0, [ { "bucket" => "fail" } ].to_json, "" ] ]
+    result = upkeep(fix_payload).call
+    assert_equal [ "scope is fix: always reviewed", "changes CI configuration: .github/workflows/ci.yml", "GitHub checks failed" ],
+                 result["review"]
+
+    @refuse = "the deploy key expired; a person must rotate it"
+    assert_match(/deploy key expired/, assert_raises(Forge::Refused) { upkeep(fix_payload).call }.message)
+
+    @refuse = nil
+    @edits = {}
+    assert_match(/changed nothing and did not refuse/, assert_raises(Forge::Error) { upkeep(fix_payload).call }.message)
+    assert_match(/is not a commit/, assert_raises(Forge::Error) { upkeep(fix_payload(sha: "main")) }.message)
   end
 end

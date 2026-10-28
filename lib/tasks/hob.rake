@@ -1225,6 +1225,16 @@ namespace :hob do
       end
     end
 
+    desc "Read the kept repos' checks and queue a forge fix for each red branch (SCHEDULES.md); UpkeepChecksJob does this every 15 minutes. DRY=1 to only show"
+    task checks: :environment do
+      Clearance.with("intimate") do
+        report = Upkeep::Checks.watch!(dry_run: ENV["DRY"] == "1")
+        report.checked.sort.each { |repo, state| puts "#{repo}: #{state}" }
+        report.errors.each { |repo, error| puts "#{repo}: could not read: #{error}" }
+        puts "#{ENV['DRY'] == '1' ? '(dry run) would queue' : 'queued'} fixes: #{report.queued.join(', ')}" if report.queued.any?
+      end
+    end
+
     desc "Run a repo's upkeep now: bin/rails \"hob:upkeep:run[hob]\" or \"hob:upkeep:run[jenrzzz/hob,major]\""
     task :run, [ :repo, :scope ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:upkeep:run[repo,minor|major]\"" if args[:repo].blank?

@@ -28,6 +28,7 @@ the household's schedules:
 | `PeopleSyncJob` | every 10 minutes | derives people events and loops from text streams (PEOPLE.md) |
 | `SituationSweepJob` | daily at 03:17 | deletes situation observations older than 30 days (SITUATION.md) |
 | `UpkeepDiscoverJob` | Sundays at 01:00 | reconciles repository upkeep schedules |
+| `UpkeepChecksJob` | every 15 minutes | queues a forge fix for each kept repo whose branch failed its checks |
 | `clear_solid_queue_finished_jobs` | hourly at :12 | Solid Queue's own housekeeping |
 
 The queue lives in its own database (`hob_production_queue`, schema in
@@ -178,18 +179,48 @@ force-pushed on every run, so an unmerged PR is refreshed in place, not
 joined by another. A merge to an app's branch is a deploy: Coolify
 builds it as for any push.
 
+**A red branch.** `UpkeepChecksJob` (every 15 minutes, and
+`bin/rails hob:upkeep:checks`, `DRY=1` to look first) reads GitHub's
+check runs and commit statuses on the head of each repo whose
+`upkeep-<repo>` schedule is enabled, with `HOB_GITHUB_TOKEN` (read access
+to checks, commit statuses, and metadata on those repos; without it the
+job does nothing). When every check on the head has finished and one
+failed (`failure`, `timed_out`, `startup_failure`, or a commit status of
+`failure` or `error`; a `cancelled` run is usually a newer push, and
+doesn't count), it queues a `forge.upkeep` mission of scope **fix**:
+`{ kind, repo, branch, scope: "fix", sha, failures: [{ name, url,
+summary }] }`, priority 0, under the repo's weekly schedule so it
+reports like one. There is one attempt per commit, and one fix at a time
+per repo: a newer red head waits until the open fix settles, and a
+failed attempt is not retried on the same commit.
+
+- **fix.** The forge clones the branch. If the branch has moved past the
+  commit that failed, the mission completes as `moved`: nothing to fix,
+  nothing to hear about, and the watch reads the new head itself.
+  Otherwise the forge writes `.forge/FAILURES.md` with each failure and,
+  for a GitHub Actions job, the end of its failed steps' log (`gh run
+  view --job … --log-failed`). The implementer reproduces the failure,
+  fixes its cause with the smallest change, and never skips or loosens a
+  test or a check. It may touch CI workflows only when the failure is in
+  the workflow itself, and the PR says so. A failure that isn't in the
+  code (a flaky test, an outage, an expired secret) is a refusal, and the
+  household hears why. The forge then reruns the tests, pushes
+  `upkeep/fix`, opens or refreshes the PR, and waits for the PR's own
+  checks. It never merges a fix.
+
 **Hearing about it.** Missions from hob's own schedules report to the
 household (`Notify.person`): always when they fail, and when they
 complete only if the worker sets `notify` in its result. Upkeep sets it
-for a PR left for review, not for one it merged or a repo already
-current. The result carries the repo, status (`current`, `merged`,
-`review`), the PR, why it needs review, what moved, the forge's test
+for a PR left for review, not for one it merged, a repo already
+current, or a fix whose branch moved on. The result carries the repo, status (`current`, `merged`,
+`review`, `moved`), the PR, why it needs review, what moved, the forge's test
 run, the Dependabot PRs merged, the majors waiting, and what the
 implementer said.
 
 ```sh
 bin/rails hob:upkeep:discover                 # DRY=1 to only show
 bin/rails "hob:upkeep:run[airing]"            # now, as if due; "hob:upkeep:run[jenrzzz/airing,major]"
+bin/rails hob:upkeep:checks                   # read every branch's checks now; DRY=1 to only show
 bin/rails "hob:schedules:set[upkeep-airing]" ENABLED=0   # leave one alone
 ```
 

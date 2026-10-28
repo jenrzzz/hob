@@ -11,15 +11,18 @@ module Forge
   #          as a PR for a person.
   #   major  one framework, runtime, or major-version upgrade, with the code
   #          changes it needs. Always a PR for a person.
+  #   fix    the branch's checks failed at `sha` (hob's watch, Upkeep::Checks,
+  #          saw it): Claude Code reads the failed jobs' logs and fixes the
+  #          cause. Always a PR for a person.
   #
   # Whether a PR may merge is decided here, from the diff, the lockfiles, and
   # the forge's own test run, never from what the implementer says. Each
-  # scope has one branch per repo (upkeep/minor, upkeep/major), rebuilt from
+  # scope has one branch per repo (upkeep/minor, upkeep/major, upkeep/fix), rebuilt from
   # the base and force-pushed every run, so an unmerged PR is refreshed in
   # place rather than joined by another.
   class Upkeep
     KIND = "forge.upkeep".freeze
-    SCOPES = %w[minor major].freeze
+    SCOPES = %w[minor major fix].freeze
     REPO = %r{\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z}
 
     # The headless implementer may update, install, and test with the tools
@@ -47,6 +50,7 @@ module Forge
       repo = payload["repo"].to_s
       raise Error, "#{repo.inspect} is not an owner/name GitHub repo" unless repo.match?(REPO)
       raise Error, "scope #{payload['scope'].inspect} is not one of #{SCOPES.join(', ')}" unless SCOPES.include?(payload.fetch("scope", "minor"))
+      raise Error, "#{payload['sha'].inspect} is not a commit" if payload["sha"] && !payload["sha"].to_s.match?(/\A\h{7,40}\z/)
 
       repo
     end
@@ -98,8 +102,11 @@ module Forge
 
     # -> { "repo", "scope", "status", "pull_request"?, "merged", "review"?, "tests", "changes", "dependabot", "summary", "cost", "notify" }
     # status: current (nothing to do) | merged | review (a PR waits for a person)
+    #         | moved (fix: the branch is past the commit that failed)
     def call
       FileUtils.mkdir_p(workdir) # gh runs in it before the clone does; a fresh workspace has none
+      return fix if scope == "fix"
+
       dependabot = scope == "minor" ? merge_dependabot : []
       clone
       unless MANIFESTS.any? { |name| file?(name) }
@@ -170,6 +177,76 @@ module Forge
       end
     end
 
+    # --- fix -----------------------------------------------------------------
+
+    LOG_LINES = 200   # of each failed job's log, from the end
+    LOG_CHARS = 12_000
+
+    # The branch failed its checks at `sha`: hand the implementer what
+    # failed, rerun the tests, and leave a PR for a person. A branch that has
+    # moved on since is not this mission's to fix; hob's watch reads the new
+    # head on its own.
+    def fix
+      clone
+      sha = payload["sha"].to_s
+      head = git!(%w[rev-parse HEAD]).strip
+      unless sha.empty? || head.start_with?(sha)
+        say "#{base} moved on from #{sha[0, 7]} to #{head[0, 7]}"
+        cleanup
+        return result("moved", {}, summary: "#{repo}: #{base} moved on from #{sha[0, 7]} to #{head[0, 7]}; nothing to fix there")
+      end
+
+      File.write(File.join(dir, ".forge", "FAILURES.md"), failures_report)
+      outcome = implement
+      refused = File.join(dir, ".forge", "REFUSED.md")
+      raise Refused, "the implementer refused: #{File.read(refused).strip}" if File.exist?(refused)
+
+      commit_leftovers(outcome)
+      changed = changed_files
+      if changed.empty?
+        cleanup
+        raise Error, "the implementer changed nothing and did not refuse#{said(outcome)}"
+      end
+
+      tests = run_tests
+      push
+      url = open_pull_request(outcome, [], tests, "")
+      reasons = review_reasons(changed, [], tests) + checks_blockers(url)
+      cleanup
+      found = reasons.drop(1) # past "always reviewed"
+      result("review", outcome, url: url, review: reasons, tests: tests,
+                                summary: "#{repo}: #{url} would fix #{base} (#{failing_names.join(', ')}): " \
+                                         "#{found.empty? ? 'its tests and checks pass' : found.join('; ')}")
+    end
+
+    def failures
+      Array(payload["failures"]).select { |f| f.is_a?(Hash) }
+    end
+
+    def failing_names
+      names = failures.map { |f| f["name"].to_s }.reject(&:empty?)
+      names.empty? ? [ "checks" ] : names
+    end
+
+    # What failed, for the implementer: each check hob saw fail, and for a
+    # GitHub Actions job the end of its failed steps' log.
+    def failures_report
+      lines = [ "# #{repo}: checks that failed on `#{base}` at #{payload['sha'] || 'its head'}", "" ]
+      lines << "hob listed no failures; find them with the repo's own tests and linters." if failures.empty?
+      failures.each do |f|
+        lines << "## #{f['name']}" << ""
+        lines << f["url"].to_s << "" unless f["url"].to_s.empty?
+        lines << f["summary"].to_s.strip << "" unless f["summary"].to_s.strip.empty?
+        job = f["url"].to_s[%r{/actions/runs/\d+/job/(\d+)}, 1]
+        next if job.nil?
+
+        status, out, err = gh("run", "view", "--repo", repo, "--job", job, "--log-failed")
+        log = status.zero? ? out.lines.last(LOG_LINES).map { |l| l.split("\t", 3).last }.join : "(could not read the log: #{err.strip})"
+        lines << "```" << excerpt(log, LOG_CHARS) << "```" << ""
+      end
+      lines.join("\n")
+    end
+
     # --- the build -----------------------------------------------------------
 
     def clone
@@ -209,7 +286,7 @@ module Forge
 
       say "committing #{dirty.size} change(s) the implementer left"
       git! %w[add -A -- .]
-      git! %w[commit --quiet -m], "Upkeep: #{scope} upgrades\n\n#{outcome['result'].to_s.lines.first.to_s.strip}\n\n#{CO_AUTHOR}\n"
+      git! %w[commit --quiet -m], "Upkeep: #{scope == 'fix' ? "fix the failing checks on #{base}" : "#{scope} upgrades"}\n\n#{outcome['result'].to_s.lines.first.to_s.strip}\n\n#{CO_AUTHOR}\n"
     end
 
     def changed_files
@@ -371,9 +448,14 @@ module Forge
     # Why this PR needs a person; empty when it may merge.
     def review_reasons(changed, changes, tests)
       reasons = []
-      reasons << "scope is major: always reviewed" if scope == "major"
+      reasons << "scope is #{scope}: always reviewed" unless scope == "minor"
       others = changed.reject { |f| LOCKFILES.key?(File.basename(f)) }
-      reasons << "changes beyond lockfiles: #{others.first(8).join(', ')}#{' ...' if others.size > 8}" if others.any?
+      if scope == "fix"
+        ci = changed.select { |f| f.start_with?(".github/") }
+        reasons << "changes CI configuration: #{ci.first(8).join(', ')}" if ci.any?
+      elsif others.any?
+        reasons << "changes beyond lockfiles: #{others.first(8).join(', ')}#{' ...' if others.size > 8}"
+      end
       majors = changes.select { |c| c["major"] }
       reasons << "major versions: #{majors.first(8).map { |c| "#{c['name']} #{c['from']} → #{c['to']}" }.join(', ')}" if majors.any?
       reasons << "no tests to run" if tests["status"] == "none"
@@ -449,30 +531,30 @@ module Forge
     # --- text ----------------------------------------------------------------
 
     def pr_title
-      scope == "minor" ? "Upkeep: patch and minor upgrades" : "Upkeep: a major upgrade"
+      { "minor" => "Upkeep: patch and minor upgrades", "major" => "Upkeep: a major upgrade",
+        "fix" => "Upkeep: fix the failing checks on #{base}" }.fetch(scope)
     end
 
     def brief
+      fixing = scope == "fix"
       common = <<~COMMON
         You are in a fresh clone of **#{repo}** (branch `#{branch}`, from `#{base}`), one of the
         apps a household runs on its own server. hob, the household's assistant, keeps them
-        current. Find every stack in the repo (Gemfile, package.json, pyproject.toml, and so
-        on) and work in each.
+        #{fixing ? 'working: its checks on `' + base + '` failed, and you are here to fix that.' : "current. Find every stack in the repo (Gemfile, package.json, pyproject.toml, and so\non) and work in each."}
 
         Commit your work, in as many commits as make sense, each message ending with the line
         `#{CO_AUTHOR}`. Do not push and do not open a pull request; the forge does that, and it
-        decides on its own whether the result may merge: it re-reads the lockfiles and runs the
-        tests itself.
+        #{fixing ? 'runs the tests itself and leaves the pull request for a person.' : "decides on its own whether the result may merge: it re-reads the lockfiles and runs the\ntests itself."}
 
         ## Do not
 
         - Touch secrets, credentials, `.env*` files, deploy configuration (Coolify, Kamal,
-          Docker Compose), CI workflows, or the database beyond what the test suite needs.
+          Docker Compose), #{fixing ? 'CI workflows (unless the failure is in the workflow itself)' : 'CI workflows'}, or the database beyond what the test suite needs.
         - Add new dependencies, or remove ones the app uses.
         - Call hosts other than the package registries and GitHub.
         - Edit or delete `.forge/`.
 
-        If the repo cannot be upgraded safely from here (it will not install, its tests cannot
+        If the repo cannot be #{fixing ? 'fixed' : 'upgraded'} safely from here (#{fixing ? "the failure is not in the code: a flaky\ntest, an outage, an expired secret; " : ''}it will not install, its tests cannot
         run in this sandbox, or the work needs a person's decision), write why to
         `.forge/REFUSED.md` and stop without committing.
 
@@ -489,7 +571,25 @@ module Forge
         nothing about whether the tool works here. Use a listed command instead, and never refuse
         on the strength of a refused command alone.
       COMMON
-      if scope == "minor"
+      if fixing
+        <<~BRIEF
+          # Upkeep: fix the failing checks on #{base} of #{repo}
+
+          #{common}
+          ## Do
+
+          1. Read `.forge/FAILURES.md`: the checks that failed on `#{base}` at
+             #{payload['sha'] || 'its head'}, with the end of each one's log where GitHub Actions ran it.
+          2. Reproduce the failure here with the repo's own commands where you can, and find its cause.
+          3. Fix the cause with the smallest change that does it: the code, a test that is wrong, a
+             dependency held back from a broken release, code a linter no longer accepts.
+             **Never** delete, skip, or loosen a test or a check to turn it green.
+          4. Run the failing check's command again, and the tests, until they pass.
+
+          This branch is always reviewed by a person. Reply with a summary for them: what failed,
+          why, and what you changed.
+        BRIEF
+      elsif scope == "minor"
         <<~BRIEF
           # Upkeep: patch and minor upgrades for #{repo}
 
@@ -542,9 +642,9 @@ module Forge
     end
 
     def pr_body(outcome, changes, tests, majors_available)
+      return fix_body(outcome, tests) if scope == "fix"
+
       moved = changes.map { |c| "| #{c['name']} | #{c['from']} | #{c['to']} |#{' **major**' if c['major']}" }
-      test_lines = tests["commands"].map { |c| "- #{c['ok'] ? '✅' : '❌'} `#{c['command']}`" }
-      failure = tests["commands"].find { |c| !c["ok"] }
       <<~BODY
         hob's forge keeps #{repo} current (`forge.upkeep`, scope **#{scope}**).#{' It merges this itself when only lockfiles changed, no version crossed a major, the tests passed, and no check failed; otherwise it waits for you.' if scope == 'minor'}
 
@@ -552,10 +652,7 @@ module Forge
 
         #{moved.empty? ? '(no lockfile versions moved)' : "| dependency | from | to |\n|---|---|---|\n#{moved.join("\n")}"}
 
-        ## Tests (run by the forge)
-
-        #{test_lines.empty? ? 'No test suite found to run.' : test_lines.join("\n")}
-        #{failure ? "\n```\n#{failure['output']}\n```\n" : ''}
+        #{tests_section(tests)}
         #{majors_available.empty? ? '' : "## Majors waiting\n\n#{majors_available}\n"}
         ## Implementer's summary
 
@@ -565,6 +662,42 @@ module Forge
 
         🤖 Generated with [Claude Code](https://claude.com/claude-code)
       BODY
+    end
+
+    def fix_body(outcome, tests)
+      failed = failures.map do |f|
+        name = f["url"].to_s.empty? ? f["name"] : "[#{f['name']}](#{f['url']})"
+        note = f["summary"].to_s.lines.first.to_s.strip
+        "- #{name}#{": #{note}" unless note.empty?}"
+      end
+      failed = [ "(hob listed none)" ] if failed.empty?
+      <<~BODY
+        hob saw `#{base}` fail its checks at #{payload['sha'] || 'its head'}, and its forge proposes this fix (`forge.upkeep`, scope **fix**). The forge never merges a fix itself.
+
+        ## What failed
+
+        #{failed.join("\n")}
+
+        #{tests_section(tests)}
+        ## Implementer's summary
+
+        #{outcome['result'].to_s.strip}
+
+        _#{outcome['num_turns']} turns, $#{outcome['total_cost_usd']}. This branch is rebuilt and force-pushed whenever `#{base}` fails again._
+
+        🤖 Generated with [Claude Code](https://claude.com/claude-code)
+      BODY
+    end
+
+    def tests_section(tests)
+      test_lines = tests["commands"].map { |c| "- #{c['ok'] ? '✅' : '❌'} `#{c['command']}`" }
+      failure = tests["commands"].find { |c| !c["ok"] }
+      <<~TESTS
+        ## Tests (run by the forge)
+
+        #{test_lines.empty? ? 'No test suite found to run.' : test_lines.join("\n")}
+        #{failure ? "\n```\n#{failure['output']}\n```\n" : ''}
+      TESTS
     end
 
     def summary(status, url, changes, blockers, dependabot)
@@ -583,6 +716,7 @@ module Forge
         "repo" => repo, "scope" => scope, "status" => status, "pull_request" => url, "merged" => merged,
         "review" => review, "tests" => tests, "changes" => changes, "dependabot" => dependabot,
         "majors_available" => majors_available.empty? ? nil : majors_available,
+        "sha" => (payload["sha"] if scope == "fix"), "failing" => (failing_names if scope == "fix"),
         "summary" => summary, "implementer" => (excerpt(outcome["result"].to_s.strip) unless outcome["result"].to_s.strip.empty?),
         "cost" => outcome["total_cost_usd"], "notify" => status == "review"
       }.compact

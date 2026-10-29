@@ -17,6 +17,9 @@ module Ward
     # A last path segment that names a role, not a product: the namespace
     # is the product (vaultwarden/server is Vaultwarden).
     GENERIC = %w[server app web api core backend frontend service].freeze
+    # Every host runs a kernel, and every container on it shares that one:
+    # a host is a linux_kernel asset whose version the ward worker probes.
+    HOST_COMPONENTS = { "linux_kernel" => nil }.freeze
     SYNC_EVERY = 1.hour
 
     # Coolify's API, read-only: there is no method here that writes.
@@ -130,7 +133,7 @@ module Ward
         servers.each do |server|
           asset = upsert("server:#{server['uuid']}", name: server["name"].presence || server["uuid"], kind: "host",
                                                      host: server["name"], exposure: exposure_of_ip(server["ip"]),
-                                                     data: { "ip" => server["ip"] }.compact)
+                                                     components: HOST_COMPONENTS, data: { "ip" => server["ip"] }.compact)
           seen << asset.id
         end
 

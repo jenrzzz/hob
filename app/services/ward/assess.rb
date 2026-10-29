@@ -82,10 +82,11 @@ module Ward
 
     def entry(asset, component)
       version, observation, disagreement = asset.believed(component)
-      verdict, why = Versions.verdict(version, @threat.fixed_versions)
+      scheme = observation&.data&.dig("scheme").presence
+      verdict, why = Versions.verdict(version, @threat.fixed_versions, scheme: scheme)
       {
         "asset" => asset.id, "name" => asset.name, "host" => asset.host, "kind" => asset.kind, "component" => component,
-        "version" => version, "verdict" => verdict, "why" => why, "exposure" => asset.effective_exposure,
+        "version" => version, "scheme" => scheme, "verdict" => verdict, "why" => why, "exposure" => asset.effective_exposure,
         "observation" => observation&.id, "source" => observation&.source, "seen_at" => observation&.last_seen_at&.utc&.iso8601,
         "disagreement" => disagreement
       }.compact

@@ -968,12 +968,14 @@ namespace :hob do
         end
       end
 
-      desc "Record what a probe saw. bin/rails \"hob:ward:inventory:observe[coolify,php,8.3.36]\" STARTED_AT="
+      desc "Record what a probe saw. bin/rails \"hob:ward:inventory:observe[coolify,php,8.3.36]\" STARTED_AT= " \
+           "SCHEME=ubuntu (a distro's own numbering, as for a kernel)"
       task :observe, [ :asset, :component, :version ] => :environment do |_task, args|
         asset = WardAsset.find_by(ref: args[:asset]) || WardAsset.present.find_by!(name: args[:asset])
         person = Principal.find_by!(name: ENV.fetch("HOB_PERSON", "jenner"))
         observation = asset.observe!(component: args[:component], version: args[:version], source: "person", principal: person,
-                                     started_at: ENV["STARTED_AT"].presence && Time.zone.parse(ENV["STARTED_AT"]))
+                                     started_at: ENV["STARTED_AT"].presence && Time.zone.parse(ENV["STARTED_AT"]),
+                                     data: { "scheme" => ENV["SCHEME"].to_s.strip.downcase.presence })
         puts "#{asset.name}: #{observation.component} #{observation.version} (#{observation.source}, #{observation.last_seen_at.utc.iso8601})"
       end
 

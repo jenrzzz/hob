@@ -284,9 +284,11 @@ tailnet, a database is localhost unless Coolify says it is public.
 Without a token, the scan targets alone are the inventory.
 
 Every Coolify server is a `host` asset that runs `linux_kernel` (all its
-containers share that kernel), so a kernel CVE matches every host and is
-`exposed (unverified)` until the worker has probed each one; it is never
-resolved unmatched for want of an inventory. A host Coolify does not
+containers share that kernel) and Docker Engine as `docker` and `moby`
+(NVD uses both names) at the `docker_version` Coolify read off it. So a
+kernel CVE matches every host and is `exposed (unverified)` until the
+worker has probed each one; it is never resolved unmatched for want of an
+inventory. A host Coolify does not
 manage (the Pis) is declared by a person:
 `bin/rails "hob:ward:inventory:declare[tomcod]" KIND=host HOST=tomcod COMPONENTS=linux_kernel`.
 

@@ -76,6 +76,17 @@ staleness is a finding like any other (level `error`, fingerprint
 bin/rails "hob:ward:check[exposure,7,1]" DESCRIPTION="..."    # slug, interval days, grace days
 ```
 
+The second is **patches** (`Ward::Patches`), which hob posts itself from the
+inventory sync's read of Coolify's servers: each server's own weekly patch
+check, as `WARN host: N security updates pending: openssl, ...`, `WARN
+host: reboot required`, and a warning when Coolify's check is over 8 days
+old or missing. The distro has already matched its packages against its
+advisories, so ward takes its word rather than comparing package versions
+it cannot order. A run is posted when what Coolify says changes, and daily
+otherwise (interval and grace a day each), so a Coolify token that stops
+working shows as a stale check. The Pis are not Coolify servers and are not
+in it.
+
 ### Runs
 
 A **run** is one posted report: the check, when it started and finished,

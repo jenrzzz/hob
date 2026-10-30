@@ -10,7 +10,9 @@ class WardThreatsTest < ActiveSupport::TestCase
 
     def initialize
       @version = "4.0.0-beta.420"
-      @servers = [ { "uuid" => "s1", "name" => "cadance", "ip" => "5.161.10.20" } ]
+      @servers = [ { "uuid" => "s1", "name" => "cadance", "ip" => "5.161.10.20",
+                     "settings" => { "docker_version" => "29.8.0", "patch_checked_at" => Time.current.utc.iso8601,
+                                     "patch_check_result" => { "reboot_required" => false, "security_updates" => 0, "total_updates" => 3, "updates" => [] } } } ]
       @applications = [ { "uuid" => "a1", "name" => "feedcurator", "fqdn" => "https://feeds.example.com", "destination" => { "server" => { "uuid" => "s1" } },
                           "docker_registry_image_name" => "ghcr.io/jenrzzz/feedcurator", "docker_registry_image_tag" => "1.4.2" } ]
       @services = [ { "uuid" => "v1", "name" => "wiki", "server_uuid" => "s1", "applications" => [ { "image" => "php:8.3.30-fpm" } ] } ]
@@ -297,7 +299,7 @@ class WardThreatsTest < ActiveSupport::TestCase
     pi = WardAsset.create!(ref: "manual:tomcod", name: "tomcod", kind: "host", host: "tomcod", source: "person",
                            declared: { "components" => [ "linux_kernel" ] }, last_seen_at: Time.current)
     cadance = WardAsset.find_by!(ref: "server:s1")
-    assert_equal({ "linux_kernel" => nil }, cadance.components)
+    assert_equal({ "linux_kernel" => nil, "docker" => "29.8.0", "moby" => "29.8.0" }, cadance.components)
 
     threat, _ = Ward::Threats.report!(kernel, by: @skipsy)
     assert_equal [ "exposed", "unverified" ], [ threat.status, threat.confidence ], "never unmatched: every host runs one"
@@ -310,6 +312,50 @@ class WardThreatsTest < ActiveSupport::TestCase
     assert_equal [ [ "cadance", "6.8.0-139", "ubuntu", "vulnerable" ], [ "tomcod", "6.18.52", nil, "fixed" ] ],
                  threat.reload.affected.map { |a| a.values_at("name", "version", "scheme", "verdict") }
     assert_equal "verified", threat.confidence
+  end
+
+  test "a server's Docker Engine is on the inventory at the version Coolify read, by both of NVD's names" do
+    sync!
+    cadance = WardAsset.find_by!(ref: "server:s1")
+    assert_equal({ "linux_kernel" => nil, "docker" => "29.8.0", "moby" => "29.8.0" }, cadance.components)
+    assert_equal [ "29.8.0", "coolify" ], [ cadance.believed("moby").first, cadance.believed("moby").second.source ]
+
+    threat, _ = Ward::Threats.report!({ "kind" => "cve", "cve_ids" => [ "CVE-2026-20001" ], "component" => "moby",
+                                        "fixed_versions" => { "29.8" => "29.8.1" } }, by: @skipsy)
+    assert_equal [ [ "cadance", "29.8.0", "vulnerable" ] ], threat.affected.map { |a| a.values_at("name", "version", "verdict") }
+  end
+
+  test "the patches check: Coolify's own patch check per server, as findings, posted when it changes or daily" do
+    now = Time.zone.parse("2026-10-30T12:00:00Z")
+    update = ->(package, security) { { "package" => package, "security" => security, "current_version" => "1", "new_version" => "2" } }
+    servers = [
+      { "name" => "tabitha", "settings" => { "patch_checked_at" => "2026-10-25T04:01:05Z",
+                                             "patch_check_result" => { "reboot_required" => false, "security_updates" => 0, "total_updates" => 22,
+                                                                       "updates" => [ update.("cloud-init", false) ] } } },
+      { "name" => "agentbox", "settings" => { "patch_checked_at" => "2026-10-25T04:02:05Z",
+                                              "patch_check_result" => { "reboot_required" => true, "security_updates" => 2, "total_updates" => 39,
+                                                                        "updates" => [ update.("openssl", true), update.("libssl3t64", true), update.("vim", false) ] }.to_json } },
+      { "name" => "cadance", "settings" => { "patch_checked_at" => "2026-10-12T04:00:08Z", "patch_check_result" => { "security_updates" => 0 } } },
+      { "name" => "haddock", "settings" => {} }
+    ]
+    assert_equal [
+      "WARN agentbox: 2 security updates pending: libssl3t64, openssl",
+      "WARN agentbox: reboot required; what is installed is not all running, a kernel included if one was updated",
+      "WARN cadance: Coolify's patch check is more than 8 days old",
+      "OK cadance: no security updates pending (0 others)",
+      "WARN haddock: Coolify has no patch check for it",
+      "OK tabitha: no security updates pending (22 others)"
+    ], Ward::Patches.lines_for(servers, now: now)
+
+    run = Ward::Patches.ingest!(servers, now: now)
+    assert_equal 4, run.diff["new"].size
+    assert_equal [ 86_400, 86_400 ], Ward::Patches.check.values_at(:interval_seconds, :grace_seconds)
+    assert_nil Ward::Patches.ingest!(servers, now: now + 1.hour), "nothing changed, and a run is not due"
+
+    servers[1]["settings"]["patch_check_result"] = { "reboot_required" => false, "security_updates" => 0, "updates" => [] }
+    run = Ward::Patches.ingest!(servers, now: now + 2.hours)
+    assert_equal 2, run.diff["resolved"].size, "patched and rebooted"
+    assert Ward::Patches.ingest!(servers, now: now + 2.hours + 1.day), "daily, so the check is not stale while Coolify holds"
   end
 
   test "worked example 2, an actor: Tier 1 at most on a stranger's word, a window, indicators, and a person's resolve" do

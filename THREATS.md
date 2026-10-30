@@ -307,6 +307,13 @@ person's gotcha. Kernels are read from each host's node exporter over the
 tailnet (`node_uname_info`), and agentbox's from the worker's own
 `uname`, posted with the boot time as `started_at` (a reboot onto a new
 kernel is a new row) and the full release, distro, and scheme in `data`.
+What every Coolify resource runs comes from each server's node exporter
+too: a host timer (infra `security/host/container_images.py`) lists the
+running containers with the registry digest each pulled, and the worker
+names the version (the image's label, a full-version tag, or a registry
+tag sharing the digest) and posts it with `image` in place of
+`component`, so a floating tag like `latest` is still a version, read off
+what runs rather than what the registry has now.
 
 ### Posture, as built
 
@@ -351,7 +358,7 @@ POST /v1/ward/threats/:id/await_upstream    { source: github|dockerhub, reposito
 POST /v1/ward/threats/:id/gotchas/:index    { evidence }
 POST /v1/ward/threats/:id/proposals/:proposal/confirm|decline   { note? }
 GET  /v1/ward/assets · POST /v1/ward/assets/sync · PATCH /v1/ward/assets/:id { components?, exposure? }
-POST /v1/ward/observations                  { asset, component, version, digest?, started_at?, data? }    (the worker, or a person)
+POST /v1/ward/observations                  { asset, component | image, version, digest?, started_at?, data? }    (the worker, or a person)
 ```
 
 ```sh

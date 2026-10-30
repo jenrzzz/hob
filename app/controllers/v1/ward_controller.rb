@@ -23,7 +23,7 @@ module V1
   #   POST /v1/ward/threats/:id/gotchas/:index    { evidence }
   #   POST /v1/ward/threats/:id/proposals/:proposal/confirm|decline   { note? }
   #   GET  /v1/ward/assets  ·  POST /v1/ward/assets/sync  ·  PATCH /v1/ward/assets/:id { components?, exposure? }
-  #   POST /v1/ward/observations                  { asset, component, version, digest?, started_at?, data? }   worker or person
+  #   POST /v1/ward/observations                  { asset, component | image, version, digest?, started_at?, data? }   worker or person
   class WardController < ApplicationController
     WORKER_ACTIONS = %i[create_run create_observation].freeze
     OBSERVATION_DATA_KEYS = 12
@@ -168,13 +168,25 @@ module V1
     # or a person. The cross-check on what Coolify says runs.
     def create_observation
       asset = find_asset(params.require(:asset)) || raise(Ward::Invalid, "no asset #{params[:asset].inspect}; see GET /v1/ward/assets")
-      observation = asset.observe!(component: params.require(:component), version: params[:version], digest: params[:digest],
+      data = observation_data
+      data["image"] = params[:image].to_s.strip.truncate(200) if params[:image].present?
+      observation = asset.observe!(component: observed_component, version: params[:version], digest: params[:digest],
                                    source: Current.principal.trusted? ? "person" : "probe", principal: Current.principal,
-                                   started_at: time_param(:started_at), data: observation_data)
+                                   started_at: time_param(:started_at), data: data)
       render json: observation.as_json_for_ward, status: :created
     end
 
     private
+
+    # A component by name, or the image a container runs: the product it is,
+    # by the inventory's own reading of image names (Ward::Inventory).
+    def observed_component
+      return params[:component] if params[:component].present?
+      raise Ward::Invalid, "component or image is required" if params[:image].blank?
+
+      Ward::Inventory.components_for(params[:image].to_s).keys.first ||
+        raise(Ward::Invalid, "no product in image #{params[:image].to_s.truncate(100).inspect}")
+    end
 
     # What a probe read alongside the version (a kernel's full release, its
     # distro), as flat strings. `scheme` is the numbering the version is in

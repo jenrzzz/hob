@@ -142,6 +142,15 @@ class WardControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ "probe", "ward" ], body.values_at("source", "by")
     assert_equal "8.3.36", coolify.believed("php").first
 
+    post "/v1/ward/observations", params: { asset: "coolify", component: "linux_kernel", version: "6.8.0-139", started_at: "2026-09-14T18:08:18Z",
+                                            data: { scheme: "Ubuntu", release: "6.8.0-139-generic", distro: "ubuntu" } }, headers: worker_auth, as: :json
+    assert_response :created
+    assert_equal({ "scheme" => "ubuntu", "release" => "6.8.0-139-generic", "distro" => "ubuntu" }, body["data"])
+    assert_equal "2026-09-14T18:08:18Z", body["started_at"]
+    post "/v1/ward/observations", params: { asset: "coolify", component: "linux_kernel", version: "1", data: { nested: { a: 1 } } },
+                                  headers: worker_auth, as: :json
+    assert_response :unprocessable_entity
+
     post "/v1/ward/observations", params: { asset: "nope", component: "php", version: "1" }, headers: worker_auth, as: :json
     assert_response :unprocessable_entity
     get "/v1/ward/threats", headers: worker_auth

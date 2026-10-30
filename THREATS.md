@@ -263,6 +263,14 @@ checked off by a person with evidence. A floating tag (`php:8.3`), a
 branch with no fix named, or a version that does not parse is `unknown`,
 never `fixed`.
 
+A distro's own numbering is a **scheme**. Ubuntu's kernel `6.8.0-139`
+carries fixes backported from upstream releases it does not name, so an
+observation in a scheme (`data.scheme`, e.g. `ubuntu`) is held only to
+fixes named for it, `{ "ubuntu:6.8.0": "6.8.0-140" }` (the ABI, as
+`uname -r` shows it), and never to upstream's `{ "6.8": "6.8.12" }`; with
+none named it is `unknown`. Nor does a later line in a scheme count as
+fixed: a distro names a fix per release it ships.
+
 ### Inventory and observations
 
 `Ward::Inventory` reads Coolify's `/version`, `/servers`,
@@ -275,6 +283,13 @@ its client has no method that writes. Images become components
 tailnet, a database is localhost unless Coolify says it is public.
 Without a token, the scan targets alone are the inventory.
 
+Every Coolify server is a `host` asset that runs `linux_kernel` (all its
+containers share that kernel), so a kernel CVE matches every host and is
+`exposed (unverified)` until the worker has probed each one; it is never
+resolved unmatched for want of an inventory. A host Coolify does not
+manage (the Pis) is declared by a person:
+`bin/rails "hob:ward:inventory:declare[tomcod]" KIND=host HOST=tomcod COMPONENTS=linux_kernel`.
+
 Coolify's claims become observations on every sync. A **probe** (the ward
 worker) or a **person** posts what answers on the wire to
 `POST /v1/ward/observations`; a probe seen since Coolify's claim last
@@ -286,7 +301,10 @@ fresh, and on a `ward.probe` mission, which hob queues (one at a time) when
 a match has no version. Today's probes are Coolify's version and the
 `PHP_VERSION` of the image it runs: what the image was built with, not a
 process asked on the wire, which is why "workers restarted" stays a
-person's gotcha.
+person's gotcha. Kernels are read from each host's node exporter over the
+tailnet (`node_uname_info`), and agentbox's from the worker's own
+`uname`, posted with the boot time as `started_at` (a reboot onto a new
+kernel is a new row) and the full release, distro, and scheme in `data`.
 
 ### Posture, as built
 
@@ -331,7 +349,7 @@ POST /v1/ward/threats/:id/await_upstream    { source: github|dockerhub, reposito
 POST /v1/ward/threats/:id/gotchas/:index    { evidence }
 POST /v1/ward/threats/:id/proposals/:proposal/confirm|decline   { note? }
 GET  /v1/ward/assets · POST /v1/ward/assets/sync · PATCH /v1/ward/assets/:id { components?, exposure? }
-POST /v1/ward/observations                  { asset, component, version, digest?, started_at? }    (the worker, or a person)
+POST /v1/ward/observations                  { asset, component, version, digest?, started_at?, data? }    (the worker, or a person)
 ```
 
 ```sh

@@ -135,6 +135,14 @@ class WardThreatsTest < ActiveSupport::TestCase
     assert_equal "unknown", Ward::Versions.verdict(nil, fixed).first
     assert_equal "unknown", Ward::Versions.verdict("8.3.30", {}).first
     assert_equal "vulnerable", Ward::Versions.verdict("4.0.0-beta.420", { "*" => "4.0.0-beta.421" }).first
+    kernel = { "6.8" => "6.8.12", "6.18" => "6.18.52", "ubuntu:6.8.0" => "6.8.0-140" }
+    assert_equal "vulnerable", Ward::Versions.verdict("6.18.50", kernel).first, "upstream numbering, upstream's fix"
+    assert_equal "vulnerable", Ward::Versions.verdict("6.8.0-139", kernel, scheme: "ubuntu").first
+    assert_equal "fixed", Ward::Versions.verdict("6.8.0-140", kernel, scheme: "Ubuntu").first
+    assert_equal [ "unknown", "no ubuntu fixed version is known; upstream's do not apply" ],
+                 Ward::Versions.verdict("6.8.0-139", { "6.8" => "6.8.12" }, scheme: "ubuntu"), "a backporting distro is never held to upstream's numbers"
+    assert_equal "unknown", Ward::Versions.verdict("7.0.0-34", kernel, scheme: "ubuntu").first, "no Ubuntu fix named for 7.0"
+    assert_equal "unknown", Ward::Versions.verdict("6.8.0", { "ubuntu:6.8.0" => "6.8.0-140" }).first, "nor upstream to Ubuntu's"
     assert_equal "8.3.30", Ward::Versions.from_tag("8.3.30-fpm-alpine")
     assert_equal "4.0.0-beta.420", Ward::Versions.from_tag("v4.0.0-beta.420")
     assert_nil Ward::Versions.from_tag("latest")
@@ -280,6 +288,28 @@ class WardThreatsTest < ActiveSupport::TestCase
     assert_equal [ [ threat.id, "reopened" ] ], Ward::Resolver.call
     assert_equal "monitoring", threat.reload.status
     assert_match(/the inventory now matches/, threat.events.where(kind: "transition").last.body)
+  end
+
+  test "a host runs a kernel: a kernel CVE matches every host, unverified until probed, each held to its own numbering" do
+    kernel = { "kind" => "cve", "title" => "Linux kernel missing initialization", "cve_ids" => [ "CVE-2026-46300" ],
+               "component" => "linux_kernel", "fixed_versions" => { "6.18" => "6.18.52", "ubuntu:6.8.0" => "6.8.0-140" } }
+    sync!
+    pi = WardAsset.create!(ref: "manual:tomcod", name: "tomcod", kind: "host", host: "tomcod", source: "person",
+                           declared: { "components" => [ "linux_kernel" ] }, last_seen_at: Time.current)
+    cadance = WardAsset.find_by!(ref: "server:s1")
+    assert_equal({ "linux_kernel" => nil }, cadance.components)
+
+    threat, _ = Ward::Threats.report!(kernel, by: @skipsy)
+    assert_equal [ "exposed", "unverified" ], [ threat.status, threat.confidence ], "never unmatched: every host runs one"
+    assert_equal %w[cadance tomcod], threat.affected.map { |a| a["name"] }
+
+    cadance.observe!(component: "linux_kernel", version: "6.8.0-139", source: "probe",
+                     data: { "scheme" => "ubuntu", "release" => "6.8.0-139-generic" })
+    pi.observe!(component: "linux_kernel", version: "6.18.52", source: "probe", data: { "release" => "6.18.52+rpt-rpi-2712" })
+    Ward::Threats.triage!(threat)
+    assert_equal [ [ "cadance", "6.8.0-139", "ubuntu", "vulnerable" ], [ "tomcod", "6.18.52", nil, "fixed" ] ],
+                 threat.reload.affected.map { |a| a.values_at("name", "version", "scheme", "verdict") }
+    assert_equal "verified", threat.confidence
   end
 
   test "worked example 2, an actor: Tier 1 at most on a stranger's word, a window, indicators, and a person's resolve" do

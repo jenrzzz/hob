@@ -23,9 +23,10 @@ module V1
   #   POST /v1/ward/threats/:id/gotchas/:index    { evidence }
   #   POST /v1/ward/threats/:id/proposals/:proposal/confirm|decline   { note? }
   #   GET  /v1/ward/assets  ·  POST /v1/ward/assets/sync  ·  PATCH /v1/ward/assets/:id { components?, exposure? }
-  #   POST /v1/ward/observations                  { asset, component, version, digest?, started_at? }   worker or person
+  #   POST /v1/ward/observations                  { asset, component, version, digest?, started_at?, data? }   worker or person
   class WardController < ApplicationController
     WORKER_ACTIONS = %i[create_run create_observation].freeze
+    OBSERVATION_DATA_KEYS = 12
 
     before_action :require_worker_or_person!, only: WORKER_ACTIONS
     before_action :require_trusted!, except: WORKER_ACTIONS
@@ -169,11 +170,28 @@ module V1
       asset = find_asset(params.require(:asset)) || raise(Ward::Invalid, "no asset #{params[:asset].inspect}; see GET /v1/ward/assets")
       observation = asset.observe!(component: params.require(:component), version: params[:version], digest: params[:digest],
                                    source: Current.principal.trusted? ? "person" : "probe", principal: Current.principal,
-                                   started_at: time_param(:started_at))
+                                   started_at: time_param(:started_at), data: observation_data)
       render json: observation.as_json_for_ward, status: :created
     end
 
     private
+
+    # What a probe read alongside the version (a kernel's full release, its
+    # distro), as flat strings. `scheme` is the numbering the version is in
+    # when it is not upstream's (Ward::Versions).
+    def observation_data
+      raw = params[:data]
+      return {} if raw.blank?
+      raise Ward::Invalid, "data is an object of short strings" unless raw.respond_to?(:to_unsafe_h)
+
+      data = raw.to_unsafe_h
+      raise Ward::Invalid, "data has at most #{OBSERVATION_DATA_KEYS} keys" if data.size > OBSERVATION_DATA_KEYS
+      raise Ward::Invalid, "data is an object of short strings" unless data.values.all? { |v| v.is_a?(String) || v.is_a?(Numeric) }
+
+      data = data.to_h { |k, v| [ k.to_s.truncate(40), v.to_s.truncate(200) ] }.compact_blank
+      data["scheme"] = data["scheme"].downcase if data["scheme"]
+      data
+    end
 
     def find_threat
       WardThreat.find(params[:id])

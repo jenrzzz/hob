@@ -5,6 +5,11 @@ module Ward
   # when there is one line. Anything ward cannot be sure of is "unknown",
   # never "fixed": a floating tag ("8.3"), a branch with no fix named, a
   # version that does not parse.
+  #
+  # A distro's own numbering is a scheme: Ubuntu's kernel 6.8.0-139 carries
+  # fixes backported from upstream releases it does not name, so it is held
+  # only to fixes named in its scheme, { "ubuntu:6.8.0" => "6.8.0-140" },
+  # never to upstream's, and upstream's own numbers never see those.
   module Versions
     VERDICTS = %w[vulnerable fixed unknown].freeze
     # "v8.3.30-fpm" → "8.3.30"; "4.0.0-beta.420" and "8.4.0RC1-fpm" keep
@@ -28,9 +33,11 @@ module Ward
     end
 
     # -> [verdict, why]
-    def verdict(version, fixed_versions)
-      fixed = (fixed_versions || {}).transform_values(&:to_s).reject { |_, v| v.blank? }
-      return [ "unknown", "no fixed version is known" ] if fixed.empty?
+    def verdict(version, fixed_versions, scheme: nil)
+      fixed = in_scheme(fixed_versions, scheme)
+      if fixed.empty?
+        return [ "unknown", scheme.present? ? "no #{scheme} fixed version is known; upstream's do not apply" : "no fixed version is known" ]
+      end
 
       running = parse(version)
       return [ "unknown", "the running version is not known" ] if running.nil?
@@ -38,7 +45,8 @@ module Ward
       branch, fix = branch_for(running, fixed)
       if branch.nil?
         highest = fixed.values.filter_map { |v| parse(v) }.max
-        return [ "fixed", "#{version} is a newer line than any with a fix named" ] if highest && newer_line?(running, highest)
+        # Upstream's later lines carry the fix; a distro names one per release it ships.
+        return [ "fixed", "#{version} is a newer line than any with a fix named" ] if scheme.blank? && highest && newer_line?(running, highest)
 
         return [ "unknown", "no fixed version is named for #{version}'s line" ]
       end
@@ -50,6 +58,16 @@ module Ward
       end
 
       running >= fix_version ? [ "fixed", "#{version} ≥ #{fix}" ] : [ "vulnerable", "#{version} < #{fix}" ]
+    end
+
+    # The fixes that speak to a version in `scheme`, keyed by branch alone:
+    # "ubuntu:6.8.0" for Ubuntu's, the unprefixed keys for upstream's.
+    def in_scheme(fixed_versions, scheme)
+      fixed = (fixed_versions || {}).transform_values(&:to_s).reject { |_, v| v.blank? }
+      prefix = "#{scheme.to_s.strip.downcase}:"
+      return fixed.reject { |branch, _| branch.include?(":") } if prefix == ":"
+
+      fixed.filter_map { |branch, v| [ branch[prefix.size..], v ] if branch.downcase.start_with?(prefix) }.to_h
     end
 
     # The longest branch key the version falls under: "8.3" holds 8.3.30;

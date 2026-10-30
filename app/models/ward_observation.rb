@@ -15,7 +15,7 @@ class WardObservation < ApplicationRecord
   def as_json_for_ward
     {
       "id" => id, "asset" => asset.name, "component" => component, "version" => version, "digest" => digest,
-      "source" => source, "by" => principal&.name, "started_at" => started_at&.utc&.iso8601,
+      "source" => source, "by" => principal&.name, "started_at" => started_at&.utc&.iso8601, "data" => data.presence,
       "first_seen_at" => first_seen_at.utc.iso8601, "last_seen_at" => last_seen_at.utc.iso8601
     }.compact
   end

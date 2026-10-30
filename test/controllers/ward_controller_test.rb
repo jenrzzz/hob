@@ -151,6 +151,16 @@ class WardControllerTest < ActionDispatch::IntegrationTest
                                   headers: worker_auth, as: :json
     assert_response :unprocessable_entity
 
+    post "/v1/ward/observations", params: { asset: "coolify", image: "ghcr.io/coollabsio/coolify:latest", version: "4.5.3",
+                                            digest: "sha256:#{'a' * 64}", data: { container: "coolify", resolved_by: "image label" } },
+                                  headers: worker_auth, as: :json
+    assert_response :created
+    assert_equal [ "coolify", "4.5.3", "ghcr.io/coollabsio/coolify:latest" ], body.values_at("component", "version").push(body.dig("data", "image")),
+                 "an image is the product it runs, read the way the inventory reads it"
+    post "/v1/ward/observations", params: { asset: "coolify", version: "1" }, headers: worker_auth, as: :json
+    assert_response :unprocessable_entity
+    assert_match(/component or image/, body["error"])
+
     post "/v1/ward/observations", params: { asset: "nope", component: "php", version: "1" }, headers: worker_auth, as: :json
     assert_response :unprocessable_entity
     get "/v1/ward/threats", headers: worker_auth

@@ -20,6 +20,9 @@ module Ward
     # Every host runs a kernel, and every container on it shares that one:
     # a host is a linux_kernel asset whose version the ward worker probes.
     HOST_COMPONENTS = { "linux_kernel" => nil }.freeze
+    # A Coolify server runs Docker Engine, whose version Coolify reports.
+    # NVD names it both ways: docker:docker and mobyproject:moby.
+    ENGINE = %w[docker moby].freeze
     SYNC_EVERY = 1.hour
 
     # Coolify's API, read-only: there is no method here that writes.
@@ -75,6 +78,13 @@ module Ward
 
     def self.sync!(client: nil, now: Time.current)
       new(client: client, now: now).sync!
+    end
+
+    # The kernel, and Docker Engine at the version Coolify last read off it.
+    def self.host_components(server)
+      settings = server["settings"].is_a?(Hash) ? server["settings"] : {}
+      engine = Versions.from_tag(settings["docker_version"])
+      HOST_COMPONENTS.merge(ENGINE.index_with { engine })
     end
 
     # "php:8.3.30-fpm" → { "php" => "8.3.30" }; "ghcr.io/coollabsio/coolify"
@@ -133,8 +143,9 @@ module Ward
         servers.each do |server|
           asset = upsert("server:#{server['uuid']}", name: server["name"].presence || server["uuid"], kind: "host",
                                                      host: server["name"], exposure: exposure_of_ip(server["ip"]),
-                                                     components: HOST_COMPONENTS, data: { "ip" => server["ip"] }.compact)
+                                                     components: self.class.host_components(server), data: { "ip" => server["ip"] }.compact)
           seen << asset.id
+          observed += observe(asset)
         end
 
         client.applications.each do |row|
@@ -173,7 +184,7 @@ module Ward
       end
 
       gone = WardAsset.present.where(source: %w[coolify scan_target]).where.not(id: seen).update_all(gone_at: @now, updated_at: @now)
-      { "assets" => seen.size, "gone" => gone, "observations" => observed }
+      { "assets" => seen.size, "gone" => gone, "observations" => observed, "patches" => patches(servers) }.compact
     end
 
     # Without a Coolify token, the scan targets alone.
@@ -184,6 +195,15 @@ module Ward
     end
 
     private
+
+    # The patches check from the same servers; its failure is not the inventory's.
+    def patches(servers)
+      run = Patches.ingest!(servers, now: @now)
+      run && run.id
+    rescue StandardError => e
+      Rails.logger.error("ward patches: #{e.class}: #{e.message}")
+      "error: #{e.message.truncate(200)}"
+    end
 
     def upsert(ref, source: "coolify", **attrs)
       asset = WardAsset.find_or_initialize_by(ref: ref)

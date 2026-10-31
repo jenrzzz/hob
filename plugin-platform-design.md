@@ -404,7 +404,292 @@ Proposal, layered on the existing executor/webhook path without changing its wir
 At every phase, mail/calendar/todo/budget/records/ward/people stay native and unmodified, and
 mise's wire format changes only by gaining optional fields — nothing here requires a flag day.
 
-### 13. Open questions for Jenner
+### 13. Test cases against real capability gaps
+
+Jenner's call: validate this design against five real gaps in what hob can do today, rather than
+refine it further in the abstract. Three of these gaps already have a name in this repo —
+`calendar_push.rb`'s own comment says "availability queries are a separate capability and a
+separate decision" (`app/services/sentinel/native/calendar_push.rb:11-13`); CLIMATE.md is a
+drafted-but-unbuilt proposal that already improvises a worse version of the plugin venue
+("Interim path — records.\*, before the native build"); WARD.md's host inventory already reads a
+server's kernel version through Coolify's read-only API
+(`app/services/ward/inventory.rb:10-23`) but nothing reads a host's own distro facts directly. The
+other two (contacts, notes/docs) are gaps with no existing proposal at all. Each case below is
+written against sections 1–12 above; none of it changes those sections.
+
+| # | app | capabilities | kind | realm |
+|---|---|---|---|---|
+| 1 | contacts (CardDAV) | `contacts.card.get/search/changes` | read | household, or personal (section 6) |
+| 2 | family calendar + presence | `presence.current/history`, `familycal.events` | read | household |
+| 3a | nursery climate bridge | `climate.reading.report` (scoped), `climate.current/history/summary` | act (scoped push) / read | household |
+| 3b | per-host facts | `hostfacts.report` (scoped), `hostfacts.current/history` | act (scoped push) / read | personal (matches `ward.status`) |
+| 4 | Miniflux | `miniflux.feeds/entries/counters` | read | household, or personal (section 6) |
+| 5 | notes/docs | `notes.search/get/list` | read | household, with a personal/intimate hard edge |
+
+#### 1. People and contacts
+
+hob already owns a native relationship module (PEOPLE.md): `Person` rows with `display_name`,
+`handles`, `circles`, `key_dates` (`app/models/person.rb`), built almost entirely by *deriving*
+identity from message traffic — a person is "named as the Mac's Contacts name them" the first
+time a text arrives (PEOPLE.md, "Where events come from"). There is no canonical contact-card
+source: no address, company, photo, or notes field, and no app whose job is "who someone really
+is" rather than "who texted whom." A CardDAV contacts app (iCloud, Nextcloud, a self-hosted
+address book) is the real gap.
+
+- **Capabilities.** `contacts.card.get` (read, one card by handle or the app's own id),
+  `contacts.card.search` (read, by name or handle), `contacts.changes` (read, a cursor like
+  `Records.changes`, so hob polls only what moved). All read — no write-back to the address book
+  proposed for v1.
+- **Realm.** A shared family address book registers `household`. Section 6's personal-scoping
+  extension is what this case actually needs in practice: Jenner's own iCloud contacts and the
+  household's shared book are two registrations of the same plugin, exactly the way
+  `jenner-fastmail` and `house-fastmail` are two `calendar_backends` rows on one account
+  (CALENDARS.md). Realm is set from the manifest once, then left alone, per section 6 — a contacts
+  app's manifest claiming `household` when the household wants `personal` is the bootstrap step's
+  job to catch, not an automatic one.
+- **Policy before use.**
+  ```sh
+  bin/rails "hob:sentinel:policy[muse,contacts.card.get,allow]"
+  bin/rails "hob:sentinel:policy[muse,contacts.card.search,allow]" LIMITS='{"per_hour":60}'
+  bin/rails "hob:sentinel:policy[muse,contacts.changes,allow]"
+  ```
+  No `requires_person` floor needed — these are reads, and nothing here writes into `people_events`
+  or `people_notes`.
+- **Discovery and versioning.** Standard: bootstrap registration, then scheduled refresh (section
+  1) picks up new manifest fields (an address, say) as an additive schema change (section 7).
+- **If it goes down or misbehaves.** hob's own People module — open loops, event history, cadence
+  — is untouched; it never reads from this plugin, so losing it only loses the richer card detail,
+  never the Rolodex. A card that lies about whose number a handle is is just data: PEOPLE.md already
+  treats a sender's Contacts name as "data, not instructions," and the same notice applies here. A
+  consistently wrong card trips the circuit breaker (section 8) as a trust signal, same as anywhere
+  else.
+- **Hard edge — the one case with a hob-native twin.** Every other test case below describes data
+  hob has nowhere else; this one does not. Miniflux entries, climate readings, and notes don't
+  collide with an existing native store; a CardDAV card describes the *same person* `people.get`
+  already has an opinion about, under a different name (`contacts.*` vs. `people.*`), with no
+  reconciliation between them. Section 9 says the native/forge path for first-party data "stays
+  native... not a replacement," which settles that a plugin should never write into `people_events`
+  directly — but it does not say what an agent is supposed to do when `contacts.card.get` and
+  `people.get` disagree about the same handle. PEOPLE.md's own rule — "identity is a person's call,"
+  merges are `requires_person`, "a merge does not rewrite the log" — argues a plugin-sourced card
+  should never auto-merge into a `Person` row, only sit beside it under its own name. **Open question
+  for Jenner, not a design change**: should a plugin like this ever be allowed to *propose* a
+  `people.merge` (the existing `requires_person` capability, same as an agent proposing one today),
+  or should `contacts.*` stay a permanently separate, unreconciled namespace?
+
+#### 2. A unified family calendar and presence layer
+
+CALENDARS.md's own capabilities are read-only per-backend merges (`calendar.calendars`,
+`calendar.events`); its open question 4 names exactly this gap ("when are Jenner and Tessa both
+free on Saturday... one function over what is already here"), and `calendar_push.rb`'s comment
+is more direct still: there is no availability query across people at all today, by design, left
+for a later decision. "Presence" — who is actually home right now — doesn't exist in hob in any
+form.
+
+- **Capabilities.** `presence.current` (read, coarse home/away per household member),
+  `presence.history` (read, recent transitions), `familycal.events` (read, a family-organizer
+  app's own events, if the household runs one outside its existing `calendar_backends`).
+- **Realm.** Household — the point of a presence layer is shared visibility, the opposite of
+  personal. But precise presence (exact GPS) is more sensitive than coarse home/away the way a
+  calendar's contents are more sensitive than its free/busy shape; CALENDARS.md's
+  `visibility: free_busy` masking ("hands out when, and whether busy, and nothing that says what")
+  is the right model to copy — a presence plugin should expose coarse state only, never a location
+  trace, as a manifest-level design choice, not a policy one.
+- **Policy before use.**
+  ```sh
+  bin/rails "hob:sentinel:policy[skipsy,presence.current,allow]"
+  bin/rails "hob:sentinel:policy[skipsy,presence.history,allow]" LIMITS='{"per_hour":60}'
+  bin/rails "hob:sentinel:policy[skipsy,familycal.events,allow]"
+  ```
+- **Discovery and versioning.** Standard; little expected schema churn (presence states are a
+  small enum).
+- **If it goes down or misbehaves.** The native calendar reads (CALENDARS.md) are completely
+  unaffected — this plugin is a separate source, not a wrapper over `calendar_backends`, so losing
+  it loses presence, not the calendar. Wrong presence data is read the way a wrong calendar event
+  title is: "anyone who can send an invitation can write one" (CALENDARS.md) applies equally to
+  "anyone whose phone can lie about where it is."
+- **Hard edge — a plugin that would need to read hob, not just supply hob.** "Unified calendar and
+  presence" most naturally means *merging* the presence signal with the household's existing
+  CalDAV calendars (`calendar.events`) into one availability answer — but section 4's structural
+  rule is that "a plugin key reaches only plugin-management endpoints... never the sentinel," the
+  same wall the sentinel already holds between an agent and another agent's data, one level over.
+  A plugin cannot call `calendar.events` to compute availability itself. This is a genuine gap this
+  test case is the first to expose, not just an open question dressed as one: **the design needs a
+  decision**, either (a) merging calendars and presence into one availability view is native work —
+  finally building `calendar.free_busy` per CALENDARS.md's own open question 4, with the presence
+  plugin only supplying the presence half for that native code to combine — or (b) the plugin model
+  grows a second, narrower principal shape that can call *into* the sentinel as a read-only caller
+  under its own policy rows, which is a materially different trust posture than section 4 describes
+  today and would need its own section. Recommend (a): it keeps section 4's "never the sentinel"
+  rule intact and matches section 9's "hob core must still own" first-party data — but it is a real
+  decision, not a someday question, since "family calendar and presence" was the test case asked
+  for and (a) is not what a literal reading of it produces on its own.
+
+#### 3. Read-only home and host facts, with no execution grant
+
+Two sources, same shape, chosen because WARD.md already refuses host execution on principle — the
+ward "does not scan from where hob runs," it scans from outside, and its only two live
+capabilities today are a status read and a TCP connect check with a literal, pre-registered host
+list (`HOB_WARD_SCAN_TARGETS`), never a shell. Neither sensor exists as a capability anywhere
+today: the nursery climate sensor is CLIMATE.md's own drafted, unbuilt proposal, whose only
+present-day path into hob is the shoehorn its "Interim path" section names and dislikes
+("Collection `nursery-climate`... worth it for the first weeks... not a substitute for building
+this"). Per-host distro facts are a gap even inside what ward already has: ward reads a server's
+*kernel version* through Coolify's read-only API today (`app/services/ward/inventory.rb:10-23`),
+but Coolify's API carries nothing about the distro name, uptime, or package state beyond the
+patches check it already runs — there is no path to a host's own OS facts other than asking the
+host, which is exactly what a host-local push avoids having to do over exec.
+
+- **Capabilities.**
+  - `climate.reading.report` (act, but a passive data push, never a command) — scoped to the
+    bridge's own registered sensors, exactly CLIMATE.md's own proposed shape. `climate.current`,
+    `climate.history`, `climate.summary` (read) for household agents.
+  - `hostfacts.report` (act, same passive-push shape) — scoped to the one host principal reporting
+    it; rejects facts for any host not its own, mirroring `climate.reading.report`'s "rejects
+    sensors not registered to that bridge." `hostfacts.current`, `hostfacts.history` (read).
+  - Neither plugin offers anything named `*.exec`, `*.run`, or `*.shell`. There is no capability in
+    this test case that lets a caller ask a host to *do* something — only ever to say what it
+    already is. **This is the explicit point of the test case**: the direction of every call is
+    host → hob (a push), never hob → host (a pull that could become a command), the same
+    "hob never reaches into the house; the house reports out" rule CLIMATE.md states for the
+    climate bridge, extended to host facts.
+- **Realm.** Climate: household — both partners' agents see the same rooms, per CLIMATE.md. Host
+  facts: `personal`, matching `ward.status`'s own reasoning — "an agent that can ask `ward.status`
+  learns the household's exposure. That is sensitive" (WARD.md). A host's kernel and distro state
+  is the same class of exposure information, so it sits at the same floor, with no policy granting
+  it by default.
+- **Policy before use.**
+  ```sh
+  bin/rails "hob:sentinel:policy[climate-bridge,climate.reading.report,allow]"
+  bin/rails "hob:sentinel:policy[skipsy,climate.current,allow]"
+  bin/rails "hob:sentinel:policy[cadance-hostfacts,hostfacts.report,allow]" CONSTRAINTS='{"host":["cadance"]}'
+  bin/rails "hob:sentinel:policy[ward,hostfacts.current,allow]"
+  ```
+  One reporting principal (and one constrained policy row) per host, the same granularity
+  `climate-bridge` gets per sensor — a facts collector that could report "for any host" would be a
+  bigger grant than the single-host collector this case is built around.
+- **Discovery and versioning.** Standard manifest refresh; little expected churn, since kernel,
+  distro, and uptime are a stable fact shape.
+- **If it goes down or misbehaves.** A dead collector makes that host's (or that sensor's) facts
+  stale, the same "a scanner that stopped must not look like a clean house" treatment WARD.md
+  already gives a missed audit run — it does not touch ward's existing exposure/patches checks,
+  which come from a different worker (`security/ward.py`) reading Coolify directly. A lying
+  collector — a host claiming a patched kernel it doesn't have — can only misstate facts about
+  itself; because no execution capability exists anywhere in this path, there is nothing a
+  compromised reporter can *do*, only something it can say, and a mismatch against Coolify's own
+  patches check (WARD.md) is exactly the kind of `sensor_disagreement` signal CLIMATE.md already
+  uses for the Nanit-vs-W100 delta, available here for free.
+- **Hard edge.** This case validates the design cleanly rather than breaking it — CLIMATE.md
+  independently arrived at the plugin venue's own shape (a scoped principal, a push-only write, a
+  read side for everyone else) before this platform existed to offer it, and its "Interim path"
+  section is a worse version of exactly this plugin, built because nothing better existed. The one
+  real gap: section 2's schema distinguishes `read` from `act` to decide retry safety (section 8),
+  but nothing distinguishes a *passive* act like `hostfacts.report` from an act that could plausibly
+  mean "run this on a host" — both would be declared `kind: act` in the same manifest field, and
+  nothing at the schema level stops a future plugin from proposing an exec-shaped capability; only
+  policy (no default allow, a person's rule, realm) stands between a manifest and a request. Given
+  how central "ward watches, it does not act" is to the household's threat model (WARD.md), this is
+  worth an **open question for Jenner**: does a plugin manifest need a schema-level marker
+  (something like `grants_execution: false`, checked at registration, refusing to even create the
+  row without an explicit opt-in) rather than relying on policy alone to keep an exec-shaped
+  capability out — or is "no policy grants it by default" (as already holds for every capability)
+  already sufficient because no human would write the `allow` rule?
+
+#### 4. Miniflux feed reads
+
+Already this design's own first-adopter pick (section 10): "a clean first adopter of the
+genuinely new parts of this platform." This case makes it concrete rather than hypothetical.
+
+- **Capabilities.** `miniflux.feeds` (read, subscribed feeds), `miniflux.entries` (read, entries
+  filterable by feed/status/date — the exact shape section 1's own manifest example used),
+  `miniflux.counters` (read, Miniflux's own unread/read counts per feed, for a cheap check that
+  doesn't pull entry bodies).
+- **Realm.** Household by default; section 6's personal-scoping extension applies the same way it
+  does for contacts and calendars if the household ever runs one shared Miniflux instance and one
+  person's own.
+- **Policy before use.**
+  ```sh
+  bin/rails "hob:sentinel:policy[muse,miniflux.feeds,allow]"
+  bin/rails "hob:sentinel:policy[muse,miniflux.entries,allow]" LIMITS='{"per_hour":60}'
+  bin/rails "hob:sentinel:policy[muse,miniflux.counters,allow]"
+  ```
+  Default-allow-with-limits, no `requires_person` — section 11 already argues this case is "a good
+  exercise of 'default allow with limits' policy without much downside if the review is wrong."
+- **Discovery and versioning.** The cleanest exercise of section 7 among all five cases: Miniflux's
+  own REST API is stable, but a first-party bridge wrapping it (section 10's first option) is
+  household code that will grow fields over time, making this the real test of the
+  additive-with-grace-period schema evolution sections 2 and 12 propose, rather than a one-time
+  migration like mise's.
+- **If it goes down or misbehaves.** Reads fail `unavailable` (section 2's error enum); the breaker
+  (section 8) trips on repeated timeouts; nothing else in hob depends on feed data, so nothing else
+  degrades. A mismatched `output_schema` is caught before storage (section 2); entry content is
+  data, never instruction, the same notice calendar and mail content already carry.
+- **Hard edge.** Already named, not newly discovered: section 10's second bullet and open question
+  5 both flag that Miniflux could instead arrive through the planned MCP-bridge venue if a
+  community MCP server for it exists. Picking Miniflux as the literal first plugin — rather than a
+  hypothetical one — means open question 5 has to be answered *before* Phase 4 actually ships, not
+  "worth settling in principle" on its own schedule: if a Miniflux MCP server gets used instead of
+  the first-party bridge, sections 2 and 4 were validated against the wrong venue. No design change
+  from this case; it sharpens the existing open question's urgency and ties it to a concrete
+  decision point instead of a someday one.
+
+#### 5. Notes and docs reads
+
+RECORDS.md is explicit that it is not this: "Records are not memory either... a record is a
+document written for lookup," and its collections are schema'd structured evidence (an Amazon
+order), not freeform prose. PEOPLE.md's notes are relationship-scoped only. Nothing in hob reads a
+household's actual running notes or documents today — a self-hosted wiki or notes app (Joplin, an
+Obsidian sync server, Nextcloud Notes) is a genuine gap with no existing proposal to lean on,
+unlike the other four cases.
+
+- **Capabilities.** `notes.search` (read, keyword search over titles and bodies), `notes.get`
+  (read, one note or document's content by id), `notes.list` (read, recently updated first). No
+  `act` in v1 — no "edit the household wiki," matching the read-first posture every other new
+  integration in this document starts from.
+- **Realm.** Household for a shared family wiki is the easy case. The hard one: a personal notes
+  app (a private journal, therapy notes) is exactly the kind of source likely to contain
+  `intimate`-realm material by its nature, more than any other case here — Miniflux's worst leak is
+  reading habits, climate's is a nursery temperature, this one's is a diary. Section 6's rule that
+  the household's own realm tuning "always wins... left alone on updates" is necessary but not
+  sufficient: if a personal vault's manifest claims `household` — through a bug, or because the
+  app's manifest template has no idea hob's realm vocabulary exists — nothing auto-detects that the
+  content looks intimate. The bootstrap step (a person running the registration command, section 1)
+  is the only backstop, same as it is everywhere else, but the cost of it being wrong is higher
+  here than in any other case in this document.
+- **Policy before use.**
+  ```sh
+  bin/rails "hob:sentinel:policy[muse,notes.search,allow]" LIMITS='{"per_hour":60}'
+  bin/rails "hob:sentinel:policy[muse,notes.get,allow]"
+  bin/rails "hob:sentinel:policy[jenners-notes-reader,notes.*,review]"
+  ```
+  Given the sensitivity, a household may reasonably choose `review` over blanket `allow` for any
+  agent reaching a personal-realm notes plugin even though every capability is a read — WARD.md
+  already establishes that "read-only" and "low-stakes" are not the same thing (`ward.status` is
+  read-only and still sits behind a person's rule by default). This is a policy choice this design
+  leaves to the household, not something it forces.
+- **Discovery and versioning.** Standard; little schema churn expected (titles, bodies, a search
+  result shape).
+- **If it goes down or misbehaves.** Nothing else in hob depends on it, same isolation as every
+  other case. A misbehaving case here is sharper than the others: if the notes app's own
+  per-person access control has a bug and a household-realm search returns another person's
+  private note, hob has no way to detect that from its own side — it trusts the plugin's own
+  backend the same way it trusts mise's today ("not cryptographic isolation... a plugin the
+  household chose to trust is the same bet," section 4).
+- **Hard edge — a finer grain than hob's realm can see.** Every other case in this document is
+  either about one undifferentiated dataset per realm (Miniflux, calendar, climate, host facts) or
+  about one plugin's own self-reported facts. A household notes app is the first case where, inside
+  one `household`-realm registration, the plugin's own backend plausibly has its own finer-grained
+  per-person access control (my notebook, your notebook, both nominally household) that hob's
+  capability-level `realm` has no way to see or express — hob's realm gates the whole capability
+  row, the same grain Records' per-collection realm uses, not a grain inside one plugin's answer.
+  **Open question for Jenner**: should a plugin request ever carry the calling principal's identity
+  through to the plugin itself, so a notes app could enforce its own per-person ACL against a
+  stable "who's asking" hob attests to — or does a household register one plugin per person for
+  anything with per-person access control, the same workaround CALENDARS.md already uses today
+  (`jenner-fastmail` vs. `house-fastmail`, two rows on one account)? Nothing here argues for a
+  design change on its own; it is a real, newly-surfaced question this case is the first to raise.
+
+### 14. Open questions for Jenner
 
 1. **Scope of "apps."** Does "apps expose capabilities themselves" mean household-run apps only
    (mise-shaped: Jenner's own code, Coolify-hosted), or genuinely third-party software the

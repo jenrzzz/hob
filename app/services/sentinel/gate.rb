@@ -23,6 +23,11 @@ module Sentinel
       if @agent.capabilities_frozen?
         return deny("claim", "#{@agent.name}'s capabilities are frozen pending review: #{@agent.capabilities_freeze_reason}")
       end
+      # A capability a surface proposed on its own reaches nobody, whatever
+      # rule (a wildcard, say) would match it, until a person accepts it.
+      unless @capability.accepted?
+        return deny("policy", "#{@capability.name} is waiting for a person to accept it")
+      end
       if Realm.rank_of(@request.realm) < @capability.realm_rank
         return deny("realm", "#{@capability.name} needs #{@capability.realm} clearance; the agent has #{@request.realm}")
       end

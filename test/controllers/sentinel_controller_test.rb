@@ -222,6 +222,43 @@ class SentinelPoliciesControllerTest < ActionDispatch::IntegrationTest
     delete "/v1/sentinel/capabilities/hob.usage", headers: auth
     assert_response :unprocessable_entity
   end
+
+  test "a capability a surface proposed is listed for people, accepted by a person, and never by an agent" do
+    Capability.create!(name: "mise.pantry.scan", description: "The pantry's shelves", kind: "read", realm: "household",
+                       venue: "webhook", enabled: false, accepted_at: nil,
+                       config: { "url" => "https://mise.test/hob/capabilities/mise.pantry.scan", "secret" => "s3cret",
+                                 "previous_secret" => "old", "surface" => "mise" })
+    policy!(@muse, "mise.*", "allow")
+    _, token = agent("muse")
+    agent_auth = { "Authorization" => "Bearer #{token}" }
+
+    get "/v1/sentinel/capabilities", headers: agent_auth
+    refute_includes body.map { |c| c["name"] }, "mise.pantry.scan", "the glob does not reach a proposal"
+    get "/v1/sentinel/capabilities", params: { unaccepted: 1 }, headers: agent_auth
+    refute_includes body.map { |c| c["name"] }, "mise.pantry.scan", "an agent does not see proposals"
+    post "/v1/sentinel/capabilities/mise.pantry.scan/accept", headers: agent_auth, as: :json
+    assert_response :forbidden
+
+    get "/v1/sentinel/capabilities", params: { unaccepted: 1 }, headers: auth
+    assert_response :ok
+    proposal = body.find { |c| c["name"] == "mise.pantry.scan" }
+    assert_equal false, proposal["accepted"]
+    assert_equal [ { "agent" => "muse", "capability" => "mise.*", "effect" => "allow" } ], proposal["rules"],
+                 "a person sees what will reach it once accepted"
+
+    patch "/v1/sentinel/capabilities/mise.pantry.scan", params: { enabled: true }, headers: auth, as: :json
+    assert_response :unprocessable_entity, "enabling is not a way around accepting"
+
+    post "/v1/sentinel/capabilities/mise.pantry.scan/accept", params: { realm: "personal" }, headers: auth, as: :json
+    assert_response :ok
+    assert_equal [ true, true, "personal" ], body.values_at("accepted", "enabled", "realm")
+    assert_equal @principal, Capability.find_by!(name: "mise.pantry.scan").accepted_by
+    patch "/v1/sentinel/capabilities/mise.pantry.scan", params: { kind: "read" }, headers: auth, as: :json
+    refute_includes body["config"].keys, "previous_secret"
+
+    post "/v1/sentinel/capabilities/mise.pantry.scan/accept", headers: auth, as: :json
+    assert_response :unprocessable_entity
+  end
 end
 
 class MissionsControllerTest < ActionDispatch::IntegrationTest

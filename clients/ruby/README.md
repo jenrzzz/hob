@@ -174,6 +174,9 @@ hob.sentinel.register_capability(name: "mise.add_to_shopping_list", description:
 
 A surface receiving a webhook delivery verifies it with
 `Hob::Webhook.verify(secret:, signature: request.headers["X-Hob-Signature"], body: request.raw_post)`.
+While hob rotates the secret it signs each delivery with both the old and the new one, for an hour;
+from 0.3.1 `verify` accepts any matching `v1`, so a surface verifies whether or not it has restarted
+with the new secret yet.
 `Hob::Fake` scripts the sentinel (`fake.sentinel.allow(result)`, `.deny`,
 `.hold`), petitions (`.grant(name)`, `.build(name)`, `.hold_petition`,
 `.deny_petition`), and keeps an in-memory mission queue.

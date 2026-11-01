@@ -5,12 +5,20 @@ module V1
     # POST /v1/sentinel/capabilities        { name, description, input_schema, kind, realm,
     #                                         venue: webhook|poll, config }   people only
     # PATCH/DELETE /v1/sentinel/capabilities/:name
+    # GET  /v1/sentinel/capabilities?unaccepted=1   what surfaces proposed that nobody
+    #                                               has accepted yet (people only)
+    # POST /v1/sentinel/capabilities/:name/accept   { realm, kind } confirm or change
+    #                                               the proposal, and enable it (people only)
     class CapabilitiesController < ApplicationController
       self.agent_actions = %i[index show]
 
-      before_action :require_trusted!, only: %i[create update destroy]
+      before_action :require_trusted!, only: %i[create update destroy accept]
 
       def index
+        if params[:unaccepted].present? && !Current.principal.agent?
+          return render json: Capability.unaccepted.order(:name).map { |c| serialize(c).merge(proposal(c)) }
+        end
+
         caps = Capability.enabled.order(:name).to_a
         caps = caps.filter_map { |c| (effect = effect_for(c)) && [ c, effect ] }
         render json: caps.map { |c, effect| serialize(c).merge(effect: effect) }
@@ -43,6 +51,14 @@ module V1
         head :no_content
       end
 
+      def accept
+        cap = Capability.find_by!(name: params[:name])
+        cap.accept!(by: Current.principal, realm: params[:realm], kind: params[:kind])
+        render json: serialize(cap)
+      rescue Capability::Error => e
+        render json: { error: e.message }, status: :unprocessable_entity
+      end
+
       private
 
       # What this agent can expect from asking: nil when a rule denies it,
@@ -65,8 +81,18 @@ module V1
       def serialize(cap, config: false)
         {
           name: cap.name, description: cap.description, input_schema: cap.input_schema,
-          kind: cap.kind, realm: cap.realm, venue: cap.venue, enabled: cap.enabled
-        }.tap { |h| h[:config] = cap.config.except("secret") if config }
+          kind: cap.kind, realm: cap.realm, venue: cap.venue, enabled: cap.enabled, accepted: cap.accepted?
+        }.tap { |h| h[:config] = cap.config.except("secret", "previous_secret") if config }
+      end
+
+      # What a person is agreeing to by accepting: the rules that will reach
+      # it (wildcards included) and the petitions it will grant.
+      def proposal(cap)
+        {
+          surface: cap.config["surface"],
+          rules: cap.reaching_rules.map { |r| { agent: r.principal&.name || "*", capability: r.capability, effect: r.effect } },
+          petitions: cap.waiting_petitions.map { |p| { id: p.id, agent: p.principal.name, effect: p.effect } }
+        }
       end
     end
   end

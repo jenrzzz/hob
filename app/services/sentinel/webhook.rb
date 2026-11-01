@@ -9,6 +9,12 @@ module Sentinel
   # non-2xx with { error } to fail the request.
   #
   #   X-Hob-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>
+  #
+  # While a rotated secret overlaps the one before it (SurfaceCapabilities
+  # #rotate: config.previous_secret, until config.previous_secret_until),
+  # each delivery carries one v1 per secret, the old first and the new last,
+  # so a surface holding either one verifies it. A verifier reading only the
+  # last v1 (the gem before it accepted any) sees the new secret's.
   module Webhook
     class Error < StandardError; end
 
@@ -27,7 +33,7 @@ module Sentinel
       )
       timestamp = Time.now.to_i
       headers = { "Content-Type" => "application/json", "Accept" => "application/json",
-                  "X-Hob-Signature" => signature(capability.config["secret"], timestamp, body),
+                  "X-Hob-Signature" => signature(signing_secrets(capability.config), timestamp, body),
                   "X-Hob-Request" => request.id }
       status, response_body = (transport || Webhook.transport || method(:post)).call(capability.config["url"], body, headers)
       data = parse(response_body)
@@ -36,18 +42,30 @@ module Sentinel
       raise Error, "#{capability.name} webhook answered HTTP #{status}: #{data.is_a?(Hash) ? data['error'] || data['message'] : data}"
     end
 
-    def signature(secret, timestamp, body)
-      "t=#{timestamp},v1=#{OpenSSL::HMAC.hexdigest('SHA256', secret.to_s, "#{timestamp}.#{body}")}"
+    # One secret or several (oldest first).
+    def signature(secrets, timestamp, body)
+      sigs = Array(secrets).map { |secret| "v1=#{OpenSSL::HMAC.hexdigest('SHA256', secret.to_s, "#{timestamp}.#{body}")}" }
+      "t=#{timestamp},#{sigs.join(',')}"
     end
 
-    # The receiving side (mirrored in the gem as Hob::Webhook.verify).
+    # The secret deliveries are signed with, preceded by the one it replaced
+    # while their overlap lasts.
+    def signing_secrets(config, now: Time.current)
+      previous = config["previous_secret"].presence
+      until_at = config["previous_secret_until"].presence && Time.zone.parse(config["previous_secret_until"].to_s)
+      overlapping = previous && until_at && now < until_at && previous != config["secret"]
+      [ (previous if overlapping), config["secret"] ].compact
+    end
+
+    # The receiving side (mirrored in the gem as Hob::Webhook.verify): any
+    # v1 made with this secret will do.
     def verify(secret, header, body, tolerance: TOLERANCE, now: Time.now.to_i)
-      parts = header.to_s.split(",").filter_map { |kv| kv.include?("=") && kv.split("=", 2) }.to_h
-      timestamp = parts["t"].to_i
+      pairs = header.to_s.split(",").filter_map { |kv| kv.include?("=") && kv.strip.split("=", 2) }
+      timestamp = pairs.reverse.find { |key, _| key == "t" }&.last.to_i
       return false if timestamp.zero? || (now - timestamp).abs > tolerance
 
       expected = OpenSSL::HMAC.hexdigest("SHA256", secret.to_s, "#{timestamp}.#{body}")
-      ActiveSupport::SecurityUtils.secure_compare(expected, parts["v1"].to_s)
+      pairs.select { |key, _| key == "v1" }.any? { |_, given| ActiveSupport::SecurityUtils.secure_compare(expected, given.to_s) }
     end
 
     def post(url, body, headers)

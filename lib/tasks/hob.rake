@@ -452,18 +452,40 @@ namespace :hob do
     task :register, [ :surface, :url ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:surface:register[surface,url]\" APP=<coolify app uuid>" if args[:surface].blank? || args[:url].blank?
 
-      result = SurfaceCapabilities.new.call(surface: args[:surface], url: args[:url], app: ENV["APP"].presence,
-                                            restart: ENV["RESTART"] != "0", secret: ENV["SECRET"].presence)
+      result = SurfaceCapabilities.new.register(surface: args[:surface], url: args[:url], app: ENV["APP"].presence,
+                                                restart: ENV["RESTART"] != "0", secret: ENV["SECRET"].presence)
       puts "#{result.surface}: #{result.created} capability(ies) registered, #{result.updated} updated, #{result.disabled} disabled"
-      if result.pushed
-        puts "#{SurfaceCapabilities::SECRET_ENV} set on #{ENV['APP']}; #{result.restarted ? 'restart queued' : 'not restarted'}"
-      else
-        puts "set on the surface (shown once): #{SurfaceCapabilities::SECRET_ENV}=#{result.secret}"
-      end
-      SurfaceCapabilities.registered(result.surface).each do |cap|
-        puts "  #{cap.name.ljust(30)} #{cap.kind.ljust(5)} #{cap.realm.ljust(10)} #{cap.enabled ? '' : 'disabled'}"
-      end
+      surface_secret_report(result)
+      surface_listing(result.surface)
       puts "then let agents at them: bin/rails \"hob:sentinel:policy[marley,#{result.surface}.*,review]\" (README.md has a set)"
+    end
+
+    desc "Re-read a registered surface's manifest and follow it, without touching its secret or restarting it. " \
+         "What it adds waits for a person: bin/rails \"hob:surface:refresh[mise]\" (ACCEPT=1 accepts what is new, as register does)"
+    task :refresh, [ :surface ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:surface:refresh[surface]\"" if args[:surface].blank?
+
+      result = SurfaceCapabilities.new.refresh(surface: args[:surface])
+      puts "#{result.surface}: #{result.created} new, #{result.updated} updated, #{result.disabled} disabled"
+      if ENV["ACCEPT"] == "1"
+        result.proposed.each { |name| Capability.find_by!(name: name).accept! }
+        puts "accepted #{result.proposed.join(', ')}" if result.proposed.any?
+      elsif result.proposed.any?
+        puts "waiting for you to accept (nothing reaches them until then):"
+        result.proposed.each { |name| puts "  bin/rails \"hob:capabilities:accept[#{name}]\"" }
+      end
+      surface_listing(result.surface)
+    end
+
+    desc "Rotate the secret a surface's deliveries are signed with: the old one keeps signing alongside it for " \
+         "an hour. bin/rails \"hob:surface:rotate[mise]\" APP=<coolify app uuid> (RESTART=0 to skip the restart)"
+    task :rotate, [ :surface ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:surface:rotate[surface]\" APP=<coolify app uuid>" if args[:surface].blank?
+
+      result = SurfaceCapabilities.new.rotate(surface: args[:surface], app: ENV["APP"].presence,
+                                              restart: ENV["RESTART"] != "0", secret: ENV["SECRET"].presence)
+      puts "#{result.surface}: secret rotated; the old one signs too until #{SurfaceCapabilities::ROTATION_OVERLAP.from_now.to_fs(:short)}"
+      surface_secret_report(result)
     end
 
     desc "List the capabilities registered for a surface: bin/rails \"hob:surface:capabilities[mise]\""
@@ -474,8 +496,29 @@ namespace :hob do
       puts "nothing registered for #{args[:surface]}; bin/rails \"hob:surface:register[#{args[:surface]},url]\"" if caps.empty?
       caps.each do |cap|
         requests = cap.sentinel_requests.count
-        puts "#{cap.name.ljust(30)} #{cap.kind.ljust(5)} #{cap.realm.ljust(10)} #{cap.enabled ? 'enabled ' : 'disabled'} " \
+        state = if !cap.accepted? then "proposed"
+        elsif cap.enabled then "enabled "
+        else "disabled"
+        end
+        puts "#{cap.name.ljust(30)} #{cap.kind.ljust(5)} #{cap.realm.ljust(10)} #{state} " \
              "#{requests} request(s)  #{cap.config['url']}"
+      end
+    end
+
+    def surface_secret_report(result)
+      if result.pushed
+        puts "#{SurfaceCapabilities::SECRET_ENV} set on #{ENV['APP']}; #{result.restarted ? 'restart queued' : 'not restarted'}"
+      else
+        puts "set on the surface (shown once): #{SurfaceCapabilities::SECRET_ENV}=#{result.secret}"
+      end
+    end
+
+    def surface_listing(surface)
+      SurfaceCapabilities.registered(surface).each do |cap|
+        state = if !cap.accepted? then "waiting to be accepted"
+        elsif !cap.enabled then "disabled"
+        end
+        puts "  #{cap.name.ljust(30)} #{cap.kind.ljust(5)} #{cap.realm.ljust(10)} #{state}"
       end
     end
   end
@@ -489,6 +532,40 @@ namespace :hob do
         rows = Sentinel::Native.sync!
         puts "#{rows.size} native capabilities in sync: #{rows.map(&:name).join(', ')}"
       end
+    end
+
+    desc "List the capabilities surfaces proposed that nobody has accepted yet (PLUGINS.md): bin/rails hob:capabilities:unaccepted"
+    task unaccepted: :environment do
+      Clearance.with("intimate") do
+        caps = Capability.unaccepted.order(:name)
+        puts "nothing waiting to be accepted" if caps.empty?
+        caps.each { |cap| capability_proposal(cap) }
+      end
+    end
+
+    desc "Accept a capability a surface proposed, confirming or changing its realm and kind, and enable it: " \
+         "bin/rails \"hob:capabilities:accept[mise.pantry.scan,realm=proposed,kind=proposed]\" BY=jenner"
+    task :accept, [ :name, :realm, :kind ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:capabilities:accept[name,realm,kind]\" BY=<person>" if args[:name].blank?
+
+      cap = Capability.find_by(name: args[:name]) || abort("no capability #{args[:name]}")
+      by = ENV["BY"].presence && (Principal.find_by(name: ENV["BY"]) || abort("no principal #{ENV['BY']}"))
+      Clearance.with("intimate") do
+        capability_proposal(cap)
+        cap.accept!(by: by, realm: args[:realm], kind: args[:kind])
+      end
+      puts "accepted #{cap.name}: #{cap.kind}, #{cap.realm}#{by ? ", by #{by.name}" : ''}"
+    rescue Capability::Error, ActiveRecord::RecordInvalid => e
+      abort e.message
+    end
+
+    def capability_proposal(cap)
+      puts "#{cap.name} (#{cap.config['surface'] || cap.venue}) proposes #{cap.kind}, #{cap.realm}: #{cap.description}"
+      puts "  input: #{JSON.generate(cap.input_schema)}"
+      rules = cap.reaching_rules
+      puts "  no rule reaches it yet" if rules.empty?
+      rules.each { |rule| puts "  rule: #{rule.principal&.name || 'every agent'} #{rule.capability} #{rule.effect}" }
+      cap.waiting_petitions.each { |p| puts "  grants petition #{p.id} (#{p.principal.name}, #{p.effect || 'confirm'})" }
     end
   end
 

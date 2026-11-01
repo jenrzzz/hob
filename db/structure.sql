@@ -328,7 +328,9 @@ CREATE TABLE public.capabilities (
     config jsonb DEFAULT '{}'::jsonb NOT NULL,
     enabled boolean DEFAULT true NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    accepted_at timestamp(6) without time zone,
+    accepted_by_id bigint
 );
 
 
@@ -2266,6 +2268,13 @@ CREATE INDEX index_calendar_events_on_source_agent_id ON public.calendar_events 
 
 
 --
+-- Name: index_capabilities_on_accepted_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_capabilities_on_accepted_by_id ON public.capabilities USING btree (accepted_by_id);
+
+
+--
 -- Name: index_capabilities_on_name; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3521,6 +3530,14 @@ ALTER TABLE ONLY public.petitions
 
 
 --
+-- Name: capabilities fk_rails_cb525e3a14; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.capabilities
+    ADD CONSTRAINT fk_rails_cb525e3a14 FOREIGN KEY (accepted_by_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: people_loops fk_rails_cba21b1ad9; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4115,6 +4132,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261101000001'),
 ('20261025000001'),
 ('20261022000001'),
 ('20261016000001'),

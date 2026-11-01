@@ -5,12 +5,27 @@
 # `realm` is the clearance an agent needs to ask; `kind` says whether the
 # capability reads or acts, which the reviewer and listings care about.
 # config.requires_person marks one only a person may approve.
+#
+# A webhook capability is the plugin venue, v0 (PLUGINS.md): the app that
+# serves the manifest owns the implementation. One the app added on its own
+# (SurfaceCapabilities#refresh, no person running the command) lands
+# unaccepted and disabled: `accepted_at` is nil, no rule reaches it, not even
+# a wildcard, and no petition waiting on its name is granted, until a person
+# accepts it (#accept!) and confirms or changes the realm and kind it
+# proposed. Everything else (native handlers, by-hand registration, a
+# person's own POST) is accepted as it is created, since a person put it there.
 class Capability < ApplicationRecord
+  class Error < StandardError; end
+
   NAME_FORMAT = /\A[a-z0-9]+(?:[._-][a-z0-9]+)*\z/
   KINDS = %w[read act].freeze
   VENUES = %w[native webhook poll].freeze
 
+  belongs_to :accepted_by, class_name: "Principal", optional: true
   has_many :sentinel_requests, dependent: :restrict_with_exception
+
+  # Accepted unless whoever creates it says otherwise (accepted_at: nil).
+  attribute :accepted_at, :datetime, default: -> { Time.current }
 
   validates :name, presence: true, uniqueness: true, format: { with: NAME_FORMAT }
   validates :description, presence: true
@@ -19,12 +34,46 @@ class Capability < ApplicationRecord
   validates :realm, presence: true
   validate :realm_known
   validate :venue_config
+  validate :accepted_before_enabled
 
   scope :enabled, -> { where(enabled: true) }
+  scope :unaccepted, -> { where(accepted_at: nil) }
 
   # A capability that petitions were waiting on has arrived (a merged forge
-  # PR synced at boot, or a surface registering one): grant them.
-  after_create { Petition.fulfil!(self) }
+  # PR synced at boot, or a person registering a surface): grant them. One a
+  # surface proposed on its own waits for #accept!.
+  after_create { Petition.fulfil!(self) if accepted? }
+
+  def accepted?
+    accepted_at.present?
+  end
+
+  # A person has looked at a capability a surface proposed: it takes the
+  # realm and kind they confirmed (the proposal's, unless they changed it),
+  # is enabled, and the petitions waiting on it are granted.
+  def accept!(by: nil, realm: nil, kind: nil)
+    raise Error, "#{name} is already accepted" if accepted?
+    raise Error, "only a person accepts a capability" if by && !by.trusted?
+
+    transaction do
+      update!(accepted_at: Time.current, accepted_by: by, enabled: true,
+              realm: realm.presence || self.realm, kind: kind.presence || self.kind)
+      Petition.fulfil!(self)
+    end
+    self
+  end
+
+  # The rules that will reach it once accepted, wildcards included: what a
+  # person is agreeing to by accepting (PLUGINS.md, sections 5 and 7).
+  def reaching_rules
+    SentinelPolicy.includes(:principal).select { |rule| rule.matches?(name) }
+                  .sort_by { |rule| [ rule.principal&.name.to_s, -rule.specificity ] }
+  end
+
+  # Petitions that accepting it will grant.
+  def waiting_petitions
+    Petition.where(status: %w[proposed building], capability_name: name).includes(:principal)
+  end
 
   def native?
     venue == "native"
@@ -59,6 +108,10 @@ class Capability < ApplicationRecord
     Realm.rank_of(realm) if realm.present?
   rescue ArgumentError => e
     errors.add(:realm, e.message)
+  end
+
+  def accepted_before_enabled
+    errors.add(:enabled, "can't be on until a person accepts #{name}") if enabled && !accepted?
   end
 
   def venue_config

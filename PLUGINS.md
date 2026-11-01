@@ -1,7 +1,8 @@
 # A plugin platform for hob
 
-*Feasibility and design investigation. No implementation, no code changes. This document is the
-deliverable.*
+*Feasibility and design investigation. **Phase 0 (section 12) is implemented**; Phases 1–5 are
+still proposals. Part 1 describes the code as it was before Phase 0; SENTINEL.md (*Capabilities*)
+describes it as it is now.*
 
 Jenner's ask: today every app integration requires defining capabilities inside hob itself (mail,
 todo, mise, ward, budget, records — all either native Ruby inside this repo or a webhook row a
@@ -493,7 +494,14 @@ Proposal, layered on the existing executor/webhook path without changing its wir
 
 ### 12. A phased rollout that keeps existing integrations working
 
-- **Phase 0 — naming and guard rails.** Document mise's existing webhook registration as "the
+- **Phase 0 — naming and guard rails. Done.** `SurfaceCapabilities#register`/`#refresh`/`#rotate`
+  (`hob:surface:register`, `:refresh`, `:rotate`); rotation overlaps by signing with both secrets
+  for an hour, which an updated `Hob::Webhook.verify` (gem 0.3.1) accepts and an older one sees as
+  today's behavior. Readiness is not confirmed, since the plugin has no endpoint to confirm it
+  through until Phase 1. Acceptance is `capabilities.accepted_at`/`accepted_by`,
+  `Capability#accept!`, `hob:capabilities:unaccepted`/`:accept`, and `POST
+  /v1/sentinel/capabilities/:name/accept`. There is no admin page for it yet (open question 3).
+  Document mise's existing webhook registration as "the
   plugin venue, v0." Split `SurfaceCapabilities` into refresh and rotate (section 1). Validate realm
   and reserve native namespaces at manifest time (section 2). Add acceptance: new rows land
   unaccepted, wildcards and petitions don't reach them until a person accepts, and the person is

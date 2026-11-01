@@ -44,13 +44,13 @@ module Ward
     end
 
     def call
-      now = Time.current
+      now = @finished_at || Time.current
       complete = @exit_code != 2
       run = nil
       WardCheck.transaction do
         run = WardRun.create!(
-          check: @check, principal: @principal, started_at: @started_at, finished_at: @finished_at || now,
-          exit_code: @exit_code, complete: complete, lines: @lines, counts: counts, mission_id: @mission_id, created_at: now
+          check: @check, principal: @principal, started_at: @started_at, finished_at: now,
+          exit_code: @exit_code, complete: complete, lines: @lines, counts: counts, mission_id: @mission_id
         )
         diff = apply!(run, now)
         run.update!(diff: diff)

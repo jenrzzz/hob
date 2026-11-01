@@ -193,9 +193,10 @@ Registration still has two triggers:
 That reuse needs `SurfaceCapabilities` split in two first. **Refresh** fetches and reconciles the
 manifest and never touches the secret. **Rotate** mints and pushes a new secret and restarts the
 app, and runs only at bootstrap or when a person asks. As it stands, every call rotates and
-restarts (Part 1), so a scheduled refresh would restart the plugin on every poll. Rotate should
-also write the new secret to the rows before it pushes and restarts (or accept both secrets for a
-short overlap), so no delivery is signed with a secret the plugin has already dropped.
+restarts (Part 1), so a scheduled refresh would restart the plugin on every poll. Rotation must use an overlap: install the new verification key at the plugin while it still
+accepts the old key, confirm readiness, switch hob to signing with the new key, and retire the old
+key after the delivery window expires. Merely reversing the write/restart order moves the mismatch
+window rather than eliminating it. A failed cutover retains the last working key.
 
 ### 2. The capability schema: names, inputs, outputs, errors
 
@@ -257,13 +258,23 @@ build.
 
 Proposal:
 
-- Every plugin gets its own `Principal`, using the **`surface` kind that already exists**
+- Every plugin installation gets its own `Principal`, using the **`surface` kind that already exists**
   (`Principal::KINDS` is `human persona worker surface agent`; `trusted?` already treats surfaces
   as untrusted to decide requests or manage policy). There's no need for a new `plugin` kind. The
   principal carries an **inbound key** (verifies the plugin's self-announce pings are really from
   it) and an **outbound signing secret** (hob → plugin, same HMAC scheme and rotation
   `SurfaceCapabilities` already implements). Capability rows point at their plugin by principal id
   instead of the free-text `config.surface` they use today.
+- **Authenticate the manifest itself.** An authenticated notification only authorizes a refresh;
+  it does not authenticate the subsequent HTTP response. Bootstrap establishes a separate
+  manifest-verification credential. Over HTTPS, the plugin signs the exact manifest body together
+  with its installation id, a monotonic revision, and a hob-supplied refresh nonce. Hob verifies
+  these before reconciliation and rejects replayed or conflicting revisions. Serialize reconciliation
+  per installation so an older fetch cannot overwrite newer state. Credential changes require an
+  authenticated rotation or human bootstrap, never a declaration in the fetched manifest. This
+  protects against origin takeover without the credential; compromise of the plugin and its keys
+  remains outside that guarantee. Existing unsigned integrations retain explicit HTTPS-origin
+  trust until migrated and must not enter automatic discovery.
 - A plugin key reaches **only** plugin-management endpoints (manifest push/self-announce) — never
   the sentinel, never a conversation, never another plugin's data. This is the same structural
   rule the sentinel already holds for agents ("an agent key reaches only the sentinel and the
@@ -321,12 +332,22 @@ day one. Acceptance (section 5) closes that gap: the manifest realm is a *propos
 person when they accept the capability, and it takes effect only once they've confirmed or
 changed it.
 
-New: not every plugin is a shared household app. `todo_backends`, `calendar_backends`, and
-`mail_backends` already carry a `principal_id` for exactly this reason — a backend can be one
-person's own. Extend capabilities the same way: a plugin may register as scoped to one principal
-(a person's own self-hosted reader, say), and its capabilities should only be offerable to agents
-acting for that principal or above its clearance, rather than assuming every plugin is
-household-shared the way webhook capabilities implicitly do today.
+New: distinguish a **plugin type** (such as contacts) from a **plugin installation** (the
+household address book or Jenner's private address book). Each installation has its own surface
+principal, credentials, endpoint, optional human owner, and immutable namespace. Capabilities
+belong to that installation; refresh may never take over a row owned by another installation.
+
+Keep globally unique capability names by assigning an installation namespace at bootstrap:
+`contacts-house.card.get` and `contacts-jenner.card.get`, for example. The manifest declares local
+operation names, which hob maps into that namespace; legacy mise names retain the `mise`
+namespace. Store the remote operation separately so local naming does not dictate the wire route.
+
+For personal installations, require both adequate realm clearance **and** authorization to act
+for the installation's owner. Higher clearance alone never grants another person's data. Hob must
+derive that owner authorization from trusted request context or explicit delegation, not from a
+plugin claim or an agent-supplied owner argument, and enforce it in discovery and execution.
+Until that delegation model exists, personal installations must remain unavailable to agents.
+Acceptance confirms the owner as well as realm and kind.
 
 Separately, this is the right forcing function to add a **sink realm** to the `capabilities`
 table — today's `realm` only gates who may *ask*; nothing records where a capability's *effects*
@@ -345,16 +366,21 @@ existing capability's `input_schema` in place, silently breaking every caller an
   by name, so two versions can't share one. A breaking change gets a new name with a version
   suffix (`feedreader.entries` → `feedreader.entries.v2`), and both rows coexist for as long as the
   manifest lists both. The suffixed name is a new capability: it goes through acceptance (section
-  5), and its rules are written fresh rather than inherited, because constraints written for v1's
-  arguments may not mean the same thing for v2's. The manifest's `version` field records which
+  5), and exact-name rules are not copied, because constraints written for v1's arguments may
+  not mean the same thing for v2's. Existing wildcard rules still match the new name after
+  acceptance; the acceptance view must show those effective grants and constraints. The manifest's `version` field records which
   version an entry is; it doesn't change the name.
 - **On sync, hob diffs the schema of each name it already has** and **refuses that one entry**
   (not the whole plugin) when the change would break existing callers or rules: for
   `input_schema`, a field that becomes required, a removed field, a changed type, or a narrowed
   enum; for `output_schema`, a removed field or a changed type. Loosening changes (a new optional
-  input, a new output field, a required input becoming optional) go through. A refused entry keeps
-  its old schema and the person is notified, and the plugin has to publish the new shape under a
-  new versioned name.
+  input, a new output field, a required input becoming optional) go through. A refused entry retains its old contract for audit but is suspended immediately and the
+  person is notified: keeping the old schema in hob cannot make a changed remote endpoint obey it.
+  The plugin must publish the new shape under a new versioned name. Continuing to execute the old
+  version requires a separately bound endpoint that still serves its accepted contract and explicit
+  verification before resuming. Check suspension and the accepted contract revision again at
+  dispatch, including requests approved before refresh. Schema compatibility is not proof of
+  unchanged semantics; changes to declared kind, realm, or routing also require renewed review.
 - Retiring a version is the same `disable_missing` path mise already exercises today — no longer
   listed in the manifest, disabled not deleted, history preserved.
 - A capability nearing retirement carries `deprecated_at`/`sunset_at`, surfaced through
@@ -380,15 +406,18 @@ Proposal, layered on the existing executor/webhook path without changing its wir
   `Sentinel::Gate#limit_exceeded` already counts requests over a window: a consistently-failing
   plugin trips the breaker and new requests fail fast with a structured `unavailable` error
   instead of queueing up timeouts one at a time.
-- **An output that doesn't match its declared `output_schema`, or a signature failure on a
-  self-announce ping, counts against the breaker too.** Those are failures hob can actually detect,
-  and "misbehaving" is a trust signal, not just a liveness one: crossing a threshold should be able
-  to trigger the same quarantine as a key compromise (section 4). Whether a well-formed answer is
+- **An authenticated delivery whose output violates `output_schema` counts against the breaker.**
+  Repeated attributable contract violations may trigger quarantine (section 4). Invalid signatures
+  on self-announce pings are rejected, logged, and rate-limited separately; they must never count
+  against a claimed plugin's health or quarantine threshold, since anyone can forge a bad ping. Whether a well-formed answer is
   *true* isn't something hob can check from its side, and this design doesn't pretend it can.
-- **Process isolation stays outside hob.** A plugin that needs its own failure domain runs its own
-  process, the way mise already does — hob does not need a per-plugin worker pool or sandbox of
-  its own; the sentinel's job is to fail fast and keep every other capability's requests
-  unaffected, which the circuit breaker achieves without new infrastructure.
+- **Bound shared execution resources.** Webhook execution currently holds a hob worker inline.
+  A breaker cannot prevent concurrent slow requests from exhausting those workers before it trips.
+  Enforce per-installation in-flight limits with bounded admission (fail fast when full), an aggregate
+  plugin concurrency budget that leaves capacity for native work, maximum response bytes before
+  parsing, and a total execution deadline covering connection, body reads, and retries. Use an
+  isolated bounded delivery queue if these limits cannot preserve capacity in the inline path.
+  Remote process isolation remains the plugin operator's responsibility.
 
 ### 9. What hob core must still own
 
@@ -472,7 +501,10 @@ Proposal, layered on the existing executor/webhook path without changing its wir
   mise's own code needs to move. It has to come first because every later phase creates
   capabilities with no person running the command.
 - **Phase 1 — plugin identity.** Give each plugin a `Principal(kind: surface)`, add the inbound
-  key, the self-announce endpoint, and the quarantine gate check (section 4). Migrate mise first,
+  key, authenticated manifest responses, the self-announce endpoint, and the quarantine gate check
+  (section 4). Establish installation namespaces and ownership checks (section 6). Add versioned
+  contracts and suspension on incompatible refresh (section 7), plus bounded delivery resources
+  (section 8), before enabling automatic discovery. Migrate mise first,
   since it's already in production and the bootstrap step (a person running a one-time command)
   doesn't get harder. This comes *before* scheduled discovery: polling a manifest URL whose only
   trust is "whoever answered when a person last ran the rake task" lets anyone who takes over that
@@ -481,8 +513,8 @@ Proposal, layered on the existing executor/webhook path without changing its wir
   machinery) alongside the existing manual rake task, running refresh only, never rotate. Add
   `output_schema`/`errors` to the manifest shape, accepted but optional during a grace period so
   mise's current manifest keeps working unmodified.
-- **Phase 3 — versioning and the breaker.** Versioned names, the breaking-change diff guard
-  (section 7), per-plugin circuit breaker and health tracking — exercised first
+- **Phase 3 — health tracking and the breaker.** Add the per-plugin circuit breaker and health
+  tracking on top of Phase 1's execution bounds and contract guards — exercised first
   against mise, since it's low-risk to iterate on a plugin already in daily use.
 - **Phase 4 — a genuinely external plugin.** The feed-reader bridge (or equivalent), as the proving
   ground for identity/trust against software the household didn't write, and for personal- (not
@@ -492,7 +524,8 @@ Proposal, layered on the existing executor/webhook path without changing its wir
   compare against.
 
 At every phase, mail/calendar/todo/budget/records/ward/people stay native and unmodified, and
-mise's wire format changes only by gaining optional fields — nothing here requires a flag day.
+mise's delivery format remains compatible. Authenticated manifest refresh requires a coordinated
+upgrade before automatic discovery; manual registration remains available during migration.
 
 ### 13. Test cases against real capability gaps
 

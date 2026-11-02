@@ -543,14 +543,17 @@ Proposal, layered on the existing executor/webhook path without changing its wir
   both. Every fetch sends a fresh nonce. The signature binds the installation id, the plugin's
   monotonic revision (mise uses its boot time), the nonce, the delivery-key id it holds, and the
   body (`PluginSignature`; `Hob::Plugin` in gem 0.4.0). Revision and digest are checked under
-  `plugin.with_lock`, so an older fetch can't overwrite a newer one. After the first verified
+  `plugin.with_lock`, so an older fetch can't overwrite a newer one. The same lock rechecks trust
+on the locked row: an unsigned answer fetched before the installation began signing, or one
+signed with a key retired mid-fetch, is refused. After the first verified
   manifest (`signed_since`), unsigned answers are refused except on a person's re-registration,
   and the plugin may `POST /v1/plugins/announce`. That endpoint is HMAC-signed, IP-rate-limited,
-  debounced to one `PluginRefreshJob` a minute, and refuses unsigned or quarantined
+  debounced to one `PluginRefreshJob` a minute (an announcement inside the window queues one
+  trailing refresh for when it ends, so none is lost), and refuses unsigned or quarantined
   installations; a bad ping never touches the row it names. **Readiness:** for a signing
   installation, a rotated delivery secret overlaps with no clock, and the old one is retired
   when a manifest reports the new one's `kid`. A rotated key's predecessor verifies until a
-  manifest signed with the new key arrives. Rotating twice before the first lands keeps what last
+  manifest signed with the new key arrives; before any key is confirmed, the current one is kept. Rotating twice before the first lands keeps what last
   worked. An installation that has never signed keeps today's HTTPS-origin trust and the hour's
   overlap, and only a person refreshes it. Mise signs and announces after boot (mise
   `docs/HOB.md`, *Signing*). The migration for mise is `hob:surface:rotate[mise] APP=…` once its

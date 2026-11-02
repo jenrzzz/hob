@@ -17,16 +17,27 @@ class PluginAnnouncementsControllerTest < ActionDispatch::IntegrationTest
          headers: { "Content-Type" => "application/json", "X-Hob-Installation" => namespace, "X-Hob-Signature" => signature }
   end
 
-  test "a signed announcement queues one refresh, and another within the minute does not queue a second" do
-    assert_enqueued_with(job: PluginRefreshJob, args: [ "mise" ]) { announce }
-    assert_response :accepted
-    assert @plugin.reload.announced_at
+  test "a signed announcement queues a refresh; another within the minute queues one trailing refresh, not a second now" do
+    debounce = V1::PluginAnnouncementsController::DEBOUNCE
+    freeze_time do
+      assert_enqueued_with(job: PluginRefreshJob, args: [ "mise" ], at: nil) { announce }
+      assert_response :accepted
+      first = @plugin.reload.announced_at
 
-    assert_no_enqueued_jobs(only: PluginRefreshJob) { announce }
-    assert_response :accepted
+      travel 10.seconds
+      assert_enqueued_with(job: PluginRefreshJob, args: [ "mise" ], at: first + debounce) { announce }
+      assert_response :accepted
+      assert_equal first + debounce, @plugin.reload.announced_at
 
-    travel V1::PluginAnnouncementsController::DEBOUNCE + 1.second do
-      assert_enqueued_with(job: PluginRefreshJob) { announce }
+      travel 10.seconds
+      assert_no_enqueued_jobs(only: PluginRefreshJob) { announce }
+      assert_response :accepted, "the trailing refresh, still to come, will read this deploy's manifest too"
+
+      travel debounce
+      assert_enqueued_with(job: PluginRefreshJob, at: first + debounce + debounce) { announce }
+
+      travel debounce * 3
+      assert_enqueued_with(job: PluginRefreshJob, at: nil) { announce }
     end
   end
 

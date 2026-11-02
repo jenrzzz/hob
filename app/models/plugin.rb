@@ -61,9 +61,11 @@ class Plugin < ApplicationRecord
 
   # A new key, minted by hob. The one that last worked keeps verifying until
   # the plugin proves it holds the new one, so a failed cutover loses
-  # nothing.
+  # nothing. Before any signed manifest has confirmed a key, the plugin may
+  # already be using the current one, so it is kept unless an earlier one
+  # is still standing in for it.
   def rekey!(new_key)
-    working = key_confirmed_at ? key : previous_key
+    working = key_confirmed_at ? key : (previous_key.presence || key)
     update!(key: new_key, previous_key: working, key_confirmed_at: nil)
   end
 

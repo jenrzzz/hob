@@ -100,6 +100,7 @@ class SurfaceCapabilities
     counts = Capability.transaction do
       plugin = installation(surface, base, owner)
       plugin.with_lock do
+        recheck_trust!(plugin, signed, bootstrap: true)
         accept_revision!(plugin, signed, body)
         reconcile(plugin, entries, accept: true, first_secret: secret).tap do
           record_manifest(plugin, signed, body, bootstrap: true)
@@ -134,8 +135,14 @@ class SurfaceCapabilities
 
     entries, signed, body = manifest_entries(surface, base, plugin, bootstrap: false)
     # Serialized per installation: of two refreshes racing, the one holding
-    # the older revision cannot overwrite what the newer one wrote.
+    # the older revision cannot overwrite what the newer one wrote, and one
+    # fetched before the installation began signing cannot overwrite what a
+    # signed one wrote.
     counts = plugin.with_lock do
+      raise Error, "#{surface} was quarantined while it was being refreshed; nothing was changed" if plugin.quarantined?
+      raise Error, "#{surface} moved to #{plugin.base_url} while it was being refreshed; nothing was changed" if plugin.base_url != base
+
+      recheck_trust!(plugin, signed, bootstrap: false)
       accept_revision!(plugin, signed, body)
       reconcile(plugin, entries, accept: false).tap { record_manifest(plugin, signed, body) }
     end
@@ -245,6 +252,21 @@ class SurfaceCapabilities
                    "(if its key was lost, a person registers it again)"
     end
     [ parse_manifest(url, body), signed, body.to_s ]
+  end
+
+  # What the answer was checked against when it was fetched, checked again
+  # on the locked row: while it was in flight, another refresh may have
+  # established signed trust, or a rotation or registration may have retired
+  # the key it was signed with.
+  def recheck_trust!(plugin, signed, bootstrap:)
+    if signed.nil?
+      return unless plugin.signed? && !bootstrap
+
+      raise Error, "#{plugin.namespace} began signing its manifests while an unsigned one was being fetched; nothing was changed"
+    end
+    return if plugin.accepted_keys.include?(signed.key)
+
+    raise Error, "#{plugin.namespace}'s key changed while its manifest was being fetched; nothing was changed"
   end
 
   # A signed revision older than the one last reconciled, or the same one

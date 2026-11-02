@@ -36,6 +36,7 @@ class PluginSigningTest < ActiveSupport::TestCase
     @sign_with = nil
     SurfaceCapabilities.transport = lambda do |_url, headers|
       @fetches << headers
+      @during_fetch&.call
       body = @body || JSON.generate(@manifest)
       signature = @sign_with && PluginSignature.sign_manifest(
         key: @sign_with, namespace: @sign_as || headers["X-Hob-Installation"], revision: @revision,
@@ -210,6 +211,40 @@ class PluginSigningTest < ActiveSupport::TestCase
     assert_includes plugin.accepted_keys, working_key
     assert_equal working_secret, Capability.find_by!(name: "mise.recipes").config["previous_secret"]
     assert refresh.signed, "the plugin, never restarted, still gets through"
+  end
+
+  test "an unsigned answer fetched before another refresh established signed trust is refused under the lock" do
+    register
+    signed_meanwhile = Time.current
+    @during_fetch = -> { Plugin.find_by!(namespace: "mise").update!(signed_since: signed_meanwhile, manifest_revision: 500) }
+    @manifest["capabilities"][0]["description"] = "Overwritten by an unsigned answer that should never have landed."
+
+    assert_match(/began signing/, assert_raises(SurfaceCapabilities::Error) { refresh }.message)
+    assert_equal 500, plugin.manifest_revision
+    refute_match(/Overwritten/, Capability.find_by!(name: "mise.recipes").description)
+  end
+
+  test "a signed answer whose key was retired while it was fetched is refused under the lock" do
+    register
+    start_signing!
+    refresh
+    @during_fetch = -> { Plugin.find_by!(namespace: "mise").update!(key: "r" * 64, previous_key: nil, key_confirmed_at: nil) }
+    @revision += 1
+
+    assert_match(/key changed/, assert_raises(SurfaceCapabilities::Error) { refresh }.message)
+    assert_equal 100, plugin.manifest_revision
+  end
+
+  test "rotating before the first signed manifest keeps the key the plugin may already sign with" do
+    register
+    start_signing!
+    issued = @sign_with
+    assert_nil plugin.key_confirmed_at
+
+    @registry.rotate(surface: "mise", app: "app-1")
+
+    assert_includes plugin.accepted_keys, issued
+    assert refresh.signed, "the plugin, not yet restarted with the new key, still gets through"
   end
 
   test "an installation that has never signed rotates as before: an hour's overlap" do

@@ -8,7 +8,8 @@ module V1
   # POST /v1/plugins/announce
   #   X-Hob-Installation: <namespace>
   #   X-Hob-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(key, "hob-announce.v1\n<namespace>\n<t>\n<raw body>")>
-  #   → 202 { queued }      a refresh is queued (or one was, within DEBOUNCE)
+  #   → 202 { queued }      a refresh is queued: now, or, within DEBOUNCE of
+  #                         the last one, for when DEBOUNCE runs out
   #   → 401 { error }       the signature does not verify, or no such installation
   #   → 403 { error }       it has never signed its manifest, or is quarantined
   #
@@ -38,10 +39,31 @@ module V1
         return render json: { error: "#{namespace} has never signed its manifest: a person refreshes it" }, status: :forbidden
       end
 
-      queued = Plugin.where(id: plugin.id).where("announced_at IS NULL OR announced_at < ?", DEBOUNCE.ago)
-                     .update_all(announced_at: Time.current).positive?
-      PluginRefreshJob.perform_later(plugin.namespace) if queued
+      queue_refresh(plugin)
       render json: { queued: true }, status: :accepted
+    end
+
+    private
+
+    # At most one refresh per DEBOUNCE, and none lost. announced_at is when
+    # the latest refresh was queued to run: within DEBOUNCE of a past one,
+    # a trailing refresh is queued for DEBOUNCE after it; if that one is
+    # still to come, it will read whatever this announcement is about.
+    # Each step is a conditional update, so racing announcements queue once.
+    def queue_refresh(plugin)
+      now = Time.current
+      scope = Plugin.where(id: plugin.id)
+      if scope.where("announced_at IS NULL OR announced_at < ?", now - DEBOUNCE).update_all(announced_at: now).positive?
+        return PluginRefreshJob.perform_later(plugin.namespace)
+      end
+
+      last = scope.pick(:announced_at)
+      return if last.nil? || last > now
+
+      trailing = last + DEBOUNCE
+      return unless scope.where(announced_at: last).update_all(announced_at: trailing).positive?
+
+      PluginRefreshJob.set(wait_until: trailing).perform_later(plugin.namespace)
     end
   end
 end

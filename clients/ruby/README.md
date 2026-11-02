@@ -174,9 +174,26 @@ hob.sentinel.register_capability(name: "mise.add_to_shopping_list", description:
 
 A surface receiving a webhook delivery verifies it with
 `Hob::Webhook.verify(secret:, signature: request.headers["X-Hob-Signature"], body: request.raw_post)`.
-While hob rotates the secret it signs each delivery with both the old and the new one, for an hour;
+While hob rotates the secret it signs each delivery with both the old and the new one, for an hour
+(or, for a plugin that signs its manifest, until that manifest says it holds the new one);
 from 0.3.1 `verify` accepts any matching `v1`, so a surface verifies whether or not it has restarted
 with the new secret yet.
+A plugin installation (hob's PLUGINS.md) also holds `HOB_PLUGIN_KEY`, `HOB_PLUGIN_ID`, and
+`HOB_PLUGIN_URL`, which hob sets when it registers or rotates it. From 0.4.0, `Hob::Plugin` signs
+what the plugin tells hob: its manifest, in answer to hob's nonce, so hob knows the manifest is the
+plugin's and which delivery secret it holds, and an announcement asking hob to re-read it:
+
+```ruby
+body = JSON.generate(manifest)
+response.headers["X-Hob-Manifest-Signature"] =
+  Hob::Plugin.sign_manifest(body: body, nonce: request.headers["X-Hob-Nonce"], revision: BOOTED_AT.to_i)
+render json: body
+
+Hob::Plugin.announce   # after boot: -> true when hob queued a refresh
+```
+
+`revision` must never go down (the process's boot time will do).
+
 `Hob::Fake` scripts the sentinel (`fake.sentinel.allow(result)`, `.deny`,
 `.hold`), petitions (`.grant(name)`, `.build(name)`, `.hold_petition`,
 `.deny_petition`), and keeps an in-memory mission queue.

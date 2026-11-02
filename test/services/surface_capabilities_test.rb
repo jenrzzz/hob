@@ -32,7 +32,7 @@ class SurfaceCapabilitiesTest < ActiveSupport::TestCase
     @notify_url = ENV["HOB_NOTIFY_URL"]
     @fetched = []
     @manifest = MANIFEST.deep_dup
-    SurfaceCapabilities.transport = lambda { |url| @fetched << url; [ "200", JSON.generate(@manifest) ] }
+    SurfaceCapabilities.transport = lambda { |url, _headers| @fetched << url; [ "200", JSON.generate(@manifest), {} ] }
     @coolify = FakeCoolify.new
     @registry = SurfaceCapabilities.new(coolify: Provision::Coolify.new(transport: @coolify))
   end
@@ -137,9 +137,9 @@ class SurfaceCapabilitiesTest < ActiveSupport::TestCase
     @manifest["capabilities"][0]["kind"] = "delete"
     assert_raises(SurfaceCapabilities::Error) { register }
 
-    SurfaceCapabilities.transport = ->(_url) { [ "500", "nope" ] }
+    SurfaceCapabilities.transport = ->(_url, _headers) { [ "500", "nope", {} ] }
     assert_match(/HTTP 500/, assert_raises(SurfaceCapabilities::Error) { register }.message)
-    SurfaceCapabilities.transport = ->(_url) { [ "200", "<html>" ] }
+    SurfaceCapabilities.transport = ->(_url, _headers) { [ "200", "<html>", {} ] }
     assert_match(/not answer JSON/, assert_raises(SurfaceCapabilities::Error) { register }.message)
     assert_raises(SurfaceCapabilities::Error) { register(url: "mise.test") }
   end

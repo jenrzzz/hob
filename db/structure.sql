@@ -811,7 +811,15 @@ CREATE TABLE public.plugins (
     owner_id bigint,
     base_url character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    key character varying,
+    previous_key character varying,
+    key_confirmed_at timestamp(6) without time zone,
+    signed_since timestamp(6) without time zone,
+    manifest_revision bigint,
+    manifest_digest character varying,
+    refreshed_at timestamp(6) without time zone,
+    announced_at timestamp(6) without time zone
 );
 
 
@@ -4235,6 +4243,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261102000002'),
 ('20261102000001'),
 ('20261101000001'),
 ('20261025000001'),

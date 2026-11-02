@@ -219,7 +219,51 @@ signed with both the old and the new secret (`X-Hob-Signature:
 t=...,v1=<old>,v1=<new>`), so the surface verifies whether or not it has
 restarted yet; `Hob::Webhook.verify` (the gem) accepts any matching `v1`. A
 surface on an older gem reads only the last `v1`, the new secret's, and so
-sees what it always did: a mismatch only while it restarts.
+sees what it always did: a mismatch only while it restarts. For an
+installation that signs its manifest (below), the overlap has no clock: the
+old secret signs until the plugin's signed manifest says it holds the new one.
+
+**Signing** (PLUGINS.md, Phase 1b). Register and rotate also mint the
+installation's own key, and hand it over with its id and where hob is:
+`HOB_PLUGIN_KEY`, `HOB_PLUGIN_ID`, `HOB_PLUGIN_URL` (from `HOB_CLIENT_URL`),
+next to `HOB_WEBHOOK_SECRET`. The key is not an API key: it signs what the
+plugin tells hob and reaches nothing else. Every manifest fetch carries
+`X-Hob-Installation` and a fresh `X-Hob-Nonce`, and a plugin holding a key
+answers with
+
+```
+X-Hob-Manifest-Signature: rev=<int>,kid=<delivery key id>,v1=<hex HMAC-SHA256(key, payload)>
+payload = "hob-manifest.v1\n<installation>\n<rev>\n<nonce>\n<kid>\n<raw body>"
+```
+
+(`PluginSignature`; `Hob::Plugin` in the gem, from 0.4.0). It must verify
+before anything is written. `rev` is the plugin's own revision, and it must
+never go down: an older one, or the same one with a different body, is
+refused. Refreshes of one installation are serialized on its row. `kid` (the
+first 16 hex of `SHA256("hob-delivery-key.v1\n" + secret)`) says which
+delivery secret the plugin holds: when it is the newest, the old one stops
+signing. A rotated key's predecessor keeps verifying until a manifest signed
+with the new key arrives, so a failed cutover keeps what last worked.
+
+Once a signed manifest has verified, the installation **signs** (`hob:surface:list`
+says since when). From then on an unsigned answer is refused (only a person
+registering it again, which is bootstrap trust, takes one), and the plugin
+may ask to be refreshed:
+
+```
+POST /v1/plugins/announce
+X-Hob-Installation: <namespace>
+X-Hob-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(key, "hob-announce.v1\n<namespace>\n<t>\n<raw body>")>
+```
+
+which queues `PluginRefreshJob` (once a minute at most) and answers 202. An
+announcement that does not verify is answered 401, logged, and rate-limited
+by address, and never touches the installation it names. One from an
+installation that has never signed, or is quarantined, is answered 403. The
+refresh verifies the manifest it reads like any other, what it adds waits
+for a person to accept it, and a refused one is told to a person. An
+installation that has never signed keeps the trust it had, its HTTPS
+origin's, and only a person refreshes it.
 
 The first such surface is mise, the kitchen: `mise.recipes`,
 `mise.recipe.get`, `mise.recipe.add`, `mise.plan`, `mise.plan.add`,

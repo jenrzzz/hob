@@ -45,6 +45,7 @@ Rails.application.routes.draw do
   namespace :v1 do
     resources :completions, only: %i[create show]
     resources :app_sessions, only: :create
+    post "plugins/announce", to: "plugin_announcements#create", as: :plugin_announcement
     resources :conversations, only: %i[index create show] do
       resources :branches, only: %i[index create update], param: :name
       resource :chat, only: :create, controller: "chats"

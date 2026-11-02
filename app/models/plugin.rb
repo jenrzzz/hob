@@ -16,6 +16,13 @@
 #              person's data, and until hob has a model for an agent acting
 #              on a person's behalf, a personal installation is not offered
 #              to agents at all: only its owner reaches it.
+#   key        hob-minted, handed to the plugin as HOB_PLUGIN_KEY: it signs
+#              the plugin's manifest and its announcements (PluginSignature).
+#              Once a signed manifest has verified (signed_since), an
+#              unsigned one is refused, and the plugin may ask hob to
+#              refresh it (POST /v1/plugins/announce). One that has never
+#              signed keeps the trust it had: its HTTPS origin, refreshed
+#              only by a person.
 class Plugin < ApplicationRecord
   NAMESPACE_FORMAT = /\A[a-z0-9]+(?:[_-][a-z0-9]+)*\z/
   PRINCIPAL_PREFIX = "plugin:".freeze
@@ -38,6 +45,34 @@ class Plugin < ApplicationRecord
       principal = Principal.create!(kind: "surface", name: "#{PRINCIPAL_PREFIX}#{namespace}", max_clearance: Realm.order(:rank).first.slug)
       create!(namespace: namespace, plugin_type: plugin_type, base_url: base_url, owner: owner, principal: principal)
     end
+  end
+
+  # Whether it has proven it signs its manifest: the condition for it to
+  # refresh itself, with no person running the command.
+  def signed?
+    signed_since.present?
+  end
+
+  # The keys a signature from it may be made with: the current one, and,
+  # until a manifest signed with the current one arrives, the one before it.
+  def accepted_keys
+    [ key, (previous_key unless key_confirmed_at) ].compact_blank
+  end
+
+  # A new key, minted by hob. The one that last worked keeps verifying until
+  # the plugin proves it holds the new one, so a failed cutover loses
+  # nothing.
+  def rekey!(new_key)
+    working = key_confirmed_at ? key : previous_key
+    update!(key: new_key, previous_key: working, key_confirmed_at: nil)
+  end
+
+  # A signed manifest verified with `with` (one of accepted_keys).
+  def manifest_verified!(with:, revision:, digest:)
+    attrs = { manifest_revision: revision, manifest_digest: digest, refreshed_at: Time.current }
+    attrs[:signed_since] = Time.current unless signed?
+    attrs.merge!(key_confirmed_at: Time.current, previous_key: nil) if with == key && key_confirmed_at.nil?
+    update!(attrs)
   end
 
   def personal?

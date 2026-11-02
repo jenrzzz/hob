@@ -209,6 +209,34 @@ class SentinelTest < ActiveSupport::TestCase
     Sentinel::Webhook.transport = nil
   end
 
+  test "the gate denies a capability nobody has accepted, whatever rule matches" do
+    cap = Capability.create!(name: "mise.pantry.scan", description: "Pantry", kind: "read", realm: "household",
+                             venue: "webhook", enabled: false, accepted_at: nil,
+                             config: { "url" => "https://mise.test/hob/capabilities/mise.pantry.scan", "secret" => "s3cret" })
+    policy!(nil, "*", "allow")
+    request = SentinelRequest.create!(principal: @muse, capability: cap, arguments: {}, surface: "muse", realm: "household")
+
+    verdict = Sentinel::Gate.new(request).evaluate
+    assert_equal [ "deny", "policy" ], [ verdict.decision, verdict.decided_by ]
+    assert_match(/waiting for a person to accept/, verdict.rationale)
+  end
+
+  test "a webhook signature carries one v1 per secret while a rotation overlaps; any one verifies" do
+    body = '{"request":"r1"}'
+    now = Time.now.to_i
+    header = Sentinel::Webhook.signature(%w[old new], now, body)
+    assert_equal 2, header.scan("v1=").size
+    assert Sentinel::Webhook.verify("old", header, body)
+    assert Sentinel::Webhook.verify("new", header, body)
+    refute Sentinel::Webhook.verify("other", header, body)
+    assert_equal Sentinel::Webhook.signature("new", now, body), Sentinel::Webhook.signature([ "new" ], now, body)
+
+    config = { "secret" => "new", "previous_secret" => "old", "previous_secret_until" => 1.minute.from_now.iso8601 }
+    assert_equal %w[old new], Sentinel::Webhook.signing_secrets(config)
+    assert_equal %w[new], Sentinel::Webhook.signing_secrets(config.merge("previous_secret_until" => 1.minute.ago.iso8601))
+    assert_equal %w[new], Sentinel::Webhook.signing_secrets({ "secret" => "new" })
+  end
+
   test "native failures are recorded on the request" do
     policy!(@muse, "hob.conversation.read", "allow")
     request = submit("hob.conversation.read", { "id" => "nope" })

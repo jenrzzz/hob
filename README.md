@@ -360,6 +360,8 @@ Coolify app; mise's `docs/HOB.md` is the contract, and SENTINEL.md
 ```sh
 bin/rails "hob:surface:register[mise,https://mise.example.com]" APP=<mise's coolify app uuid>
 bin/rails "hob:surface:capabilities[mise]"                       # what is registered, and how much each has been asked
+bin/rails "hob:surface:refresh[mise]"                            # after mise ships a manifest change: no restart; new ones wait for
+bin/rails hob:capabilities:unaccepted                            #   you to accept them (hob:capabilities:accept[name])
 
 for cap in recipes recipe.get plan shopping_list preferences; do     # the reads: allowed outright
   bin/rails "hob:sentinel:policy[marley,mise.$cap,allow]" LIMITS='{"per_hour":60}'

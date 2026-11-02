@@ -153,18 +153,55 @@ from it:
 ```sh
 bin/rails "hob:surface:register[mise,https://mise.example.com]" APP=<mise's coolify app uuid>
 bin/rails "hob:surface:capabilities[mise]"
+bin/rails "hob:surface:refresh[mise]"                    # follow the manifest; never touches the secret
+bin/rails "hob:surface:rotate[mise]" APP=<mise's coolify app uuid>
+bin/rails hob:capabilities:unaccepted                    # what a surface proposed that nobody has accepted
+bin/rails "hob:capabilities:accept[mise.pantry.scan,personal]" BY=jenner
 ```
 
-That fetches the manifest, mints the secret deliveries are signed with,
-sets it on the surface's Coolify app as `HOB_WEBHOOK_SECRET` (the way
+This is the plugin venue, v0 ([PLUGINS.md](PLUGINS.md)): the app owns the
+implementation, hob owns the catalog and the gate. Registering is
+bootstrap, by a person: it fetches the manifest, refuses it whole if any
+entry is malformed (no name under the surface's prefix, no description, a
+kind other than read/act, an input schema that is not an object, a realm hob
+does not know, a name listed twice), refuses a surface named for one of
+hob's own namespaces (`hob`, `mail`, `todo`, ... — every native handler's
+prefix, plus `sentinel` and `forge`), mints the secret deliveries are signed
+with, sets it on the surface's Coolify app as `HOB_WEBHOOK_SECRET` (the way
 `hob:provision` hands over a key: a person never sees it; without `APP=` it
-is printed once), and upserts a row per entry. Re-running follows the
-manifest: new entries are added, descriptions and schemas follow the
-surface's code, an entry that is gone is disabled (its requests are history,
-so it is not deleted), the secret rotates. Kind, realm, and enabled are left
-alone on a row that exists, so a household can tune them, and a native
-capability's name cannot be taken over. A petition waiting on the name is
-granted the moment the row lands, as with a forge build.
+is printed once), and upserts a row per entry, accepted, since the person
+running it is looking at the list. Re-running does the same again.
+
+**Refresh** re-reads the manifest of a surface already registered, at the
+URL it was registered at (moving it is a registration), and follows it: new
+entries are added, descriptions and schemas follow the surface's code, an
+entry that is gone is disabled (its requests are history, so it is not
+deleted). It never touches the secret or restarts the app, so it is safe to
+run on a schedule. Kind, realm, and enabled are left alone on a row that
+exists, so a household can tune them, and a native capability's name cannot
+be taken over.
+
+What refresh **adds** is a proposal: it lands disabled and unaccepted, and
+a person is told (`Notify.person`). Nothing reaches it until a person
+accepts it, not even a wildcard rule like `muse,*,review`, and a petition
+waiting on its name is not granted on it. Until then its kind and realm
+follow the manifest. Accepting (`hob:capabilities:accept`, or `POST
+/v1/sentinel/capabilities/:name/accept` with a person's key) confirms or
+changes the proposed realm and kind, enables it, and grants the petitions
+that were waiting; `hob:capabilities:unaccepted` (or `GET
+/v1/sentinel/capabilities?unaccepted=1`) shows each proposal with the rules
+that will reach it and the petitions it will grant. A row put there by a
+person — a native handler, a merged forge PR, a registration, a `POST` with
+a person's key — is accepted as it lands, and its waiting petitions are
+granted the moment it does.
+
+**Rotate** mints a new secret and writes it to the surface's rows before it
+hands it to the app and restarts it. For an hour after, each delivery is
+signed with both the old and the new secret (`X-Hob-Signature:
+t=...,v1=<old>,v1=<new>`), so the surface verifies whether or not it has
+restarted yet; `Hob::Webhook.verify` (the gem) accepts any matching `v1`. A
+surface on an older gem reads only the last `v1`, the new secret's, and so
+sees what it always did: a mismatch only while it restarts.
 
 The first such surface is mise, the kitchen: `mise.recipes`,
 `mise.recipe.get`, `mise.recipe.add`, `mise.plan`, `mise.plan.add`,

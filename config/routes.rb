@@ -97,7 +97,9 @@ Rails.application.routes.draw do
       resources :petitions, only: %i[index show create] do
         post :decide, on: :member
       end
-      resources :capabilities, only: %i[index show create update destroy], param: :name, constraints: { name: /[^\/]+/ }
+      resources :capabilities, only: %i[index show create update destroy], param: :name, constraints: { name: /[^\/]+/ } do
+        post :accept, on: :member
+      end
       resources :policies, only: %i[index create update destroy]
       # The same MCP server for an agent's key (CLAUDE_CODE.md, "Agents"):
       # its tools are what policy grants it, and each call is a request.

@@ -30,8 +30,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             // options.attachScreenshot = true // This adds a screenshot to the error events
             // options.attachViewHierarchy = true // This adds the view hierarchy to the error events
             
-            // Enable experimental logging features
-            options.experimental.enableLogs = true
+            // Enable logging features
+            options.enableLogs = true
         }
         // Remove the next line after confirming that your Sentry integration is working.
         SentrySDK.capture(message: "This app uses Sentry! :)")

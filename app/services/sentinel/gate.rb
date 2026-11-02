@@ -23,6 +23,11 @@ module Sentinel
       if @agent.capabilities_frozen?
         return deny("claim", "#{@agent.name}'s capabilities are frozen pending review: #{@agent.capabilities_freeze_reason}")
       end
+      # A quarantined plugin installation, or a personal one that is not the
+      # caller's, is out of reach whatever a rule says (PLUGINS.md, section 4).
+      if (problem = @capability.unavailable_to(@agent))
+        return deny("plugin", problem)
+      end
       # A capability a surface proposed on its own reaches nobody, whatever
       # rule (a wildcard, say) would match it, until a person accepts it.
       unless @capability.accepted?

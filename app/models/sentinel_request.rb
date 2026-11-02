@@ -9,7 +9,7 @@
 class SentinelRequest < ApplicationRecord
   STATUSES = %w[pending executing completed failed denied].freeze
   DECISIONS = %w[allow deny escalate].freeze
-  DECIDERS = %w[policy limit constraint realm reviewer claim human].freeze
+  DECIDERS = %w[policy limit constraint realm reviewer claim plugin human].freeze
 
   belongs_to :principal
   belongs_to :capability

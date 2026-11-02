@@ -25,6 +25,12 @@ require "net/http"
 #   bin/rails "hob:surface:refresh[mise]"
 #   bin/rails "hob:surface:rotate[mise]" APP=<coolify app uuid>
 #
+# Each surface is a Plugin installation (PLUGINS.md, Phase 1): registering
+# one the first time mints its `surface` principal and fixes its namespace,
+# and its rows belong to it, so no other installation can take them. OWNER=
+# makes it a personal installation, reached only by that person. A
+# quarantined installation is not refreshed.
+#
 # Reconciling: new capabilities are added, changed descriptions and schemas
 # follow the code, a capability the manifest no longer lists is disabled
 # (its requests are history, so it is not deleted). Kind, realm, and enabled
@@ -38,7 +44,7 @@ class SurfaceCapabilities
   # How long deliveries stay signed with the old secret too, after a rotation:
   # long enough for the surface to restart with the new one.
   ROTATION_OVERLAP = 1.hour
-  SURFACE_FORMAT = /\A[a-z0-9]+(?:[_-][a-z0-9]+)*\z/
+  SURFACE_FORMAT = Plugin::NAMESPACE_FORMAT
   # Namespaces hob uses for itself beyond its native handlers' prefixes: the
   # steward's charter pseudo-capability (sentinel.petition) and the forge.
   RESERVED = %w[sentinel forge].freeze
@@ -46,7 +52,7 @@ class SurfaceCapabilities
   # Tests inject a lambda (url) -> [status, body] here.
   mattr_accessor :transport
 
-  Result = Struct.new(:surface, :created, :updated, :disabled, :proposed, :secret, :pushed, :restarted, keyword_init: true)
+  Result = Struct.new(:surface, :plugin, :created, :updated, :disabled, :proposed, :secret, :pushed, :restarted, keyword_init: true)
 
   def initialize(coolify: nil)
     @coolify = coolify
@@ -54,17 +60,23 @@ class SurfaceCapabilities
 
   # Bootstrap, by a person. -> Result. `secret` is the new secret when it was
   # not pushed to an app, for the person to set by hand, and nil when it was.
-  def register(surface:, url:, app: nil, restart: true, secret: nil)
+  # `owner` (a person) makes a new installation personal; it is ignored on
+  # a re-registration, and an installation's owner is not changed here.
+  def register(surface:, url:, app: nil, restart: true, secret: nil, owner: nil)
     base = base_url(url)
+    raise Error, "#{owner.name} is not a person; only a person owns a plugin" if owner && !owner.trusted?
+
     entries = manifest_entries(surface, base)
     secret = secret.presence || SecureRandom.hex(32)
 
+    plugin = nil
     counts = Capability.transaction do
-      reconcile(surface, base, entries, accept: true, first_secret: secret).tap { rekey(surface, secret) }
+      plugin = installation(surface, base, owner)
+      reconcile(plugin, entries, accept: true, first_secret: secret).tap { rekey(surface, secret) }
     end
     counts.delete(:proposed_names)
     pushed = push(app, secret, restart)
-    Result.new(surface: surface, **counts, proposed: [], secret: pushed ? nil : secret, pushed: pushed,
+    Result.new(surface: surface, plugin: plugin, **counts, proposed: [], secret: pushed ? nil : secret, pushed: pushed,
                restarted: pushed && restart)
   end
 
@@ -72,19 +84,20 @@ class SurfaceCapabilities
   # The surface must already be registered (that is where its URL and secret
   # come from); moving it to another URL is a registration, by a person.
   def refresh(surface:, url: nil)
-    existing = self.class.registered(surface)
-    raise Error, "#{surface} is not registered: bin/rails \"hob:surface:register[#{surface},url]\"" if existing.empty?
+    plugin = Plugin.find_by(namespace: surface)
+    raise Error, "#{surface} is not registered: bin/rails \"hob:surface:register[#{surface},url]\"" if plugin.nil?
+    raise Error, "#{surface} is quarantined (#{plugin.principal.capabilities_freeze_reason}): release it first" if plugin.quarantined?
 
-    base = registered_base(existing)
+    base = plugin.base_url
     if url.present? && base_url(url) != base
       raise Error, "#{surface} is registered at #{base}, not #{base_url(url)}: re-register to move it"
     end
 
     entries = manifest_entries(surface, base)
-    counts = Capability.transaction { reconcile(surface, base, entries, accept: false) }
+    counts = Capability.transaction { reconcile(plugin, entries, accept: false) }
     proposed = counts.delete(:proposed_names)
     tell_person(surface, proposed) if proposed.any?
-    Result.new(surface: surface, **counts, proposed: proposed, secret: nil, pushed: false, restarted: false)
+    Result.new(surface: surface, plugin: plugin, **counts, proposed: proposed, secret: nil, pushed: false, restarted: false)
   end
 
   # Mint (or take) a new secret: written to the rows first, with the old one
@@ -95,13 +108,14 @@ class SurfaceCapabilities
     secret = secret.presence || SecureRandom.hex(32)
     Capability.transaction { rekey(surface, secret) }
     pushed = push(app, secret, restart)
-    Result.new(surface: surface, created: 0, updated: 0, disabled: 0, proposed: [], secret: pushed ? nil : secret,
+    Result.new(surface: surface, plugin: Plugin.find_by(namespace: surface), created: 0, updated: 0, disabled: 0, proposed: [], secret: pushed ? nil : secret,
                pushed: pushed, restarted: pushed && restart)
   end
 
-  # The webhook capabilities registered for a surface.
+  # The webhook capabilities registered for a surface: its installation's.
   def self.registered(surface)
-    Capability.where(venue: "webhook").select { |cap| cap.config["surface"] == surface }.sort_by(&:name)
+    plugin = Plugin.find_by(namespace: surface)
+    plugin ? plugin.capabilities.where(venue: "webhook").order(:name).to_a : []
   end
 
   # The first segment of every native capability's name, and hob's own
@@ -119,11 +133,18 @@ class SurfaceCapabilities
     base
   end
 
-  def registered_base(caps)
-    bases = caps.map { |cap| cap.config["url"].to_s.delete_suffix("#{MANIFEST_PATH}/#{cap.name}") }.uniq
-    raise Error, "#{caps.first.config['surface']}'s capabilities point at more than one URL: #{bases.join(', ')}" if bases.size > 1
+  # The surface's installation, made the first time it registers. A person
+  # re-registering it may move it to another URL.
+  def installation(surface, base, owner)
+    plugin = Plugin.find_by(namespace: surface)
+    if plugin
+      plugin.update!(base_url: base)
+      return plugin
+    end
 
-    bases.first
+    Plugin.install!(namespace: surface, plugin_type: surface, base_url: base, owner: owner)
+  rescue ActiveRecord::RecordInvalid => e
+    raise Error, "#{surface}: #{e.record.errors.full_messages.to_sentence}"
   end
 
   # Fetched and checked in full before anything is written.
@@ -169,12 +190,13 @@ class SurfaceCapabilities
   # -> { created:, updated:, disabled:, proposed_names: }. A row it adds
   # signs as the surface's rows already do; `first_secret` is for a surface
   # with none yet.
-  def reconcile(surface, base, entries, accept:, first_secret: nil)
+  def reconcile(plugin, entries, accept:, first_secret: nil)
+    surface = plugin.namespace
     secrets = self.class.registered(surface).any? ? signing_config(surface) : { "secret" => first_secret }
     counts = Hash.new(0)
     proposed = []
     entries.each do |entry|
-      cap = upsert(entry, surface, base, secrets, accept: accept)
+      cap = upsert(entry, plugin, secrets, accept: accept)
       counts[cap.previously_new_record? ? :created : :updated] += 1
       proposed << cap.name if cap.previously_new_record? && !cap.accepted?
     end
@@ -182,15 +204,19 @@ class SurfaceCapabilities
     { created: counts[:created], updated: counts[:updated], disabled: counts[:disabled], proposed_names: proposed }
   end
 
-  def upsert(entry, surface, base, secrets, accept:)
+  def upsert(entry, plugin, secrets, accept:)
+    surface = plugin.namespace
+    base = plugin.base_url
     cap = Capability.find_or_initialize_by(name: entry["name"])
     created = cap.new_record?
     raise Error, "#{cap.name} is a #{cap.venue} capability, not a surface's" unless created || cap.venue == "webhook"
-    unless created || cap.config["surface"] == surface
-      raise Error, "#{cap.name} belongs to #{cap.config['surface'].inspect}, not #{surface}"
+    unless created || cap.plugin_id == plugin.id
+      owner = cap.plugin&.namespace || cap.config["surface"]
+      raise Error, "#{cap.name} belongs to #{owner ? owner.inspect : 'no installation (it was registered by hand)'}, not #{surface}"
     end
 
     cap.venue = "webhook"
+    cap.plugin = plugin
     cap.config = (created ? {} : cap.config).merge(secrets).merge("url" => "#{base}#{MANIFEST_PATH}/#{cap.name}", "surface" => surface)
     cap.description = entry["description"]
     cap.input_schema = entry["input_schema"]

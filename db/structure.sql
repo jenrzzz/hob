@@ -330,7 +330,8 @@ CREATE TABLE public.capabilities (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     accepted_at timestamp(6) without time zone,
-    accepted_by_id bigint
+    accepted_by_id bigint,
+    plugin_id bigint
 );
 
 
@@ -796,6 +797,41 @@ CREATE TABLE public.petitions (
 );
 
 ALTER TABLE ONLY public.petitions FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: plugins; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.plugins (
+    id bigint NOT NULL,
+    namespace character varying NOT NULL,
+    plugin_type character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    owner_id bigint,
+    base_url character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: plugins_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.plugins_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: plugins_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.plugins_id_seq OWNED BY public.plugins.id;
 
 
 --
@@ -1524,6 +1560,13 @@ ALTER TABLE ONLY public.model_roles ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: plugins id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.plugins ALTER COLUMN id SET DEFAULT nextval('public.plugins_id_seq'::regclass);
+
+
+--
 -- Name: presets id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1841,6 +1884,14 @@ ALTER TABLE ONLY public.personas
 
 ALTER TABLE ONLY public.petitions
     ADD CONSTRAINT petitions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: plugins plugins_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.plugins
+    ADD CONSTRAINT plugins_pkey PRIMARY KEY (id);
 
 
 --
@@ -2282,6 +2333,13 @@ CREATE UNIQUE INDEX index_capabilities_on_name ON public.capabilities USING btre
 
 
 --
+-- Name: index_capabilities_on_plugin_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_capabilities_on_plugin_id ON public.capabilities USING btree (plugin_id);
+
+
+--
 -- Name: index_conversations_on_kind_and_updated_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2643,6 +2701,27 @@ CREATE INDEX index_petitions_on_sentinel_policy_id ON public.petitions USING btr
 --
 
 CREATE INDEX index_petitions_on_status_and_created_at ON public.petitions USING btree (status, created_at);
+
+
+--
+-- Name: index_plugins_on_namespace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_plugins_on_namespace ON public.plugins USING btree (namespace);
+
+
+--
+-- Name: index_plugins_on_owner_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_plugins_on_owner_id ON public.plugins USING btree (owner_id);
+
+
+--
+-- Name: index_plugins_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_plugins_on_principal_id ON public.plugins USING btree (principal_id);
 
 
 --
@@ -3090,6 +3169,14 @@ ALTER TABLE ONLY public.herald_key_changes
 
 
 --
+-- Name: plugins fk_rails_0ef226f090; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.plugins
+    ADD CONSTRAINT fk_rails_0ef226f090 FOREIGN KEY (owner_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: record_collections fk_rails_110107042c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3191,6 +3278,14 @@ ALTER TABLE ONLY public.gofer_key_changes
 
 ALTER TABLE ONLY public.guidance_changes
     ADD CONSTRAINT fk_rails_3afeba51b4 FOREIGN KEY (sentinel_policy_id) REFERENCES public.sentinel_policies(id);
+
+
+--
+-- Name: plugins fk_rails_42385861ea; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.plugins
+    ADD CONSTRAINT fk_rails_42385861ea FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -3383,6 +3478,14 @@ ALTER TABLE ONLY public.record_versions
 
 ALTER TABLE ONLY public.agent_messages
     ADD CONSTRAINT fk_rails_92352b2e86 FOREIGN KEY (sender_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: capabilities fk_rails_9445e95ee8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.capabilities
+    ADD CONSTRAINT fk_rails_9445e95ee8 FOREIGN KEY (plugin_id) REFERENCES public.plugins(id);
 
 
 --
@@ -4132,6 +4235,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261102000001'),
 ('20261101000001'),
 ('20261025000001'),
 ('20261022000001'),

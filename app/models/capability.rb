@@ -14,6 +14,12 @@
 # accepts it (#accept!) and confirms or changes the realm and kind it
 # proposed. Everything else (native handlers, by-hand registration, a
 # person's own POST) is accepted as it is created, since a person put it there.
+#
+# A webhook row a surface registered belongs to its Plugin installation
+# (PLUGINS.md, Phase 1). Whether a caller may reach it also depends on the
+# installation: not while it is quarantined, and, for a personal one, only
+# by its owner (#unavailable_to, enforced in listings, at the gate, and
+# again at delivery).
 class Capability < ApplicationRecord
   class Error < StandardError; end
 
@@ -22,6 +28,7 @@ class Capability < ApplicationRecord
   VENUES = %w[native webhook poll].freeze
 
   belongs_to :accepted_by, class_name: "Principal", optional: true
+  belongs_to :plugin, optional: true
   has_many :sentinel_requests, dependent: :restrict_with_exception
 
   # Accepted unless whoever creates it says otherwise (accepted_at: nil).
@@ -38,6 +45,15 @@ class Capability < ApplicationRecord
 
   scope :enabled, -> { where(enabled: true) }
   scope :unaccepted, -> { where(accepted_at: nil) }
+  # What may be shown to `caller` as something to ask for: enabled, and not
+  # from an installation it may not reach (Plugin#unavailable_to, in SQL).
+  scope :offered_to, lambda { |caller|
+    person = caller && !caller.agent? ? caller.id : nil
+    enabled.joins("LEFT JOIN plugins ON plugins.id = capabilities.plugin_id " \
+                  "LEFT JOIN principals plugin_principals ON plugin_principals.id = plugins.principal_id")
+           .where("capabilities.plugin_id IS NULL OR (plugin_principals.capabilities_frozen_at IS NULL " \
+                  "AND (plugins.owner_id IS NULL OR plugins.owner_id = ?))", person)
+  }
 
   # A capability that petitions were waiting on has arrived (a merged forge
   # PR synced at boot, or a person registering a surface): grant them. One a
@@ -73,6 +89,11 @@ class Capability < ApplicationRecord
   # Petitions that accepting it will grant.
   def waiting_petitions
     Petition.where(status: %w[proposed building], capability_name: name).includes(:principal)
+  end
+
+  # -> why `caller` may not reach it, whatever a rule says, or nil.
+  def unavailable_to(caller)
+    plugin&.unavailable_to(caller)
   end
 
   def native?

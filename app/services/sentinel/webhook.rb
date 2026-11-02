@@ -26,6 +26,13 @@ module Sentinel
     module_function
 
     def deliver(capability, request, transport: nil)
+      # Checked again here, not only at the gate: a request a person approved
+      # before its plugin was quarantined is not delivered after.
+      plugin = capability.plugin_id && Plugin.includes(:principal, :owner).find(capability.plugin_id)
+      if (problem = plugin&.unavailable_to(request.principal))
+        raise Error, problem
+      end
+
       body = JSON.generate(
         request: request.id, capability: capability.name, agent: request.principal.name,
         realm: request.realm, arguments: request.arguments, reason: request.reason,

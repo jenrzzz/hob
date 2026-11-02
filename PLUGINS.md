@@ -1,7 +1,8 @@
 # A plugin platform for hob
 
-*Feasibility and design investigation. **Phase 0 (section 12) is implemented**; Phases 1–5 are
-still proposals. Part 1 describes the code as it was before Phase 0; SENTINEL.md (*Capabilities*)
+*Feasibility and design investigation. **Phase 0 (section 12) is implemented**, and Phase 1 is
+under way (its first part, installations and quarantine, is in); the rest of Phase 1 and Phases 2–5
+are still proposals. Part 1 describes the code as it was before Phase 0; SENTINEL.md (*Capabilities*)
 describes it as it is now.*
 
 Jenner's ask: today every app integration requires defining capabilities inside hob itself (mail,
@@ -517,6 +518,25 @@ Proposal, layered on the existing executor/webhook path without changing its wir
   doesn't get harder. This comes *before* scheduled discovery: polling a manifest URL whose only
   trust is "whoever answered when a person last ran the rake task" lets anyone who takes over that
   URL (DNS, an expired domain, a hijacked deploy) add capabilities with nobody watching.
+
+  **Phase 1a — installations and quarantine. Done.** A `plugins` table: one row per installation,
+  with its `Principal(kind: surface)` (named `plugin:<namespace>`), an immutable `namespace`,
+  `plugin_type`, `base_url`, and an optional human `owner`. `capabilities.plugin_id` replaces
+  `config.surface` as what a row belongs to (the config key stays, unread, for now); the migration
+  makes an owner-less installation for every surface already registered. Ownership is checked by
+  installation, so refresh can't take a row another installation, or a person by hand, put
+  there. Quarantine (`Plugin#quarantine!`, `hob:surface:quarantine`/`:release`) freezes the
+  installation's principal; `Capability#unavailable_to(caller)` is then checked at the gate (a
+  new `decided_by: plugin`), again in `Sentinel::Webhook.deliver` (so it covers requests approved
+  before the quarantine and a person's own MCP calls), and in SQL in every listing
+  (`Capability.offered_to`). A quarantined installation is not refreshed. A personal installation
+  (`OWNER=` at first registration) reaches only its owner. Until delegation exists, no agent can
+  use it, which is the interim rule from section 6. Acceptance views now show the owner.
+
+  Still to do in Phase 1, roughly in this order. 1b: the inbound key, signed manifests, the
+  self-announce endpoint, and rotation readiness (needs the gem and mise). 1c: per-installation
+  namespaces distinct from the plugin type, with local operation names mapped into them. 1d:
+  versioned contracts and suspension on an incompatible refresh. 1e: bounded delivery resources.
 - **Phase 2 — scheduled discovery.** Add `PluginRefreshJob` (Solid Queue, reusing the `schedules`
   machinery) alongside the existing manual rake task, running refresh only, never rotate. Add
   `output_schema`/`errors` to the manifest shape, accepted but optional during a grace period so

@@ -469,7 +469,8 @@ namespace :hob do
       abort "usage: bin/rails \"hob:surface:refresh[surface]\"" if args[:surface].blank?
 
       result = SurfaceCapabilities.new.refresh(surface: args[:surface])
-      puts "#{result.surface}: #{result.created} new, #{result.updated} updated, #{result.disabled} disabled"
+      puts "#{result.surface}: #{result.created} new, #{result.updated} updated, #{result.disabled} disabled " \
+           "(#{result.signed ? 'signed manifest' : 'unsigned manifest, trusted on its HTTPS origin'})"
       if ENV["ACCEPT"] == "1"
         result.proposed.each { |name| Capability.find_by!(name: name).accept! }
         puts "accepted #{result.proposed.join(', ')}" if result.proposed.any?
@@ -487,7 +488,11 @@ namespace :hob do
 
       result = SurfaceCapabilities.new.rotate(surface: args[:surface], app: ENV["APP"].presence,
                                               restart: ENV["RESTART"] != "0", secret: ENV["SECRET"].presence)
-      puts "#{result.surface}: secret rotated; the old one signs too until #{SurfaceCapabilities::ROTATION_OVERLAP.from_now.to_fs(:short)}"
+      overlap = if result.plugin.signed? then "until #{result.surface}'s signed manifest says it holds the new one"
+      else "until #{SurfaceCapabilities::ROTATION_OVERLAP.from_now.to_fs(:short)}"
+      end
+      puts "#{result.surface}: secret and plugin key rotated; the old secret signs too #{overlap}, " \
+           "and the old key verifies until a manifest signed with the new one arrives"
       surface_secret_report(result)
     end
 
@@ -516,6 +521,8 @@ namespace :hob do
       puts "no surfaces registered" if plugins.empty?
       plugins.each do |plugin|
         state = plugin.quarantined? ? "quarantined: #{plugin.principal.capabilities_freeze_reason}" : "active"
+        state += plugin.signed? ? ", signs its manifest since #{plugin.signed_since.to_fs(:short)}" : ", unsigned"
+        state += ", waiting for its new key" if plugin.key.present? && plugin.key_confirmed_at.nil?
         puts "#{plugin.namespace.ljust(16)} #{(plugin.owner ? "#{plugin.owner.name}'s" : 'household').ljust(12)} " \
              "#{plugin.capabilities.count} capability(ies)  #{plugin.base_url}  #{state}"
       end
@@ -539,10 +546,13 @@ namespace :hob do
     end
 
     def surface_secret_report(result)
+      names = [ SurfaceCapabilities::SECRET_ENV, SurfaceCapabilities::KEY_ENV, SurfaceCapabilities::ID_ENV, SurfaceCapabilities::URL_ENV ]
       if result.pushed
-        puts "#{SurfaceCapabilities::SECRET_ENV} set on #{ENV['APP']}; #{result.restarted ? 'restart queued' : 'not restarted'}"
+        puts "#{names.join(', ')} set on #{ENV['APP']}; #{result.restarted ? 'restart queued' : 'not restarted'}"
       else
-        puts "set on the surface (shown once): #{SurfaceCapabilities::SECRET_ENV}=#{result.secret}"
+        env = SurfaceCapabilities.env(result.plugin, result.secret, result.plugin_key)
+        puts "set on the surface (shown once):"
+        env.each { |name, value| puts "  #{name}=#{value}" }
       end
     end
 

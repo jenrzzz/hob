@@ -11,7 +11,8 @@ module Sentinel
   #   X-Hob-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>
   #
   # While a rotated secret overlaps the one before it (SurfaceCapabilities
-  # #rotate: config.previous_secret, until config.previous_secret_until),
+  # #rotate: config.previous_secret, until config.previous_secret_until or
+  # the plugin confirms the new one),
   # each delivery carries one v1 per secret, the old first and the new last,
   # so a surface holding either one verifies it. A verifier reading only the
   # last v1 (the gem before it accepted any) sees the new secret's.
@@ -56,11 +57,13 @@ module Sentinel
     end
 
     # The secret deliveries are signed with, preceded by the one it replaced
-    # while their overlap lasts.
+    # while their overlap lasts: until previous_secret_until, or, with none,
+    # until the plugin's signed manifest says it holds the new one
+    # (SurfaceCapabilities retires the old one then).
     def signing_secrets(config, now: Time.current)
       previous = config["previous_secret"].presence
       until_at = config["previous_secret_until"].presence && Time.zone.parse(config["previous_secret_until"].to_s)
-      overlapping = previous && until_at && now < until_at && previous != config["secret"]
+      overlapping = previous && (until_at.nil? || now < until_at) && previous != config["secret"]
       [ (previous if overlapping), config["secret"] ].compact
     end
 

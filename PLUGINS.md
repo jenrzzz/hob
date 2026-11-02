@@ -1,8 +1,8 @@
 # A plugin platform for hob
 
 *Feasibility and design investigation. **Phase 0 (section 12) is implemented**, and Phase 1 is
-under way (its first part, installations and quarantine, is in); the rest of Phase 1 and Phases 2–5
-are still proposals. Part 1 describes the code as it was before Phase 0; SENTINEL.md (*Capabilities*)
+under way (1a, installations and quarantine, and 1b, signing and announcements, are in); the rest
+of Phase 1 and Phases 2–5 are still proposals. Part 1 describes the code as it was before Phase 0; SENTINEL.md (*Capabilities*)
 describes it as it is now.*
 
 Jenner's ask: today every app integration requires defining capabilities inside hob itself (mail,
@@ -533,10 +533,32 @@ Proposal, layered on the existing executor/webhook path without changing its wir
   (`OWNER=` at first registration) reaches only its owner. Until delegation exists, no agent can
   use it, which is the interim rule from section 6. Acceptance views now show the owner.
 
-  Still to do in Phase 1, roughly in this order. 1b: the inbound key, signed manifests, the
-  self-announce endpoint, and rotation readiness (needs the gem and mise). 1c: per-installation
-  namespaces distinct from the plugin type, with local operation names mapped into them. 1d:
-  versioned contracts and suspension on an incompatible refresh. 1e: bounded delivery resources.
+  **Phase 1b — signing, announcements, rotation readiness. Done.** Register and rotate mint a
+  per-installation key, `plugins.key`, handed over as `HOB_PLUGIN_KEY` with `HOB_PLUGIN_ID` and
+  `HOB_PLUGIN_URL`. It is the inbound key and the manifest-verification credential at once: one key
+  for everything the plugin tells hob, with each message under its own context string
+  (`hob-manifest.v1`, `hob-announce.v1`), so a ping signature can never pass as a manifest's.
+  Section 4 asks for a credential separate from the ping's. Here the separation is by context
+  rather than by key, since both authenticate the same sender and a holder of one would hold
+  both. Every fetch sends a fresh nonce. The signature binds the installation id, the plugin's
+  monotonic revision (mise uses its boot time), the nonce, the delivery-key id it holds, and the
+  body (`PluginSignature`; `Hob::Plugin` in gem 0.4.0). Revision and digest are checked under
+  `plugin.with_lock`, so an older fetch can't overwrite a newer one. After the first verified
+  manifest (`signed_since`), unsigned answers are refused except on a person's re-registration,
+  and the plugin may `POST /v1/plugins/announce`. That endpoint is HMAC-signed, IP-rate-limited,
+  debounced to one `PluginRefreshJob` a minute, and refuses unsigned or quarantined
+  installations; a bad ping never touches the row it names. **Readiness:** for a signing
+  installation, a rotated delivery secret overlaps with no clock, and the old one is retired
+  when a manifest reports the new one's `kid`. A rotated key's predecessor verifies until a
+  manifest signed with the new key arrives. Rotating twice before the first lands keeps what last
+  worked. An installation that has never signed keeps today's HTTPS-origin trust and the hour's
+  overlap, and only a person refreshes it. Mise signs and announces after boot (mise
+  `docs/HOB.md`, *Signing*). The migration for mise is `hob:surface:rotate[mise] APP=…` once its
+  signing code is deployed, then `hob:surface:refresh[mise]`.
+
+  Still to do in Phase 1. 1c: per-installation namespaces distinct from the plugin type, with
+  local operation names mapped into them. 1d: versioned contracts and suspension on an
+  incompatible refresh. 1e: bounded delivery resources.
 - **Phase 2 — scheduled discovery.** Add `PluginRefreshJob` (Solid Queue, reusing the `schedules`
   machinery) alongside the existing manual rake task, running refresh only, never rotate. Add
   `output_schema`/`errors` to the manifest shape, accepted but optional during a grace period so

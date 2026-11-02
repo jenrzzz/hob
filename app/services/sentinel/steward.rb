@@ -235,7 +235,7 @@ module Sentinel
     # already covered by a rule (a deny rule is a person's word; keep it).
     def grantable
       rank = Realm.rank_of(@petition.realm)
-      Capability.enabled.order(:name).select { |cap| cap.realm_rank <= rank }.filter_map do |cap|
+      Capability.offered_to(@agent).order(:name).select { |cap| cap.realm_rank <= rank }.filter_map do |cap|
         rule = SentinelPolicy.resolve(principal: @agent, capability: cap.name)
         next if rule && rule.effect == "deny"
 
@@ -494,7 +494,7 @@ module Sentinel
     end
 
     def permitted_text
-      rows = Capability.enabled.order(:name).filter_map do |cap|
+      rows = Capability.offered_to(@agent).order(:name).filter_map do |cap|
         rule = SentinelPolicy.resolve(principal: @agent, capability: cap.name)
         next nil unless rule && rule.effect != "deny" && rule.capability != CHARTER
 
@@ -506,7 +506,7 @@ module Sentinel
     end
 
     def above_text(rank)
-      rows = Capability.enabled.order(:name).select { |cap| cap.realm_rank > rank }
+      rows = Capability.offered_to(@agent).order(:name).select { |cap| cap.realm_rank > rank }
       rows.empty? ? "(none)" : rows.map { |cap| "- #{cap.name} (#{cap.realm})" }.join("\n")
     end
 

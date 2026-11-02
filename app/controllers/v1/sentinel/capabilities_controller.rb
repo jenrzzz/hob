@@ -19,13 +19,13 @@ module V1
           return render json: Capability.unaccepted.order(:name).map { |c| serialize(c).merge(proposal(c)) }
         end
 
-        caps = Capability.enabled.order(:name).to_a
+        caps = Capability.offered_to(Current.principal).order(:name).to_a
         caps = caps.filter_map { |c| (effect = effect_for(c)) && [ c, effect ] }
         render json: caps.map { |c, effect| serialize(c).merge(effect: effect) }
       end
 
       def show
-        cap = Capability.enabled.find_by!(name: params[:name])
+        cap = Capability.offered_to(Current.principal).find_by!(name: params[:name])
         effect = effect_for(cap)
         raise ActiveRecord::RecordNotFound if effect.nil? && Current.principal.agent?
 
@@ -89,7 +89,8 @@ module V1
       # it (wildcards included) and the petitions it will grant.
       def proposal(cap)
         {
-          surface: cap.config["surface"],
+          surface: cap.plugin&.namespace || cap.config["surface"],
+          owner: cap.plugin&.owner&.name,
           rules: cap.reaching_rules.map { |r| { agent: r.principal&.name || "*", capability: r.capability, effect: r.effect } },
           petitions: cap.waiting_petitions.map { |p| { id: p.id, agent: p.principal.name, effect: p.effect } }
         }

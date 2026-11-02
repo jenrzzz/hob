@@ -284,4 +284,97 @@ class SurfaceCapabilitiesTest < ActiveSupport::TestCase
 
     assert_raises(SurfaceCapabilities::Error) { @registry.rotate(surface: "parboil") }
   end
+
+  test "a surface's first registration makes its installation: a surface principal, a fixed namespace, rows that are its own" do
+    register
+    plugin = Plugin.find_by!(namespace: "mise")
+    assert_equal [ "surface", "plugin:mise", "mise" ], [ plugin.principal.kind, plugin.principal.name, plugin.plugin_type ]
+    assert_equal "https://mise.test", plugin.base_url
+    refute plugin.personal?
+    assert_equal %w[mise.plan.add mise.recipes], plugin.capabilities.order(:name).map(&:name)
+    refute plugin.principal.trusted?, "an installation's principal decides nothing"
+
+    register(url: "https://kitchen.test")
+    assert_equal 1, Plugin.count, "re-registering is the same installation"
+    assert_equal "https://kitchen.test", plugin.reload.base_url
+    assert_equal "https://kitchen.test/hob/capabilities/mise.recipes", Capability.find_by!(name: "mise.recipes").config["url"]
+
+    assert_raises(ActiveRecord::ActiveRecordError) { plugin.update!(namespace: "parboil") }
+    assert_equal "mise", plugin.reload.namespace, "a namespace never changes"
+  end
+
+  test "a row registered by hand under a surface's name is not the installation's to take" do
+    Capability.create!(name: "mise.recipes", description: "By hand", kind: "read", realm: "household", venue: "webhook",
+                       config: { "url" => "https://elsewhere.test/recipes", "secret" => "s" })
+
+    error = assert_raises(SurfaceCapabilities::Error) { register }
+    assert_match(/registered by hand/, error.message)
+    assert_equal "https://elsewhere.test/recipes", Capability.find_by!(name: "mise.recipes").config["url"]
+    assert_equal 0, Plugin.count, "nothing is installed when the registration fails"
+  end
+
+  test "a quarantined installation is refused whoever asks and whatever rule matches, is not offered, and is not refreshed" do
+    register
+    muse, = agent("muse")
+    policy!(muse, "*", "allow")
+    plugin = Plugin.find_by!(namespace: "mise")
+    delivered = []
+    Sentinel::Webhook.transport = ->(url, _body, _headers) { delivered << url; [ "200", "{}" ] }
+
+    approved = as(muse, realm: "household") { Sentinel.submit!(agent: muse, capability: "mise.recipes") }
+    assert_equal "completed", approved.status
+    assert_includes Capability.offered_to(muse).pluck(:name), "mise.recipes"
+
+    plugin.quarantine!(reason: "answering garbage")
+    request = as(muse, realm: "household") { Sentinel.submit!(agent: muse, capability: "mise.recipes") }
+    assert_equal [ "deny", "plugin" ], [ request.decision, request.decided_by ]
+    assert_match(/mise is quarantined: answering garbage/, request.rationale)
+    assert_empty Capability.offered_to(muse).where(plugin: plugin)
+    assert_empty Capability.offered_to(@principal).where(plugin: plugin), "not offered to a person either"
+    assert_empty as(muse, realm: "household") { Mcp::Agent.capabilities(muse, "household") }.keys.grep(/mise/)
+
+    # A request decided before the quarantine is not delivered after it.
+    error = assert_raises(Sentinel::Webhook::Error) { Sentinel::Webhook.deliver(approved.capability, approved) }
+    assert_match(/quarantined/, error.message)
+    assert_equal 1, delivered.size
+    assert_match(/quarantined/, assert_raises(SurfaceCapabilities::Error) { refresh }.message)
+
+    plugin.release!
+    assert_equal "completed", as(muse, realm: "household") { Sentinel.submit!(agent: muse, capability: "mise.recipes") }.status
+  ensure
+    Sentinel::Webhook.transport = nil
+  end
+
+  test "a personal installation is its owner's alone: no agent reaches it, whatever its clearance, and no other person does" do
+    tessa = Principal.create!(name: "tessa", kind: "human", max_clearance: "intimate")
+    register(owner: tessa)
+    plugin = Plugin.find_by!(namespace: "mise")
+    assert plugin.personal?
+    assert_equal tessa, plugin.owner
+
+    muse, = agent("muse", clearance: "intimate")
+    policy!(muse, "mise.*", "allow")
+    request = as(muse, realm: "intimate") { Sentinel.submit!(agent: muse, capability: "mise.recipes") }
+    assert_equal [ "deny", "plugin" ], [ request.decision, request.decided_by ]
+    assert_match(/tessa's; no agent may act for a person yet/, request.rationale)
+    assert_empty Capability.offered_to(muse).where(plugin: plugin)
+
+    assert_equal %w[mise.plan.add mise.recipes], Capability.offered_to(tessa).where(plugin: plugin).order(:name).pluck(:name)
+    assert_empty Capability.offered_to(@principal).where(plugin: plugin), "another person, even at intimate, is not the owner"
+    tools = as(@principal, realm: "intimate") { Mcp.tools.keys }
+    refute_includes tools, "mise_recipes"
+    assert_includes as(tessa, realm: "household") { Mcp.tools.keys }, "mise_recipes"
+
+    register(owner: @principal)
+    assert_equal tessa, plugin.reload.owner, "re-registering does not change an owner"
+  end
+
+  test "only a person owns an installation" do
+    muse, = agent("muse")
+    assert_match(/not a person/, assert_raises(SurfaceCapabilities::Error) { register(owner: muse) }.message)
+    assert_equal 0, Plugin.count
+    assert_raises(ActiveRecord::RecordInvalid) do
+      Plugin.create!(namespace: "x", plugin_type: "x", base_url: "https://x.test", principal: @principal)
+    end
+  end
 end

@@ -157,6 +157,9 @@ bin/rails "hob:surface:refresh[mise]"                    # follow the manifest; 
 bin/rails "hob:surface:rotate[mise]" APP=<mise's coolify app uuid>
 bin/rails hob:capabilities:unaccepted                    # what a surface proposed that nobody has accepted
 bin/rails "hob:capabilities:accept[mise.pantry.scan,personal]" BY=jenner
+bin/rails hob:surface:list                               # the installations, their owners, and any quarantine
+bin/rails "hob:surface:quarantine[mise]" REASON="answering garbage"
+bin/rails "hob:surface:release[mise]"
 ```
 
 This is the plugin venue, v0 ([PLUGINS.md](PLUGINS.md)): the app owns the
@@ -194,6 +197,21 @@ that will reach it and the petitions it will grant. A row put there by a
 person — a native handler, a merged forge PR, a registration, a `POST` with
 a person's key — is accepted as it lands, and its waiting petitions are
 granted the moment it does.
+
+Each registered surface is a **plugin installation** (`Plugin`, PLUGINS.md
+Phase 1). Its first registration mints a `surface` principal for it
+(`plugin:mise`), which decides nothing and holds no rules, and fixes its
+namespace: every row it registers belongs to it, and no other installation
+(and no registration over a row a person added by hand) can take one.
+`OWNER=<person>` on that first registration makes it **personal**: only that
+person reaches its capabilities (their own MCP tools), another person does
+not whatever their clearance, and no agent does at all until hob has a way
+for an agent to act on a person's behalf. **Quarantining** an installation
+freezes its principal: every capability it offers is denied at the gate
+(`decided_by: plugin`), whoever asks and whatever rule matches, drops out of
+every listing, is refused again at delivery (so a request a person approved
+before the quarantine is not sent after it), and is not refreshed, until a
+person releases it.
 
 **Rotate** mints a new secret and writes it to the surface's rows before it
 hands it to the app and restarts it. For an hour after, each delivery is

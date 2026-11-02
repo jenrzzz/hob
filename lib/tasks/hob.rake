@@ -448,13 +448,16 @@ namespace :hob do
   namespace :surface do
     desc "Register the capabilities a surface offers the sentinel (SENTINEL.md) from its manifest at /hob/capabilities, " \
          "and hand it the secret hob signs deliveries with. bin/rails \"hob:surface:register[mise,https://mise.example.com]\" " \
-         "APP=<coolify app uuid> (RESTART=0 to skip the restart; no APP prints the secret once, for you to set as HOB_WEBHOOK_SECRET)"
+         "APP=<coolify app uuid> (RESTART=0 to skip the restart; no APP prints the secret once, for you to set as HOB_WEBHOOK_SECRET; " \
+         "OWNER=<person> makes a new installation personal: only that person reaches it)"
     task :register, [ :surface, :url ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:surface:register[surface,url]\" APP=<coolify app uuid>" if args[:surface].blank? || args[:url].blank?
 
+      owner = ENV["OWNER"].presence && (Principal.find_by(name: ENV["OWNER"]) || abort("no principal #{ENV['OWNER']}"))
       result = SurfaceCapabilities.new.register(surface: args[:surface], url: args[:url], app: ENV["APP"].presence,
-                                                restart: ENV["RESTART"] != "0", secret: ENV["SECRET"].presence)
+                                                restart: ENV["RESTART"] != "0", secret: ENV["SECRET"].presence, owner: owner)
       puts "#{result.surface}: #{result.created} capability(ies) registered, #{result.updated} updated, #{result.disabled} disabled"
+      puts "a personal installation: only #{result.plugin.owner.name} reaches it, and no agent does yet" if result.plugin.personal?
       surface_secret_report(result)
       surface_listing(result.surface)
       puts "then let agents at them: bin/rails \"hob:sentinel:policy[marley,#{result.surface}.*,review]\" (README.md has a set)"
@@ -486,6 +489,36 @@ namespace :hob do
                                               restart: ENV["RESTART"] != "0", secret: ENV["SECRET"].presence)
       puts "#{result.surface}: secret rotated; the old one signs too until #{SurfaceCapabilities::ROTATION_OVERLAP.from_now.to_fs(:short)}"
       surface_secret_report(result)
+    end
+
+    desc "Quarantine a surface: every capability it offers is refused, whoever asks, until it is released. " \
+         "bin/rails \"hob:surface:quarantine[mise]\" REASON=\"answering garbage\""
+    task :quarantine, [ :surface ] => :environment do |_task, args|
+      plugin = Plugin.find_by(namespace: args[:surface].to_s) || abort("no surface #{args[:surface].inspect} is registered")
+      abort "say why: REASON=..." if ENV["REASON"].blank?
+
+      plugin.quarantine!(reason: ENV["REASON"])
+      puts "#{plugin.namespace} quarantined: #{plugin.capabilities.count} capability(ies) refused until bin/rails \"hob:surface:release[#{plugin.namespace}]\""
+    end
+
+    desc "Release a quarantined surface: bin/rails \"hob:surface:release[mise]\""
+    task :release, [ :surface ] => :environment do |_task, args|
+      plugin = Plugin.find_by(namespace: args[:surface].to_s) || abort("no surface #{args[:surface].inspect} is registered")
+      abort "#{plugin.namespace} is not quarantined" unless plugin.quarantined?
+
+      plugin.release!
+      puts "#{plugin.namespace} released"
+    end
+
+    desc "List the registered surfaces (plugin installations): bin/rails hob:surface:list"
+    task list: :environment do
+      plugins = Plugin.includes(:principal, :owner).order(:namespace)
+      puts "no surfaces registered" if plugins.empty?
+      plugins.each do |plugin|
+        state = plugin.quarantined? ? "quarantined: #{plugin.principal.capabilities_freeze_reason}" : "active"
+        puts "#{plugin.namespace.ljust(16)} #{(plugin.owner ? "#{plugin.owner.name}'s" : 'household').ljust(12)} " \
+             "#{plugin.capabilities.count} capability(ies)  #{plugin.base_url}  #{state}"
+      end
     end
 
     desc "List the capabilities registered for a surface: bin/rails \"hob:surface:capabilities[mise]\""
@@ -560,7 +593,8 @@ namespace :hob do
     end
 
     def capability_proposal(cap)
-      puts "#{cap.name} (#{cap.config['surface'] || cap.venue}) proposes #{cap.kind}, #{cap.realm}: #{cap.description}"
+      from = cap.plugin ? "#{cap.plugin.namespace}#{", #{cap.plugin.owner.name}'s" if cap.plugin.personal?}" : cap.config["surface"] || cap.venue
+      puts "#{cap.name} (#{from}) proposes #{cap.kind}, #{cap.realm}: #{cap.description}"
       puts "  input: #{JSON.generate(cap.input_schema)}"
       rules = cap.reaching_rules
       puts "  no rule reaches it yet" if rules.empty?

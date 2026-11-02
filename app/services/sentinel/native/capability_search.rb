@@ -48,7 +48,7 @@ module Sentinel
         caller_rank = Realm.rank_of(caller_clearance)
         caller_principal = Current.principal
 
-        visible = Capability.enabled.select { |cap| Realm.rank_of(cap.realm) <= caller_rank }
+        visible = Capability.offered_to(caller_principal).select { |cap| Realm.rank_of(cap.realm) <= caller_rank }
 
         # Preload the caller's policies once to avoid N+1 on already_held? checks.
         policies = SentinelPolicy.where(principal_id: [ caller_principal.id, nil ]).to_a

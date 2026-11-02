@@ -61,7 +61,7 @@ module Mcp
       rules = SentinelPolicy.where(principal_id: [ agent.id, nil ]).to_a
       return {} if rules.empty?
 
-      Capability.enabled.order(:name).select do |capability|
+      Capability.offered_to(agent).order(:name).select do |capability|
         next false if capability.realm_rank > rank
 
         rule = SentinelPolicy.resolve(principal: agent, capability: capability.name, rules: rules)

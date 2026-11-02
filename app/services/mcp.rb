@@ -80,7 +80,7 @@ module Mcp
   end
 
   def capability_tools
-    Capability.enabled.where(venue: %w[native webhook]).where.not(name: AGENTS_ONLY).order(:name).filter_map do |capability|
+    Capability.offered_to(Current.principal).where(venue: %w[native webhook]).where.not(name: AGENTS_ONLY).order(:name).filter_map do |capability|
       handler = capability.native? ? capability.handler : WebhookHandler
       next if handler.nil?
 

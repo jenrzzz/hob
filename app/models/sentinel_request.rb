@@ -22,6 +22,10 @@ class SentinelRequest < ApplicationRecord
   validates :realm, presence: true
 
   before_create { self.id ||= ULID.generate }
+  # The contract it was asked against (PLUGINS.md, section 7): a webhook
+  # capability's contract that changes before it runs is not the one that
+  # was approved, and it is not delivered (Sentinel::Webhook).
+  before_create { self.contract_revision ||= capability&.contract_revision }
 
   scope :pending, -> { where(status: "pending") }
   scope :recent, -> { order(created_at: :desc) }

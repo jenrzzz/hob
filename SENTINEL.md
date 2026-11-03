@@ -165,7 +165,7 @@ bin/rails "hob:surface:release[mise]"
 This is the plugin venue, v0 ([PLUGINS.md](PLUGINS.md)): the app owns the
 implementation, hob owns the catalog and the gate. Registering is
 bootstrap, by a person: it fetches the manifest, refuses it whole if any
-entry is malformed (no name under the surface's prefix, no description, a
+entry is malformed (no name under its plugin type's prefix, no description, a
 kind other than read/act, an input schema that is not an object, a realm hob
 does not know, a name listed twice), refuses a surface named for one of
 hob's own namespaces (`hob`, `mail`, `todo`, ... — every native handler's
@@ -212,6 +212,46 @@ freezes its principal: every capability it offers is denied at the gate
 every listing, is refused again at delivery (so a request a person approved
 before the quarantine is not sent after it), and is not refreshed, until a
 person releases it.
+
+An installation's **namespace** is not its **plugin type** (PLUGINS.md,
+Phase 1c). The type is what the app says it is, the manifest's `surface`;
+both are fixed at the first registration (`TYPE=`, the namespace when not
+given), and a manifest that says it is another type is refused. The manifest
+names its operations under its type, and hob offers each under the
+installation's namespace:
+
+```
+bin/rails "hob:surface:register[contacts-house,https://contacts.example.com]" TYPE=contacts APP=<uuid>
+bin/rails "hob:surface:register[contacts-jenner,https://jenner-contacts.example.com]" TYPE=contacts OWNER=jenner APP=<uuid>
+# the manifest's contacts.card.get is offered as contacts-house.card.get and contacts-jenner.card.get
+```
+
+The row keeps the manifest's name as `remote_name`, and that is what a
+delivery addresses: `POST <base>/hob/capabilities/contacts.card.get`, with
+`{ "capability": "contacts.card.get", "installation": "contacts-house", ... }`
+in the body. So the plugin's routes are its own, and two installations run
+the same code. An installation whose namespace is its type, like mise, has
+the same name on both sides.
+
+**Contracts** (PLUGINS.md, Phase 1d). A refresh may loosen an accepted
+capability's input schema (a new optional input, a required one becoming
+optional, a wider type or enum), which bumps its `contract_revision`. It may
+not break it under the same name: a removed or newly required input, a
+narrowed type, a lost enum value, or an object that closes. Nor may it change
+the kind or realm the entry declares. Such an entry is refused alone. The row
+keeps the contract a person accepted and is **suspended**: out of every
+listing, denied at the gate, refused at delivery, and a person is told. A
+request is delivered only under the contract revision it was asked against.
+
+```
+bin/rails "hob:capabilities:resume[mise.recipes]" BY=jenner   # once mise serves the accepted contract again
+```
+
+Resuming reads the manifest again and needs the entry to hold to the
+accepted contract. The way to make a breaking change is a new name
+(`mise.recipes.v2`), which is a new capability and waits for acceptance. An
+entry may say `version`, `deprecated_at`, and `sunset_at`, and
+`hob.capability.search` warns about a capability that is going away.
 
 **Rotate** mints a new secret and writes it to the surface's rows before it
 hands it to the app and restarts it. For an hour after, each delivery is

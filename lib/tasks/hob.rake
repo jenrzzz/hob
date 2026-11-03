@@ -449,16 +449,19 @@ namespace :hob do
     desc "Register the capabilities a surface offers the sentinel (SENTINEL.md) from its manifest at /hob/capabilities, " \
          "and hand it the secret hob signs deliveries with. bin/rails \"hob:surface:register[mise,https://mise.example.com]\" " \
          "APP=<coolify app uuid> (RESTART=0 to skip the restart; no APP prints the secret once, for you to set as HOB_WEBHOOK_SECRET; " \
-         "OWNER=<person> makes a new installation personal: only that person reaches it)"
+         "OWNER=<person> makes a new installation personal: only that person reaches it; TYPE=<plugin type> registers an app " \
+         "under a namespace of its own, e.g. hob:surface:register[contacts-house,...] TYPE=contacts)"
     task :register, [ :surface, :url ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:surface:register[surface,url]\" APP=<coolify app uuid>" if args[:surface].blank? || args[:url].blank?
 
       owner = ENV["OWNER"].presence && (Principal.find_by(name: ENV["OWNER"]) || abort("no principal #{ENV['OWNER']}"))
-      result = SurfaceCapabilities.new.register(surface: args[:surface], url: args[:url], app: ENV["APP"].presence,
-                                                restart: ENV["RESTART"] != "0", secret: ENV["SECRET"].presence, owner: owner)
+      result = SurfaceCapabilities.new.register(surface: args[:surface], url: args[:url], type: ENV["TYPE"].presence,
+                                                app: ENV["APP"].presence, restart: ENV["RESTART"] != "0",
+                                                secret: ENV["SECRET"].presence, owner: owner)
       puts "#{result.surface}: #{result.created} capability(ies) registered, #{result.updated} updated, #{result.disabled} disabled"
       puts "a personal installation: only #{result.plugin.owner.name} reaches it, and no agent does yet" if result.plugin.personal?
       surface_secret_report(result)
+      surface_suspended_report(result)
       surface_listing(result.surface)
       puts "then let agents at them: bin/rails \"hob:sentinel:policy[marley,#{result.surface}.*,review]\" (README.md has a set)"
     end
@@ -478,6 +481,7 @@ namespace :hob do
         puts "waiting for you to accept (nothing reaches them until then):"
         result.proposed.each { |name| puts "  bin/rails \"hob:capabilities:accept[#{name}]\"" }
       end
+      surface_suspended_report(result)
       surface_listing(result.surface)
     end
 
@@ -523,7 +527,8 @@ namespace :hob do
         state = plugin.quarantined? ? "quarantined: #{plugin.principal.capabilities_freeze_reason}" : "active"
         state += plugin.signed? ? ", signs its manifest since #{plugin.signed_since.to_fs(:short)}" : ", unsigned"
         state += ", waiting for its new key" if plugin.key.present? && plugin.key_confirmed_at.nil?
-        puts "#{plugin.namespace.ljust(16)} #{(plugin.owner ? "#{plugin.owner.name}'s" : 'household').ljust(12)} " \
+        type = plugin.plugin_type == plugin.namespace ? "" : " (#{plugin.plugin_type})"
+        puts "#{(plugin.namespace + type).ljust(16)} #{(plugin.owner ? "#{plugin.owner.name}'s" : 'household').ljust(12)} " \
              "#{plugin.capabilities.count} capability(ies)  #{plugin.base_url}  #{state}"
       end
     end
@@ -556,12 +561,22 @@ namespace :hob do
       end
     end
 
+    def surface_suspended_report(result)
+      result.suspended.each do |name, why|
+        puts "suspended #{name}: #{why}"
+        puts "  once it serves the accepted contract again: bin/rails \"hob:capabilities:resume[#{name}]\""
+      end
+      puts "resumed #{result.resumed.join(', ')}" if result.resumed.any?
+    end
+
     def surface_listing(surface)
       SurfaceCapabilities.registered(surface).each do |cap|
-        state = if !cap.accepted? then "waiting to be accepted"
+        state = if cap.suspended? then "suspended"
+        elsif !cap.accepted? then "waiting to be accepted"
         elsif !cap.enabled then "disabled"
         end
-        puts "  #{cap.name.ljust(30)} #{cap.kind.ljust(5)} #{cap.realm.ljust(10)} #{state}"
+        remote = cap.remote_name && cap.remote_name != cap.name ? "  (its #{cap.remote_name})" : ""
+        puts "  #{cap.name.ljust(30)} #{cap.kind.ljust(5)} #{cap.realm.ljust(10)} #{state}#{remote}"
       end
     end
   end
@@ -599,6 +614,25 @@ namespace :hob do
       end
       puts "accepted #{cap.name}: #{cap.kind}, #{cap.realm}#{by ? ", by #{by.name}" : ''}"
     rescue Capability::Error, ActiveRecord::RecordInvalid => e
+      abort e.message
+    end
+
+    desc "Resume a capability a refresh suspended for breaking its contract (PLUGINS.md, section 7): hob reads the " \
+         "plugin's manifest again and resumes it only if it serves a contract the accepted one still holds for. " \
+         "bin/rails \"hob:capabilities:resume[mise.recipes,realm=household's,kind=household's]\" BY=jenner"
+    task :resume, [ :name, :realm, :kind ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:capabilities:resume[name,realm,kind]\" BY=<person>" if args[:name].blank?
+
+      cap = Capability.find_by(name: args[:name]) || abort("no capability #{args[:name]}")
+      by = ENV["BY"].presence && (Principal.find_by(name: ENV["BY"]) || abort("no principal #{ENV['BY']}"))
+      puts "#{cap.name} is suspended: #{cap.suspended_reason}" if cap.suspended?
+      Clearance.with("intimate") do
+        capability_proposal(cap)
+        SurfaceCapabilities.new.resume(name: cap.name, by: by, realm: args[:realm], kind: args[:kind])
+      end
+      cap.reload
+      puts "resumed #{cap.name}: #{cap.kind}, #{cap.realm}, contract revision #{cap.contract_revision}"
+    rescue SurfaceCapabilities::Error, ActiveRecord::RecordInvalid => e
       abort e.message
     end
 

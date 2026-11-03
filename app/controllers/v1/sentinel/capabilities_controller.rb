@@ -81,8 +81,10 @@ module V1
       def serialize(cap, config: false)
         {
           name: cap.name, description: cap.description, input_schema: cap.input_schema,
-          kind: cap.kind, realm: cap.realm, venue: cap.venue, enabled: cap.enabled, accepted: cap.accepted?
-        }.tap { |h| h[:config] = cap.config.except("secret", "previous_secret") if config }
+          kind: cap.kind, realm: cap.realm, venue: cap.venue, enabled: cap.enabled, accepted: cap.accepted?,
+          contract_revision: cap.contract_revision, suspended: cap.suspended_reason, deprecated_at: cap.deprecated_at,
+          sunset_at: cap.sunset_at
+        }.compact.tap { |h| h[:config] = cap.config.except("secret", "previous_secret") if config }
       end
 
       # What a person is agreeing to by accepting: the rules that will reach
@@ -91,6 +93,8 @@ module V1
         {
           surface: cap.plugin&.namespace || cap.config["surface"],
           owner: cap.plugin&.owner&.name,
+          plugin_type: cap.plugin&.plugin_type,
+          remote_name: cap.remote_name,
           rules: cap.reaching_rules.map { |r| { agent: r.principal&.name || "*", capability: r.capability, effect: r.effect } },
           petitions: cap.waiting_petitions.map { |p| { id: p.id, agent: p.principal.name, effect: p.effect } }
         }

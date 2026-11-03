@@ -20,6 +20,16 @@
 # installation: not while it is quarantined, and, for a personal one, only
 # by its owner (#unavailable_to, enforced in listings, at the gate, and
 # again at delivery).
+#
+# Contracts (PLUGINS.md, Phase 1d): a plugin that changes an accepted
+# capability's schema in a way that breaks callers or rules, or changes the
+# kind or realm it declares, has that one entry refused by refresh: the row
+# keeps the contract a person accepted and is **suspended** (#suspend!), out
+# of every listing and refused at the gate and at delivery, until a person
+# resumes it once the plugin serves a compatible contract again
+# (SurfaceCapabilities#resume). `contract_revision` counts schema changes; a
+# request asked against another revision is not delivered. `deprecated_at`
+# and `sunset_at` are the manifest's word on its retirement.
 class Capability < ApplicationRecord
   class Error < StandardError; end
 
@@ -51,6 +61,7 @@ class Capability < ApplicationRecord
     person = caller && !caller.agent? ? caller.id : nil
     enabled.joins("LEFT JOIN plugins ON plugins.id = capabilities.plugin_id " \
                   "LEFT JOIN principals plugin_principals ON plugin_principals.id = plugins.principal_id")
+           .where(suspended_at: nil)
            .where("capabilities.plugin_id IS NULL OR (plugin_principals.capabilities_frozen_at IS NULL " \
                   "AND (plugins.owner_id IS NULL OR plugins.owner_id = ?))", person)
   }
@@ -93,7 +104,18 @@ class Capability < ApplicationRecord
 
   # -> why `caller` may not reach it, whatever a rule says, or nil.
   def unavailable_to(caller)
+    return "#{name} is suspended: #{suspended_reason}" if suspended?
+
     plugin&.unavailable_to(caller)
+  end
+
+  def suspended?
+    suspended_at.present?
+  end
+
+  # Out of reach until a person resumes it. The first reason stands.
+  def suspend!(reason)
+    update!(suspended_at: Time.current, suspended_reason: reason) unless suspended?
   end
 
   def native?

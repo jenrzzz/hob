@@ -33,6 +33,8 @@ module Mcp
     def reason = nil
     def decided_by = "person"
     def on_mission_id = nil
+    # Decided as it is made, so against the contract as it is now.
+    def contract_revision = nil
   end
 
   # The handler for a webhook capability: the same signed delivery the

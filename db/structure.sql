@@ -331,7 +331,13 @@ CREATE TABLE public.capabilities (
     updated_at timestamp(6) without time zone NOT NULL,
     accepted_at timestamp(6) without time zone,
     accepted_by_id bigint,
-    plugin_id bigint
+    plugin_id bigint,
+    remote_name character varying,
+    contract_revision integer DEFAULT 1 NOT NULL,
+    suspended_at timestamp(6) without time zone,
+    suspended_reason text,
+    deprecated_at timestamp(6) without time zone,
+    sunset_at timestamp(6) without time zone
 );
 
 
@@ -1174,7 +1180,8 @@ CREATE TABLE public.sentinel_requests (
     decided_at timestamp(6) without time zone,
     executed_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    contract_revision integer
 );
 
 ALTER TABLE ONLY public.sentinel_requests FORCE ROW LEVEL SECURITY;
@@ -2345,6 +2352,13 @@ CREATE UNIQUE INDEX index_capabilities_on_name ON public.capabilities USING btre
 --
 
 CREATE INDEX index_capabilities_on_plugin_id ON public.capabilities USING btree (plugin_id);
+
+
+--
+-- Name: index_capabilities_on_plugin_id_and_remote_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_capabilities_on_plugin_id_and_remote_name ON public.capabilities USING btree (plugin_id, remote_name) WHERE (plugin_id IS NOT NULL);
 
 
 --
@@ -4243,6 +4257,8 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261102000004'),
+('20261102000003'),
 ('20261102000002'),
 ('20261102000001'),
 ('20261101000001'),

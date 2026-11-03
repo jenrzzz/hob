@@ -4,7 +4,9 @@ require "openssl"
 module Sentinel
   # The webhook venue: hob POSTs the approved request to the surface that
   # registered the capability, signed with the capability's secret so the
-  # surface knows the sentinel, not the agent, is calling. The surface
+  # surface knows the sentinel, not the agent, is calling. A plugin's row is
+  # addressed by the plugin's own name for it (Capability#remote_name), not
+  # the name hob offers it under, and the body says which installation. The surface
   # answers 2xx with a JSON result (any shape; it is stored as-is) or a
   # non-2xx with { error } to fail the request.
   #
@@ -33,9 +35,20 @@ module Sentinel
       if (problem = plugin&.unavailable_to(request.principal))
         raise Error, problem
       end
+      # And its contract, as it is now (PLUGINS.md, section 7): not suspended
+      # since, and still the revision the request was asked against.
+      current = Capability.find(capability.id)
+      raise Error, "#{current.name} is suspended: #{current.suspended_reason}" if current.suspended?
+      if request.contract_revision && request.contract_revision != current.contract_revision
+        raise Error, "#{current.name}'s contract changed (revision #{request.contract_revision} to #{current.contract_revision}) " \
+                     "after this was asked for; ask again"
+      end
 
+      # The plugin's own name for it (PLUGINS.md, Phase 1c), and which of its
+      # installations hob is calling as.
       body = JSON.generate(
-        request: request.id, capability: capability.name, agent: request.principal.name,
+        request: request.id, capability: capability.remote_name || capability.name, installation: plugin&.namespace,
+        agent: request.principal.name,
         realm: request.realm, arguments: request.arguments, reason: request.reason,
         decided_by: request.decided_by, mission: request.on_mission_id
       )

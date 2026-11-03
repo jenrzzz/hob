@@ -10,7 +10,8 @@ module Sentinel
         "name" => "hob.capability.search",
         "description" => "Keyword search over hob's capability catalog: given a query, returns matching " \
                          "capabilities with name, description, kind, realm, and whether the calling agent " \
-                         "may petition for each, ranked by relevance and filtered to the caller's clearance.",
+                         "may petition for each, ranked by relevance and filtered to the caller's clearance. " \
+                         "One its plugin is retiring says so (deprecated_at, sunset_at, warning).",
         "kind" => "read",
         "realm" => "household",
         "input_schema" => {
@@ -99,7 +100,18 @@ module Sentinel
           "description" => cap.description,
           "already_held" => held,
           "petitionable" => !held && Realm.rank_of(cap.realm) <= caller_rank
-        }
+        }.merge(retiring(cap))
+      end
+
+      # PLUGINS.md, section 7: a warning before a hard cutover, not just a
+      # future "unknown capability".
+      def retiring(cap)
+        return {} unless cap.deprecated_at || cap.sunset_at
+
+        warning = "#{cap.name} is deprecated"
+        warning += cap.sunset_at ? " and goes away on #{cap.sunset_at.to_date.iso8601}" : ""
+        { "deprecated_at" => cap.deprecated_at&.iso8601, "sunset_at" => cap.sunset_at&.iso8601,
+          "warning" => "#{warning}: look for its successor" }.compact
       end
 
       def held?(capability_name, policies)

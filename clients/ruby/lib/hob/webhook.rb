@@ -15,7 +15,11 @@ module Hob
   #   raw = request.raw_post
   #   head :unauthorized unless Hob::Webhook.verify(secret: ENV["HOB_WEBHOOK_SECRET"],
   #                                                 signature: request.headers["X-Hob-Signature"], body: raw)
-  #   delivery = JSON.parse(raw)   # request, capability, agent, realm, arguments, reason, decided_by, mission
+  #   delivery = JSON.parse(raw)   # request, capability, installation, agent, realm, arguments, reason, decided_by, mission
+  #
+  # `capability` is the name the surface's own manifest gave it, whatever
+  # hob offers it as; `installation` is the HOB_PLUGIN_ID it was registered
+  # under, for an app that serves more than one.
   #   render json: { added: item }  # any JSON becomes the request's result; non-2xx { error } fails it
   module Webhook
     TOLERANCE = 300

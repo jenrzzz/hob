@@ -25,11 +25,11 @@ protocol so hob doesn't have to.
   What is kept is the record of the session: the row, plus one sentinel
   request per step with its arguments but not its image.
 
-**Status.** The hob side is built: the rows, `Consoles` and its
-adapters, the five `console.*` capabilities, images in MCP results, the
-sweeper, and the rake tasks. The bridge is not: it is its own service,
-outside this repository, like gofer ([Open questions](#open-questions) 1).
-The contract hob holds it to is under [What it exposes](#what-it-exposes).
+**Status.** Built. The hob side: the rows, `Consoles` and its adapters,
+the five `console.*` capabilities, images in MCP results, the sweeper,
+and the rake tasks. The bridge is `kvm-bridge` (Python, aiortc), its own
+repository like gofer, at `~/src/kvm-bridge`; its README is how to run
+it. The contract between them is under [What it exposes](#what-it-exposes).
 
 For now, **every action is allowed**. Policy is `allow` across
 `console.*`, and realm and session ownership are the only fences. Judging
@@ -108,7 +108,7 @@ interrupted only while an agent is actually working.
 ### What it exposes
 
 ```
-GET    /v1/status                       → { bridge, device: { version, video, usb }, session? }
+GET    /v1/status[?probe=1]             → { bridge, device: { version?, video?, usb?, http }, session? }
 POST   /v1/sessions { ttl, scale? }     → 201 { id, expires_at, video, screen }
 GET    /v1/sessions/:id?screen=1&scale= → { id, expires_at, video, screen }
 POST   /v1/sessions/:id/actions { action, ... }   → { id, expires_at, video, screen }
@@ -118,7 +118,11 @@ DELETE /v1/sessions/:id                 → 204
 `screen` is `{ data, mime_type, width, height }`: a PNG frame, base64,
 scaled to `scale` pixels wide (default 1280; the full 1920 on request),
 and its size so coordinates can be mapped back. `video` is
-`getVideoState` as the device answered it. Errors are `{ error }`. There
+`getVideoState` as the device answered it. Errors are `{ error }`.
+`/v1/status` connects nothing: without a session it answers from the
+device's HTTP side, and video is known only with `?probe=1`, which
+connects for a moment (and so cuts off a person's KVM tab). `hob:console:check`
+probes; `hob:console:consoles` doesn't. There
 is one session at a time per device: a second `POST` answers 409 while
 one is open. Bearer keys are the bridge's own (`Authorization: Bearer`).
 
@@ -269,8 +273,12 @@ when the session in the way is its own.
 
 ```sh
 # the bridge, on a tailnet host other than the machine behind the KVM
-JETKVM_URL=http://jetkvm.tail9d8098.ts.net JETKVM_PASSWORD=... bridge key add hob
-BRIDGE_BIND=127.0.0.1,100.x.y.z bridge serve
+cd kvm-bridge && uv sync
+bin/bridge key add hob                           # prints kvb_..., once
+export JETKVM_URL=http://jetkvm.tail9d8098.ts.net JETKVM_PASSWORD=...
+bin/bridge check                                 # the device answers over HTTP and takes the password
+bin/bridge shot /tmp/kvm.png                     # one frame over WebRTC (takes the KVM for a second)
+BRIDGE_BIND=127.0.0.1,100.x.y.z bin/bridge serve # :8379
 
 # on the hob box
 export KVM_BRIDGE_KEY=...
@@ -324,8 +332,7 @@ without slowing the one that doesn't.
 
 ## Open questions
 
-1. **The bridge's name, language, and home.** Python with aiortc is
-   proven, and Go with pion matches the device. It could live on
+1. **The bridge's home.** It's `kvm-bridge`, in Python with aiortc. It could live on
    cadance, beside hob, or on the mini, beside gofer, but not on the
    machine behind the KVM.
 2. **Images in MCP results.** hob sends them now (above). Whether Muse

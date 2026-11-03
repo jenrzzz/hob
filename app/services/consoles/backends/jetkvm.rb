@@ -8,7 +8,7 @@ module Consoles
     # what hob knows of the bridge. The device's password is the bridge's
     # and never hob's; hob holds a bearer key for the bridge (Console#key).
     #
-    #   GET    /v1/status                        → { bridge, device: { version, video, usb }, session? }
+    #   GET    /v1/status[?probe=1]              → { bridge, device: { version?, video?, usb?, http }, session? }
     #   POST   /v1/sessions { ttl, scale? }      → 201 { id, expires_at, video, screen }
     #   GET    /v1/sessions/:id?screen=1&scale=  → { id, expires_at, video, screen }
     #   POST   /v1/sessions/:id/actions { action, ... } → { id, expires_at, video, screen }
@@ -50,9 +50,11 @@ module Consoles
       end
 
       # GET /v1/status: the bridge answers, the key is good, and the device
-      # answers, with whether its video is ready.
-      def check
-        status = get("/v1/status")
+      # answers. Video is known only over a WebRTC connection, which takes
+      # the KVM from whoever has it: without a session open, `probe: true`
+      # connects for a moment to ask, and without it nothing connects.
+      def check(probe: false)
+        status = get("/v1/status", probe ? { "probe" => 1 } : nil)
         { "reachable" => true, "bridge" => status["bridge"], "device" => status["device"], "session" => status["session"] }.compact
       end
 

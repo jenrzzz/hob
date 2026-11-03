@@ -91,8 +91,9 @@ module Consoles
         true
       end
 
-      def check
+      def check(probe: false)
         failing!
+        device.calls << [ :check, probe ]
         { "reachable" => true, "bridge" => "fake", "device" => { "version" => "0.5.10", "video" => device.video },
           "session" => device.live&.slice("id") }.compact
       end

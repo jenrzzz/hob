@@ -1269,8 +1269,9 @@ namespace :hob do
           state = "disabled" unless row.enabled?
           state ||= begin
             status = row.adapter.check
-            video = status.dig("device", "video") || {}
-            "reachable, video #{video['ready'] ? 'ready' : (video['error'] || 'not ready')}#{status['session'] ? ', in use' : ''}"
+            video = status.dig("device", "video")
+            video_note = video.is_a?(Hash) ? ", video #{video['ready'] ? 'ready' : (video['error'] || 'not ready')}" : ""
+            "reachable#{video_note}#{status['session'] ? ', in use' : ''}"
           rescue Consoles::Error => e
             "unreachable: #{e.message}"
           end
@@ -1279,15 +1280,15 @@ namespace :hob do
       end
     end
 
-    desc "Ask one console how it is: the bridge answers, the device answers, video ready. " \
-         "bin/rails \"hob:console:check[jenner-mac]\""
+    desc "Ask one console how it is: the bridge answers, the device answers, video ready. Connects to the " \
+         "KVM for a moment, which cuts off anyone using it in a browser. bin/rails \"hob:console:check[jenner-mac]\""
     task :check, [ :name ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:console:check[name]\"" if args[:name].blank?
 
       Clearance.with("intimate") do
         row = Console.find_by!(name: args[:name])
         begin
-          status = row.adapter.check
+          status = row.adapter.check(probe: true)
           puts "#{row.name}: the bridge answers at #{row.url}"
           status.except("reachable").each { |name, value| puts "  #{name}: #{value.is_a?(String) ? value : value.to_json}" }
           video = status.dig("device", "video")

@@ -44,6 +44,10 @@ class ConsoleJetkvmTest < ActiveSupport::TestCase
     assert_equal [ "DELETE", "http://bridge.test:8379/v1/sessions/b1" ], @calls.last.first(2)
     @responses << [ 200, { "bridge" => "0.1.0", "device" => { "version" => "0.5.10", "video" => { "ready" => true } } }.to_json ]
     assert_equal({ "reachable" => true, "bridge" => "0.1.0", "device" => { "version" => "0.5.10", "video" => { "ready" => true } } }, adapter.check)
+    assert_equal "http://bridge.test:8379/v1/status", @calls.last[1], "a check connects nothing unless asked"
+    @responses << [ 200, {}.to_json ]
+    adapter.check(probe: true)
+    assert_equal "http://bridge.test:8379/v1/status?probe=1", @calls.last[1]
   end
 
   test "the bridge's errors map to ours" do

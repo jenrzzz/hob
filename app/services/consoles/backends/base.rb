@@ -13,7 +13,8 @@ module Consoles
     #   state(remote_id, scale:)    → state, with a fresh screen
     #   act(remote_id, body)        → state, with the screen after the input
     #   close(remote_id)            → true
-    #   check                       → { "reachable" => true, ... } or raises
+    #   check(probe: false)         → { "reachable" => true, ... } or raises; probe
+    #                                 may connect to the device to ask about video
     #
     # An adapter raises Consoles::NotFound, Invalid, Forbidden, Unavailable,
     # or Gone and nothing else.

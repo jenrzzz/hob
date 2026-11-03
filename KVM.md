@@ -38,7 +38,7 @@ and is meant to be added when the console is pointed at something riskier.
 
 ## The JetKVM
 
-Seen on the device at `jetkvm.tail9d8098.ts.net`, firmware 0.5.10,
+Seen on the device at `jetkvm.tailnet.ts.net`, firmware 0.5.10,
 plugged into Jenner's Mac (1920×1080 at 60 fps). Everything below was
 checked with a throwaway Python client (aiortc) talking to the real
 device: login, the WebRTC handshake, RPC calls, and a decoded frame
@@ -275,7 +275,7 @@ when the session in the way is its own.
 # the bridge, on a tailnet host other than the machine behind the KVM
 cd kvm-bridge && uv sync
 bin/bridge key add hob                           # prints kvb_..., once
-export JETKVM_URL=http://jetkvm.tail9d8098.ts.net JETKVM_PASSWORD=...
+export JETKVM_URL=http://jetkvm.tailnet.ts.net JETKVM_PASSWORD=...
 bin/bridge check                                 # the device answers over HTTP and takes the password
 bin/bridge shot /tmp/kvm.png                     # one frame over WebRTC (takes the KVM for a second)
 BRIDGE_BIND=127.0.0.1,100.x.y.z bin/bridge serve # :8379

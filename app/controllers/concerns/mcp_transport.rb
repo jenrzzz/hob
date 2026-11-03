@@ -9,8 +9,10 @@
 # The including controller says what its tools are and how one runs:
 #
 #   mcp_tools              → [ { "name", "description", "inputSchema", ... } ]
-#   mcp_call(name, args)   → [ a JSON-able answer, is_error ]; raises
-#                            Mcp::UnknownTool for a name it lacks
+#   mcp_call(name, args)   → [ a JSON-able answer, is_error, images? ];
+#                            raises Mcp::UnknownTool for a name it lacks.
+#                            images are [{ "data", "mimeType" }], sent as
+#                            `image` content blocks after the answer
 #   mcp_instructions       → what the model is told on initialize
 #   mcp_answers            → exception classes that are answers, not faults
 #
@@ -87,9 +89,10 @@ module McpTransport
   end
 
   def call_tool(id, params)
-    result, is_error = mcp_call(params["name"], params["arguments"])
+    result, is_error, images = mcp_call(params["name"], params["arguments"])
     text = result.is_a?(String) ? result : result.to_json
-    render_result(id, "content" => [ { "type" => "text", "text" => text } ], "isError" => is_error)
+    content = [ { "type" => "text", "text" => text } ] + image_blocks(images)
+    render_result(id, "content" => content, "isError" => is_error)
   rescue Mcp::UnknownTool => e
     render_error(id, INVALID_PARAMS, e.message)
   rescue *mcp_answers => e
@@ -97,6 +100,14 @@ module McpTransport
   rescue StandardError => e
     Rails.error.report(e, handled: true, severity: :error, source: "hob.mcp", context: { tool: params["name"] })
     render_error(id, INTERNAL_ERROR, "hob failed running #{params['name']}")
+  end
+
+  def image_blocks(images)
+    Array(images).filter_map do |image|
+      next if image["data"].blank?
+
+      { "type" => "image", "data" => image["data"], "mimeType" => image["mimeType"].presence || "image/png" }
+    end
   end
 
   def render_result(id, result)

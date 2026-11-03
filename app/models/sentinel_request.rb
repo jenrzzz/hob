@@ -22,6 +22,15 @@ class SentinelRequest < ApplicationRecord
   validates :realm, presence: true
 
   before_create { self.id ||= ULID.generate }
+
+  # Images the handler handed back as this request ran (a console's screen,
+  # KVM.md), for the caller waiting on it. Never stored: a later read of the
+  # row has none.
+  attr_writer :images
+
+  def images
+    @images || []
+  end
   # The contract it was asked against (PLUGINS.md, section 7): a webhook
   # capability's contract that changes before it runs is not the one that
   # was approved, and it is not delivered (Sentinel::Webhook).

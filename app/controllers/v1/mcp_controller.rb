@@ -19,7 +19,8 @@ module V1
     end
 
     def mcp_call(name, arguments)
-      [ Mcp.call(name, arguments), false ]
+      result, images = ::Sentinel::Native.split_images(Mcp.call(name, arguments))
+      [ result, false, images ]
     end
 
     def mcp_instructions

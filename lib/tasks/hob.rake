@@ -1228,6 +1228,105 @@ namespace :hob do
   end
 end
 
+# Consoles (KVM.md): KVMs on the household's computers.
+namespace :hob do
+  namespace :console do
+    desc "Register (or update) a console (KVM.md): a JetKVM, through its bridge. " \
+         "bin/rails \"hob:console:console[jenner-mac,jetkvm,http://bridgehost.tailnet.ts.net:8379,personal]\" KEY_ENV=KVM_BRIDGE_KEY " \
+         "(or KEY=<the key itself>) OWNER=jenner MACHINE=\"Jenner's MacBook\" ADDR=100.64.0.7 ENABLED=0"
+    task :console, [ :name, :kind, :url, :realm ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:console:console[name,kind=jetkvm,url,realm=personal]\" KEY_ENV= | KEY= OWNER= MACHINE=" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = Console.find_or_initialize_by(name: args[:name])
+        row.kind = args[:kind].presence || row.kind || "jetkvm"
+        row.realm = args[:realm].presence || row.realm || "personal"
+        row.principal = Principal.find_by!(name: ENV["OWNER"]) if ENV["OWNER"].present?
+        row.principal ||= Principal.find_by!(name: "jenner")
+        row.machine = ENV["MACHINE"].presence if ENV.key?("MACHINE")
+        config = row.config.dup
+        config["url"] = args[:url] if args[:url].present?
+        config = config.except("key", "key_env").merge("key_env" => ENV["KEY_ENV"]) if ENV["KEY_ENV"].present?
+        config = config.except("key", "key_env").merge("key" => ENV["KEY"]) if ENV["KEY"].present?
+        config["addr"] = ENV["ADDR"].presence if ENV.key?("ADDR")
+        row.config = config.compact
+        row.enabled = ENV["ENABLED"] != "0" if ENV.key?("ENABLED")
+        created = row.new_record?
+        row.save!
+        puts "#{row.name}: #{created ? 'registered' : 'updated'}; #{row.kind} at #{row.url}, realm #{row.realm}, owner #{row.principal.name}" \
+             "#{row.machine ? ", machine #{row.machine}" : ''}#{row.enabled? ? '' : ', disabled'}; " \
+             "key #{row.config['key_env'].present? ? "from #{row.config['key_env']}#{row.key.blank? ? ' (not set in this environment)' : ''}" : 'stored in the row'}"
+        puts "check it: bin/rails \"hob:console:check[#{row.name}]\""
+      end
+    end
+
+    desc "List consoles and whether each answers"
+    task consoles: :environment do
+      Clearance.with("intimate") do
+        rows = Console.includes(:principal).order(:name)
+        puts "no consoles; bin/rails \"hob:console:console[name,jetkvm,url,realm]\" KEY_ENV=" if rows.empty?
+        rows.each do |row|
+          state = "disabled" unless row.enabled?
+          state ||= begin
+            status = row.adapter.check
+            video = status.dig("device", "video") || {}
+            "reachable, video #{video['ready'] ? 'ready' : (video['error'] || 'not ready')}#{status['session'] ? ', in use' : ''}"
+          rescue Consoles::Error => e
+            "unreachable: #{e.message}"
+          end
+          puts "#{row.name.ljust(20)} #{row.kind.ljust(7)} #{row.realm.ljust(10)} #{row.principal.name.ljust(10)} #{row.machine.to_s.ljust(20)} #{row.url}  #{state}"
+        end
+      end
+    end
+
+    desc "Ask one console how it is: the bridge answers, the device answers, video ready. " \
+         "bin/rails \"hob:console:check[jenner-mac]\""
+    task :check, [ :name ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:console:check[name]\"" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = Console.find_by!(name: args[:name])
+        begin
+          status = row.adapter.check
+          puts "#{row.name}: the bridge answers at #{row.url}"
+          status.except("reachable").each { |name, value| puts "  #{name}: #{value.is_a?(String) ? value : value.to_json}" }
+          video = status.dig("device", "video")
+          abort "#{row.name}: the bridge did not say how the device is" unless video.is_a?(Hash)
+          abort "#{row.name}: video is not ready: #{video['error'] || 'no reason given'}" unless video["ready"]
+
+          puts "#{row.name}: video ready, #{video['width']}x#{video['height']}"
+        rescue Consoles::Error => e
+          abort "#{row.name}: #{e.class.name.demodulize.downcase}: #{e.message}"
+        end
+      end
+    end
+
+    desc "Open sessions, and who has them"
+    task sessions: :environment do
+      Clearance.with("intimate") do
+        rows = ConsoleSession.open.includes(:console, :principal).order(:created_at)
+        puts "no open sessions" if rows.empty?
+        rows.each do |row|
+          puts "#{row.id}  #{row.console.name.ljust(16)} #{row.principal.name.ljust(10)} #{row.steps.to_s.rjust(3)} steps  until #{row.expires_at.iso8601}\n    #{row.goal}"
+        end
+      end
+    end
+
+    desc "End a session now, as a person: bin/rails \"hob:console:close[01J...]\""
+    task :close, [ :id ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:console:close[session id]\"" if args[:id].blank?
+
+      Clearance.with("intimate") do
+        person = Principal.find_by!(name: ENV.fetch("AS", "jenner"))
+        Current.set(principal: person, clearance: "intimate", surface: "rake") do
+          session = Consoles.close(args[:id])
+          puts "#{session['id']}: #{session['status']}#{session['close_reason'] && " (#{session['close_reason']})"}"
+        end
+      end
+    end
+  end
+end
+
 # Records (RECORDS.md): what the household's agents keep.
 namespace :hob do
   namespace :records do

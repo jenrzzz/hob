@@ -6,7 +6,9 @@ module V1
     #   user_authorization?: { quote, quoted_at, context, interpretation, action_ref } }
     #   → 201 the request: status completed|denied|pending|executing|failed,
     #     with result or rationale. Decided inline; pending means a person
-    #     has to look. user_authorization (SENTINEL.md, "User-authorization
+    #     has to look. A completed request whose handler returned images (a
+    #     console's screen) carries them here as images: [{ data, mimeType }],
+    #     once: they are not stored, and a later GET has none. user_authorization (SENTINEL.md, "User-authorization
     #     claims") only ever matters to a `confirm`-effect rule, and only from
     #     a known agent with a fresh, complete quote — otherwise it is logged
     #     and ignored, same as not sending one.
@@ -27,7 +29,7 @@ module V1
           reason: params[:reason].presence, on_mission: params[:mission].presence,
           user_authorization: user_authorization_param
         )
-        render json: serialize(request_row), status: :created
+        render json: serialize(request_row).merge(images: request_row.images.presence).compact, status: :created
       end
 
       def show

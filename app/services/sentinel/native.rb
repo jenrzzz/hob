@@ -90,10 +90,28 @@ module Sentinel
       "people_handle_add" => "Sentinel::Native::PeopleHandleAdd",
       "people_merge" => "Sentinel::Native::PeopleMerge",
       "people_loop_dismiss" => "Sentinel::Native::PeopleLoopDismiss",
-      "situation_get" => "Sentinel::Native::SituationGet"
+      "situation_get" => "Sentinel::Native::SituationGet",
+      "console_open" => "Sentinel::Native::ConsoleOpen",
+      "console_act" => "Sentinel::Native::ConsoleAct",
+      "console_screen" => "Sentinel::Native::ConsoleScreen",
+      "console_close" => "Sentinel::Native::ConsoleClose",
+      "console_sessions" => "Sentinel::Native::ConsoleSessions"
     }.freeze
 
+    # Images a handler hands back (KVM.md: a console's screen) ride under
+    # this key, as [{ "data" => base64, "mimeType" }], and never reach a
+    # request row: split_images takes them off before the result is stored,
+    # and the MCP transport sends them on as `image` content blocks.
+    IMAGES = "_images"
+
     module_function
+
+    # -> [the result without its images, the images (empty when none)].
+    def split_images(result)
+      return [ result, [] ] unless result.is_a?(Hash) && result.key?(IMAGES)
+
+      [ result.except(IMAGES), Array(result[IMAGES]) ]
+    end
 
     def handler(name)
       HANDLERS[name.to_s]&.constantize

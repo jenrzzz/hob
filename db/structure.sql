@@ -361,6 +361,53 @@ ALTER SEQUENCE public.capabilities_id_seq OWNED BY public.capabilities.id;
 
 
 --
+-- Name: console_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.console_sessions (
+    id character varying NOT NULL,
+    console_id character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    goal text NOT NULL,
+    remote_id character varying NOT NULL,
+    status character varying DEFAULT 'open'::character varying NOT NULL,
+    steps integer DEFAULT 0 NOT NULL,
+    ttl integer NOT NULL,
+    expires_at timestamp(6) without time zone NOT NULL,
+    close_reason character varying,
+    sentinel_request_id character varying,
+    on_mission_id character varying,
+    last_step_at timestamp(6) without time zone,
+    closed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.console_sessions FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: consoles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.consoles (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    kind character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    machine character varying,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.consoles FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: conversations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1742,6 +1789,22 @@ ALTER TABLE ONLY public.capabilities
 
 
 --
+-- Name: console_sessions console_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.console_sessions
+    ADD CONSTRAINT console_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: consoles consoles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.consoles
+    ADD CONSTRAINT consoles_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: conversations conversations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2362,6 +2425,48 @@ CREATE UNIQUE INDEX index_capabilities_on_plugin_id_and_remote_name ON public.ca
 
 
 --
+-- Name: index_console_sessions_on_console_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_console_sessions_on_console_id ON public.console_sessions USING btree (console_id);
+
+
+--
+-- Name: index_console_sessions_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_console_sessions_on_principal_id ON public.console_sessions USING btree (principal_id);
+
+
+--
+-- Name: index_console_sessions_on_principal_id_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_console_sessions_on_principal_id_and_status ON public.console_sessions USING btree (principal_id, status);
+
+
+--
+-- Name: index_console_sessions_on_status_and_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_console_sessions_on_status_and_expires_at ON public.console_sessions USING btree (status, expires_at);
+
+
+--
+-- Name: index_consoles_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_consoles_on_name ON public.consoles USING btree (name);
+
+
+--
+-- Name: index_consoles_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_consoles_on_principal_id ON public.consoles USING btree (principal_id);
+
+
+--
 -- Name: index_conversations_on_kind_and_updated_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2561,7 +2666,7 @@ CREATE INDEX index_people_events_on_recorded_by_id ON public.people_events USING
 -- Name: index_people_events_on_source_kind_and_source_ref; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY (ARRAY[('text'::character varying)::text, ('mail'::character varying)::text, ('calendar'::character varying)::text])));
+CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY ((ARRAY['text'::character varying, 'mail'::character varying, 'calendar'::character varying])::text[])));
 
 
 --
@@ -3191,6 +3296,14 @@ ALTER TABLE ONLY public.herald_key_changes
 
 
 --
+-- Name: console_sessions fk_rails_0b2d4aa319; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.console_sessions
+    ADD CONSTRAINT fk_rails_0b2d4aa319 FOREIGN KEY (console_id) REFERENCES public.consoles(id);
+
+
+--
 -- Name: plugins fk_rails_0ef226f090; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3300,6 +3413,14 @@ ALTER TABLE ONLY public.gofer_key_changes
 
 ALTER TABLE ONLY public.guidance_changes
     ADD CONSTRAINT fk_rails_3afeba51b4 FOREIGN KEY (sentinel_policy_id) REFERENCES public.sentinel_policies(id);
+
+
+--
+-- Name: console_sessions fk_rails_40245a6e79; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.console_sessions
+    ADD CONSTRAINT fk_rails_40245a6e79 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -3831,6 +3952,14 @@ ALTER TABLE ONLY public.people_events
 
 
 --
+-- Name: consoles fk_rails_faa0b52adb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.consoles
+    ADD CONSTRAINT fk_rails_faa0b52adb FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: authorization_claims; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3865,6 +3994,18 @@ ALTER TABLE public.budget_backends ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.calendar_backends ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: console_sessions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.console_sessions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: consoles; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.consoles ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: conversations; Type: ROW SECURITY; Schema: public; Owner: -
@@ -4002,6 +4143,24 @@ CREATE POLICY realm_visibility ON public.budget_backends USING ((( SELECT realms
 CREATE POLICY realm_visibility ON public.calendar_backends USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (calendar_backends.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: console_sessions realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.console_sessions USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (console_sessions.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: consoles realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.consoles USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (consoles.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -4257,6 +4416,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261103000001'),
 ('20261102000004'),
 ('20261102000003'),
 ('20261102000002'),

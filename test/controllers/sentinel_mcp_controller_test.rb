@@ -168,4 +168,32 @@ class SentinelMcpControllerTest < ActionDispatch::IntegrationTest
     get "/v1/sentinel/mcp", headers: as_agent(@claude_token)
     assert_response :method_not_allowed
   end
+
+  test "a console's screen comes back as an MCP image block, beside the JSON, and is not stored (KVM.md)" do
+    muse, muse_token = agent("muse", clearance: "personal")
+    policy!(muse, "console.*", "allow")
+    kvm("jenner-mac")
+    result = call_tool("console_open", { goal: "turn off Focus mode on Jenner's Mac" }, token: muse_token)
+    refute result["isError"], result["content"].first["text"]
+    text, image = result["content"]
+    assert_equal "text", text["type"]
+    state = JSON.parse(text["text"])
+    assert_equal({ "width" => 1280, "height" => 720 }, state["screen"])
+    refute state.key?("_images")
+    assert_equal "image", image["type"]
+    assert_equal "image/png", image["mimeType"]
+    assert_match(/PNG fake frame 1/, Base64.decode64(image["data"]))
+    refute_match(/PNG/, SentinelRequest.last.result.to_json)
+
+    later = call_tool("sentinel_request", { id: SentinelRequest.last.id }, token: muse_token)
+    assert_equal [ "text" ], later["content"].map { |c| c["type"] }, "a later read of the row has no image"
+
+    post "/v1/sentinel/requests", params: { capability: "console.act", arguments: { session: state["session"]["id"], action: "screenshot" } },
+                                  headers: as_agent(muse_token), as: :json
+    assert_response :created
+    assert_equal "completed", body["status"]
+    assert_match(/PNG fake frame 2/, Base64.decode64(body["images"].first["data"]))
+  ensure
+    Consoles::Backends::Fake.reset!
+  end
 end

@@ -88,7 +88,7 @@ module Mcp
       }
     end
 
-    # -> [answer, is_error]. Raises UnknownTool for a tool the agent was not
+    # -> [answer, is_error, images]. Raises UnknownTool for a tool the agent was not
     # offered, and Sentinel::Invalid for a request that could not be filed.
     def call(agent, clearance, name, arguments)
       arguments = (arguments || {}).to_h.deep_stringify_keys
@@ -108,7 +108,7 @@ module Mcp
     # but say how to find out.
     def outcome(request)
       case request.status
-      when "completed" then [ request.result, false ]
+      when "completed" then [ request.result, false, request.images ]
       when "denied" then [ "denied (#{request.decided_by}): #{request.rationale}", true ]
       when "failed" then [ "failed: #{request.error}", true ]
       else

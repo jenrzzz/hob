@@ -9,13 +9,13 @@ module Sentinel
 
     # Failures that answer the agent (a bad argument, a backend or webhook
     # that is away) rather than faults in hob; anything else is reported.
-    ANSWERS = [ Gateway::Error, Todos::Error, Budgets::Error, Calendars::Error, Email::Error, Texts::Error, Web::Error, Records::Error, People::Error, Ward::Error, Webhook::Error, ActiveRecord::RecordNotFound, ActiveRecord::RecordInvalid, ArgumentError ].freeze
+    ANSWERS = [ Gateway::Error, Todos::Error, Budgets::Error, Calendars::Error, Email::Error, Texts::Error, Web::Error, Records::Error, People::Error, Ward::Error, Webhook::Error, Consoles::Error, ActiveRecord::RecordNotFound, ActiveRecord::RecordInvalid, ArgumentError ].freeze
 
     def run!(request)
       capability = request.capability
       as_agent(request) do
         case capability.venue
-        when "native" then request.finish!(capability.handler.new(request).call)
+        when "native" then finish_native!(request, capability.handler.new(request).call)
         when "webhook" then request.finish!(Webhook.deliver(capability, request))
         when "poll" then dispatch(request, capability)
         end
@@ -29,6 +29,14 @@ module Sentinel
       end
       request.fail!("#{e.class.name.demodulize}: #{e.message}")
       request
+    end
+
+    # The images go to whoever is waiting on this request, in memory, and
+    # nowhere else: the row keeps the result without them.
+    def finish_native!(request, result)
+      result, images = Native.split_images(result)
+      request.images = images
+      request.finish!(result)
     end
 
     def dispatch(request, capability)

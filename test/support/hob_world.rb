@@ -110,6 +110,12 @@ module HobWorld
   end
 
   # Runs a block the way a request from `principal` at `realm` would.
+  # A console row (KVM.md). The default kind is the in-memory Fake, whose
+  # device lives in Consoles::Backends::Fake.device(name) until Fake.reset!.
+  def kvm(name = "jenner-mac", realm: "personal", kind: "fake", owner: @principal, **attrs)
+    Console.create!(name: name, kind: kind, realm: realm, principal: owner, **attrs)
+  end
+
   def as(principal, realm:, surface: principal.name)
     Clearance.with(realm) do
       Current.set(principal: principal, surface: surface, clearance: realm) { yield }

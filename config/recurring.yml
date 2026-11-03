@@ -18,6 +18,9 @@ production:
   upkeep_checks:
     class: UpkeepChecksJob
     schedule: every 15 minutes
+  console_sweep:
+    class: ConsoleSweepJob
+    schedule: every minute
   situation_sweep:
     class: SituationSweepJob
     schedule: every day at 3:17am

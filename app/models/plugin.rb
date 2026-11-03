@@ -11,6 +11,14 @@
 #   namespace  every capability name it offers starts with "<namespace>.".
 #              Set at registration and never changed: another installation
 #              cannot take its rows, and it cannot take another's.
+#   type       what the app says it is (its manifest's `surface`), also
+#              fixed at registration. The manifest names its operations
+#              under the type ("contacts.card.get"); hob offers each under
+#              the namespace ("contacts-house.card.get"; #local_name), and
+#              keeps the plugin's own name as Capability#remote_name, which
+#              is how a delivery addresses it. Two installations of one type
+#              run the same code and never collide. An installation whose
+#              namespace is its type (mise) has the same name on both sides.
 #   owner      the person a personal installation belongs to (Jenner's
 #              address book, say). Higher clearance never grants another
 #              person's data, and until hob has a model for an agent acting
@@ -31,7 +39,7 @@ class Plugin < ApplicationRecord
   belongs_to :owner, class_name: "Principal", optional: true
   has_many :capabilities, dependent: :restrict_with_exception
 
-  attr_readonly :namespace
+  attr_readonly :namespace, :plugin_type
 
   validates :namespace, presence: true, uniqueness: true, format: { with: NAMESPACE_FORMAT }
   validates :plugin_type, presence: true, format: { with: NAMESPACE_FORMAT }
@@ -75,6 +83,16 @@ class Plugin < ApplicationRecord
     attrs[:signed_since] = Time.current unless signed?
     attrs.merge!(key_confirmed_at: Time.current, previous_key: nil) if with == key && key_confirmed_at.nil?
     update!(attrs)
+  end
+
+  # The name hob offers a manifest's operation under, or nil when the
+  # manifest named it outside the plugin type.
+  def self.local_name(namespace, plugin_type, remote_name)
+    prefix = "#{plugin_type}."
+    remote_name = remote_name.to_s
+    return nil unless remote_name.start_with?(prefix) && remote_name.length > prefix.length
+
+    "#{namespace}.#{remote_name.delete_prefix(prefix)}"
   end
 
   def personal?

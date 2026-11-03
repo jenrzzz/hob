@@ -90,6 +90,13 @@ Rails.application.routes.draw do
       post :actions, on: :member, action: :act
     end
 
+    # Consoles (KVM.md): the household's KVMs, and sessions on them. People
+    # look and close here; agents use the console.* capabilities.
+    resources :consoles, only: %i[index show], param: :name, constraints: { name: /[^\/]+/ } do
+      post :check, on: :member
+    end
+    resources :console_sessions, only: %i[index show destroy]
+
     # The sentinel (SENTINEL.md): where external agents ask.
     namespace :sentinel do
       resources :requests, only: %i[index show create] do

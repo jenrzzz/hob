@@ -449,16 +449,19 @@ namespace :hob do
     desc "Register the capabilities a surface offers the sentinel (SENTINEL.md) from its manifest at /hob/capabilities, " \
          "and hand it the secret hob signs deliveries with. bin/rails \"hob:surface:register[mise,https://mise.example.com]\" " \
          "APP=<coolify app uuid> (RESTART=0 to skip the restart; no APP prints the secret once, for you to set as HOB_WEBHOOK_SECRET; " \
-         "OWNER=<person> makes a new installation personal: only that person reaches it)"
+         "OWNER=<person> makes a new installation personal: only that person reaches it; TYPE=<plugin type> registers an app " \
+         "under a namespace of its own, e.g. hob:surface:register[contacts-house,...] TYPE=contacts)"
     task :register, [ :surface, :url ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:surface:register[surface,url]\" APP=<coolify app uuid>" if args[:surface].blank? || args[:url].blank?
 
       owner = ENV["OWNER"].presence && (Principal.find_by(name: ENV["OWNER"]) || abort("no principal #{ENV['OWNER']}"))
-      result = SurfaceCapabilities.new.register(surface: args[:surface], url: args[:url], app: ENV["APP"].presence,
-                                                restart: ENV["RESTART"] != "0", secret: ENV["SECRET"].presence, owner: owner)
+      result = SurfaceCapabilities.new.register(surface: args[:surface], url: args[:url], type: ENV["TYPE"].presence,
+                                                app: ENV["APP"].presence, restart: ENV["RESTART"] != "0",
+                                                secret: ENV["SECRET"].presence, owner: owner)
       puts "#{result.surface}: #{result.created} capability(ies) registered, #{result.updated} updated, #{result.disabled} disabled"
       puts "a personal installation: only #{result.plugin.owner.name} reaches it, and no agent does yet" if result.plugin.personal?
       surface_secret_report(result)
+      surface_suspended_report(result)
       surface_listing(result.surface)
       puts "then let agents at them: bin/rails \"hob:sentinel:policy[marley,#{result.surface}.*,review]\" (README.md has a set)"
     end
@@ -478,6 +481,7 @@ namespace :hob do
         puts "waiting for you to accept (nothing reaches them until then):"
         result.proposed.each { |name| puts "  bin/rails \"hob:capabilities:accept[#{name}]\"" }
       end
+      surface_suspended_report(result)
       surface_listing(result.surface)
     end
 
@@ -523,7 +527,8 @@ namespace :hob do
         state = plugin.quarantined? ? "quarantined: #{plugin.principal.capabilities_freeze_reason}" : "active"
         state += plugin.signed? ? ", signs its manifest since #{plugin.signed_since.to_fs(:short)}" : ", unsigned"
         state += ", waiting for its new key" if plugin.key.present? && plugin.key_confirmed_at.nil?
-        puts "#{plugin.namespace.ljust(16)} #{(plugin.owner ? "#{plugin.owner.name}'s" : 'household').ljust(12)} " \
+        type = plugin.plugin_type == plugin.namespace ? "" : " (#{plugin.plugin_type})"
+        puts "#{(plugin.namespace + type).ljust(16)} #{(plugin.owner ? "#{plugin.owner.name}'s" : 'household').ljust(12)} " \
              "#{plugin.capabilities.count} capability(ies)  #{plugin.base_url}  #{state}"
       end
     end
@@ -556,12 +561,22 @@ namespace :hob do
       end
     end
 
+    def surface_suspended_report(result)
+      result.suspended.each do |name, why|
+        puts "suspended #{name}: #{why}"
+        puts "  once it serves the accepted contract again: bin/rails \"hob:capabilities:resume[#{name}]\""
+      end
+      puts "resumed #{result.resumed.join(', ')}" if result.resumed.any?
+    end
+
     def surface_listing(surface)
       SurfaceCapabilities.registered(surface).each do |cap|
-        state = if !cap.accepted? then "waiting to be accepted"
+        state = if cap.suspended? then "suspended"
+        elsif !cap.accepted? then "waiting to be accepted"
         elsif !cap.enabled then "disabled"
         end
-        puts "  #{cap.name.ljust(30)} #{cap.kind.ljust(5)} #{cap.realm.ljust(10)} #{state}"
+        remote = cap.remote_name && cap.remote_name != cap.name ? "  (its #{cap.remote_name})" : ""
+        puts "  #{cap.name.ljust(30)} #{cap.kind.ljust(5)} #{cap.realm.ljust(10)} #{state}#{remote}"
       end
     end
   end
@@ -599,6 +614,25 @@ namespace :hob do
       end
       puts "accepted #{cap.name}: #{cap.kind}, #{cap.realm}#{by ? ", by #{by.name}" : ''}"
     rescue Capability::Error, ActiveRecord::RecordInvalid => e
+      abort e.message
+    end
+
+    desc "Resume a capability a refresh suspended for breaking its contract (PLUGINS.md, section 7): hob reads the " \
+         "plugin's manifest again and resumes it only if it serves a contract the accepted one still holds for. " \
+         "bin/rails \"hob:capabilities:resume[mise.recipes,realm=household's,kind=household's]\" BY=jenner"
+    task :resume, [ :name, :realm, :kind ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:capabilities:resume[name,realm,kind]\" BY=<person>" if args[:name].blank?
+
+      cap = Capability.find_by(name: args[:name]) || abort("no capability #{args[:name]}")
+      by = ENV["BY"].presence && (Principal.find_by(name: ENV["BY"]) || abort("no principal #{ENV['BY']}"))
+      puts "#{cap.name} is suspended: #{cap.suspended_reason}" if cap.suspended?
+      Clearance.with("intimate") do
+        capability_proposal(cap)
+        SurfaceCapabilities.new.resume(name: cap.name, by: by, realm: args[:realm], kind: args[:kind])
+      end
+      cap.reload
+      puts "resumed #{cap.name}: #{cap.kind}, #{cap.realm}, contract revision #{cap.contract_revision}"
+    rescue SurfaceCapabilities::Error, ActiveRecord::RecordInvalid => e
       abort e.message
     end
 
@@ -1188,6 +1222,106 @@ namespace :hob do
         puts "no open sessions" if rows.empty?
         rows.each do |row|
           puts "#{row.id}  #{row.browser.name.ljust(16)} #{row.principal.name.ljust(10)} #{row.steps.to_s.rjust(3)} steps  #{row.url}\n    #{row.goal}"
+        end
+      end
+    end
+  end
+end
+
+# Consoles (KVM.md): KVMs on the household's computers.
+namespace :hob do
+  namespace :console do
+    desc "Register (or update) a console (KVM.md): a JetKVM, through its bridge. " \
+         "bin/rails \"hob:console:console[jenner-mac,jetkvm,http://bridgehost.tailnet.ts.net:8379,personal]\" KEY_ENV=KVM_BRIDGE_KEY " \
+         "(or KEY=<the key itself>) OWNER=jenner MACHINE=\"Jenner's MacBook\" ADDR=100.64.0.7 ENABLED=0"
+    task :console, [ :name, :kind, :url, :realm ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:console:console[name,kind=jetkvm,url,realm=personal]\" KEY_ENV= | KEY= OWNER= MACHINE=" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = Console.find_or_initialize_by(name: args[:name])
+        row.kind = args[:kind].presence || row.kind || "jetkvm"
+        row.realm = args[:realm].presence || row.realm || "personal"
+        row.principal = Principal.find_by!(name: ENV["OWNER"]) if ENV["OWNER"].present?
+        row.principal ||= Principal.find_by!(name: "jenner")
+        row.machine = ENV["MACHINE"].presence if ENV.key?("MACHINE")
+        config = row.config.dup
+        config["url"] = args[:url] if args[:url].present?
+        config = config.except("key", "key_env").merge("key_env" => ENV["KEY_ENV"]) if ENV["KEY_ENV"].present?
+        config = config.except("key", "key_env").merge("key" => ENV["KEY"]) if ENV["KEY"].present?
+        config["addr"] = ENV["ADDR"].presence if ENV.key?("ADDR")
+        row.config = config.compact
+        row.enabled = ENV["ENABLED"] != "0" if ENV.key?("ENABLED")
+        created = row.new_record?
+        row.save!
+        puts "#{row.name}: #{created ? 'registered' : 'updated'}; #{row.kind} at #{row.url}, realm #{row.realm}, owner #{row.principal.name}" \
+             "#{row.machine ? ", machine #{row.machine}" : ''}#{row.enabled? ? '' : ', disabled'}; " \
+             "key #{row.config['key_env'].present? ? "from #{row.config['key_env']}#{row.key.blank? ? ' (not set in this environment)' : ''}" : 'stored in the row'}"
+        puts "check it: bin/rails \"hob:console:check[#{row.name}]\""
+      end
+    end
+
+    desc "List consoles and whether each answers"
+    task consoles: :environment do
+      Clearance.with("intimate") do
+        rows = Console.includes(:principal).order(:name)
+        puts "no consoles; bin/rails \"hob:console:console[name,jetkvm,url,realm]\" KEY_ENV=" if rows.empty?
+        rows.each do |row|
+          state = "disabled" unless row.enabled?
+          state ||= begin
+            status = row.adapter.check
+            video = status.dig("device", "video")
+            video_note = video.is_a?(Hash) ? ", video #{video['ready'] ? 'ready' : (video['error'] || 'not ready')}" : ""
+            "reachable#{video_note}#{status['session'] ? ', in use' : ''}"
+          rescue Consoles::Error => e
+            "unreachable: #{e.message}"
+          end
+          puts "#{row.name.ljust(20)} #{row.kind.ljust(7)} #{row.realm.ljust(10)} #{row.principal.name.ljust(10)} #{row.machine.to_s.ljust(20)} #{row.url}  #{state}"
+        end
+      end
+    end
+
+    desc "Ask one console how it is: the bridge answers, the device answers, video ready. Connects to the " \
+         "KVM for a moment, which cuts off anyone using it in a browser. bin/rails \"hob:console:check[jenner-mac]\""
+    task :check, [ :name ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:console:check[name]\"" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = Console.find_by!(name: args[:name])
+        begin
+          status = row.adapter.check(probe: true)
+          puts "#{row.name}: the bridge answers at #{row.url}"
+          status.except("reachable").each { |name, value| puts "  #{name}: #{value.is_a?(String) ? value : value.to_json}" }
+          video = status.dig("device", "video")
+          abort "#{row.name}: the bridge did not say how the device is" unless video.is_a?(Hash)
+          abort "#{row.name}: video is not ready: #{video['error'] || 'no reason given'}" unless video["ready"]
+
+          puts "#{row.name}: video ready, #{video['width']}x#{video['height']}"
+        rescue Consoles::Error => e
+          abort "#{row.name}: #{e.class.name.demodulize.downcase}: #{e.message}"
+        end
+      end
+    end
+
+    desc "Open sessions, and who has them"
+    task sessions: :environment do
+      Clearance.with("intimate") do
+        rows = ConsoleSession.open.includes(:console, :principal).order(:created_at)
+        puts "no open sessions" if rows.empty?
+        rows.each do |row|
+          puts "#{row.id}  #{row.console.name.ljust(16)} #{row.principal.name.ljust(10)} #{row.steps.to_s.rjust(3)} steps  until #{row.expires_at.iso8601}\n    #{row.goal}"
+        end
+      end
+    end
+
+    desc "End a session now, as a person: bin/rails \"hob:console:close[01J...]\""
+    task :close, [ :id ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:console:close[session id]\"" if args[:id].blank?
+
+      Clearance.with("intimate") do
+        person = Principal.find_by!(name: ENV.fetch("AS", "jenner"))
+        Current.set(principal: person, clearance: "intimate", surface: "rake") do
+          session = Consoles.close(args[:id])
+          puts "#{session['id']}: #{session['status']}#{session['close_reason'] && " (#{session['close_reason']})"}"
         end
       end
     end

@@ -73,7 +73,9 @@ class SurfaceCapabilitiesTest < ActiveSupport::TestCase
 
     recipes = Capability.find_by!(name: "mise.recipes")
     assert_equal "webhook", recipes.venue
-    assert_equal({ "url" => "https://mise.test/hob/capabilities/mise.recipes", "secret" => secret, "surface" => "mise" }, recipes.config)
+    assert_equal "mise.recipes", recipes.remote_name, "mise's namespace is its type: the same name on both sides"
+    assert_equal({ "url" => "https://mise.test/hob/capabilities/mise.recipes", "secret" => secret, "surface" => "mise",
+                   "declared" => { "kind" => "read", "realm" => "household" } }, recipes.config)
     assert_equal [ "read", "household", true ], [ recipes.kind, recipes.realm, recipes.enabled ]
     assert recipes.accepted?, "a person registering a surface has looked at what it offers"
     assert_equal({ "q" => { "type" => "string" } }, recipes.input_schema["properties"])
@@ -130,7 +132,7 @@ class SurfaceCapabilitiesTest < ActiveSupport::TestCase
     @manifest["surface"] = "mise"
     @manifest["capabilities"][0]["name"] = "todo.list"
     error = assert_raises(SurfaceCapabilities::Error) { register }
-    assert_match(/not mise's to offer/, error.message)
+    assert_match(/not a mise operation/, error.message)
     assert_equal 0, Capability.where("name LIKE 'mise.%'").count
 
     @manifest["capabilities"][0]["name"] = "mise.recipes"

@@ -1,7 +1,8 @@
 # A plugin platform for hob
 
 *Feasibility and design investigation. **Phase 0 (section 12) is implemented**, and Phase 1 is
-under way (1a, installations and quarantine, and 1b, signing and announcements, are in); the rest
+under way (1a, installations and quarantine, 1b, signing and announcements, 1c, installation
+namespaces, and 1d, versioned contracts, are in); the rest
 of Phase 1 and Phases 2–5 are still proposals. Part 1 describes the code as it was before Phase 0; SENTINEL.md (*Capabilities*)
 describes it as it is now.*
 
@@ -559,9 +560,44 @@ signed with a key retired mid-fetch, is refused. After the first verified
   `docs/HOB.md`, *Signing*). The migration for mise is `hob:surface:rotate[mise] APP=…` once its
   signing code is deployed, then `hob:surface:refresh[mise]`.
 
-  Still to do in Phase 1. 1c: per-installation namespaces distinct from the plugin type, with
-  local operation names mapped into them. 1d: versioned contracts and suspension on an
-  incompatible refresh. 1e: bounded delivery resources.
+  **Phase 1c — installation namespaces. Done.** `plugins.plugin_type` is fixed at the first
+  registration like the namespace (`TYPE=` on `hob:surface:register`; the namespace when not
+  given, so mise is unchanged). The manifest's `surface` must be the type, and its entries name
+  operations under the type (`contacts.card.get`): the type-qualified name *is* the local
+  operation name, so a manifest needs no new field and mise's doesn't change. Hob offers each
+  under the namespace (`contacts-house.card.get`, `Plugin.local_name`) and stores the manifest's
+  name as `capabilities.remote_name` (unique per installation; backfilled to `name` for every
+  existing plugin row). The delivery URL is built from `remote_name`, and the body carries
+  `capability: <remote_name>` and a new `installation: <namespace>`, so a plugin's routes and
+  its check that the body matches the path are unchanged by how the household names it.
+  Reserved namespaces are checked against the namespace, not the type: an installation of type
+  `people` under `people-x` offers `people-x.*`, which no native handler owns.
+
+  **Phase 1d — versioned contracts and suspension. Done.** On refresh (and registration), each
+  entry for an accepted row is diffed against the row's schema (`ContractDiff`: a removed or
+  newly required property, a narrowed or changed type, a lost or new enum, an object that closes,
+  compared recursively by path). A breaking entry, or one whose declared kind or realm differs
+  from what was declared when it was last reviewed (`config.declared`), is refused alone: the row
+  keeps its accepted contract, is suspended (`capabilities.suspended_at`/`suspended_reason`),
+  and a person is told what broke and how to resume. A suspended row is out of
+  `Capability.offered_to`, denied at the gate (`decided_by: plugin`), refused again in
+  `Sentinel::Webhook.deliver`, and held as it is by later refreshes. A loosening change goes
+  through and bumps `contract_revision`; a request records the revision it was asked against
+  (`sentinel_requests.contract_revision`), and delivery refuses one asked against another, so a
+  request approved before a refresh is not sent under a contract nobody reviewed it for.
+  Resuming is a person's (`hob:capabilities:resume[name,realm,kind]`,
+  `SurfaceCapabilities#resume`): it reads the manifest again, as a refresh with all of its trust
+  checks, and resumes the row only if the entry is still listed and holds to the accepted
+  contract; for a changed declaration, the person is the review, and may set the household's realm
+  and kind as accepting does. A breaking change is published under a new name (`.v2`), a new
+  capability through acceptance with no exact rule copied. Entries may carry `version` (recorded
+  in `config.version`), `deprecated_at`, and `sunset_at`; `hob.capability.search` returns the
+  last two with a warning. There is no `output_schema` yet (Phase 2 adds it), so only inputs are
+  diffed, and there is no API or admin page for resuming yet. Routing does not need its own
+  check: an installation's URL changes only by a person's registration, and `remote_name` is
+  fixed per name.
+
+  Still to do in Phase 1. 1e: bounded delivery resources.
 - **Phase 2 — scheduled discovery.** Add `PluginRefreshJob` (Solid Queue, reusing the `schedules`
   machinery) alongside the existing manual rake task, running refresh only, never rotate. Add
   `output_schema`/`errors` to the manifest shape, accepted but optional during a grace period so

@@ -77,6 +77,13 @@ module Sentinel
         capability, a different scope — grant it again with that exact name
         and the guidance rewritten to say so. Grant never changes an existing
         effect: widening guidance must not turn a `review` into an `allow`.
+        When a held grant's constraints are what stop the agent (a collection
+        pattern that admits only `^amazon`, say, and the agent now needs a
+        collection a person approved), widen them the same way: return the
+        complete new constraints object, keeping every argument already
+        constrained and adding only what the want needs — `^(amazon|fsa-claims$)`,
+        not `.*` — and rewrite the guidance so a reviewer knows the new scope.
+        Empty constraints leave the current ones as they are.
       - build: nothing existing does it, it is a reasonable thing for hob to offer,
         and it fits hob's shape (a native handler that reads or acts on hob's own
         data and models, or a small integration). Write a complete, implementable
@@ -259,12 +266,19 @@ module Sentinel
           raise Invalid, "#{verdict.capability.inspect} is not a capability #{@agent.name} can be granted"
         end
         if rule && rule.specificity == 2 && rule.principal_id == @agent.id
-          widening_guidance = verdict.guidance.present? && verdict.guidance != rule.guidance
+          rescoping_guidance = verdict.guidance.present? && verdict.guidance != rule.guidance
+          rescoping_constraints = verdict.constraints.present? && verdict.constraints != (rule.constraints || {})
           verdict.effect = rule.effect
-          if widening_guidance && charter && charter.effect == "confirm" && !human
+          if (rescoping_guidance || rescoping_constraints) && charter && charter.effect == "confirm" && !human
             return refer(verdict, "#{verdict.rationale} (the charter refers every petition to a person)")
           end
-          verdict.rationale = "already permitted: #{rule.effect} by the #{@agent.name} rule for #{cap.name}" unless widening_guidance
+          # A rewrite replaces the whole constraint object; one that drops an
+          # argument the grant constrains today would lift that bound
+          # entirely, not widen it. Only a person does that.
+          if rescoping_constraints && !human && (dropped = (rule.constraints || {}).keys - verdict.constraints.keys).any?
+            return refer(verdict, "#{verdict.rationale} (the new constraints drop #{dropped.join(', ')}, which would lift that bound entirely)")
+          end
+          verdict.rationale = "already permitted: #{rule.effect} by the #{@agent.name} rule for #{cap.name}" unless rescoping_guidance || rescoping_constraints
           return verdict
         end
         verdict.effect ||= EFFECT_CAP.fetch(cap.kind)
@@ -385,21 +399,24 @@ module Sentinel
     # Write the policy row a "grant" verdict describes. On a brand new rule
     # every field, guidance included, is set directly: there is nothing to
     # diff against, and the petition's own row already carries the story. On
-    # a rule the agent already holds, guidance flows through
-    # SentinelPolicy#update_guidance! instead, so a widening or narrowing of
+    # a rule the agent already holds, guidance and constraints flow through
+    # SentinelPolicy#update_scope! instead, so a widening or narrowing of
     # what it may do is logged (GuidanceChange) — the effect is left alone.
+    # Empty constraints from a verdict mean "keep what the grant has".
     def write_rule!(verdict, decided_by:, decider: nil)
       rule = SentinelPolicy.find_or_initialize_by(principal: @agent, capability: verdict.capability)
       rule.effect = verdict.effect
-      rule.constraints = verdict.constraints if verdict.constraints.present? || rule.new_record?
       rule.limits = verdict.limits if verdict.limits.present? || rule.new_record?
       if rule.new_record?
+        rule.constraints = verdict.constraints
         rule.guidance = verdict.guidance if verdict.guidance.present?
         rule.save!
       else
         rule.save!
-        rule.update_guidance!(verdict.guidance, source: "petition", decided_by: decided_by, decider: decider,
-                              petition: @petition, rationale: verdict.rationale) if verdict.guidance.present?
+        keep = SentinelPolicy::KEEP
+        rule.update_scope!(guidance: verdict.guidance.presence || keep, constraints: verdict.constraints.presence || keep,
+                           source: "petition", decided_by: decided_by, decider: decider,
+                           petition: @petition, rationale: verdict.rationale)
       end
       rule
     end
@@ -469,8 +486,8 @@ module Sentinel
       end
       lines << "What the steward may do: #{powers}"
       lines << "Capabilities available to grant (name — kind, realm: description):\n#{grantable_text(rank)}"
-      lines << "Capabilities the agent already holds (name: effect — guidance, if any); grant one of these " \
-               "again, with the same name, to widen or narrow its guidance:\n#{permitted_text}"
+      lines << "Capabilities the agent already holds (name: effect — constraints and guidance, if any); grant one of these " \
+               "again, with the same name, to widen or narrow its constraints or guidance:\n#{permitted_text}"
       lines << "Capabilities above the agent's clearance (cannot be granted; a person would have to raise its clearance):\n#{above_text(rank)}"
       lines << "Recent requests by this agent:\n#{history}"
       lines << "Recent petitions by this agent:\n#{petition_history}"
@@ -499,8 +516,9 @@ module Sentinel
         next nil unless rule && rule.effect != "deny" && rule.capability != CHARTER
 
         exact = rule.specificity == 2 && rule.principal_id == @agent.id
+        constraints = exact && rule.constraints.present? ? " — constraints: #{rule.constraints.to_json}" : ""
         guidance = exact && rule.guidance.present? ? " — guidance: #{rule.guidance.truncate(300)}" : ""
-        "- #{cap.name}: #{rule.effect}#{guidance}"
+        "- #{cap.name}: #{rule.effect}#{constraints}#{guidance}"
       end
       rows.empty? ? "(none)" : rows.join("\n")
     end

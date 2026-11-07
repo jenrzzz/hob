@@ -42,7 +42,7 @@ module Sentinel
       return deny("policy", rule_label(rule)) if rule.effect == "deny"
 
       if (problem = constraint_violation(rule))
-        return deny("constraint", problem)
+        return deny("constraint", "#{problem}#{petition_hint(rule)}")
       end
       if (problem = limit_exceeded(rule))
         return deny("limit", problem)
@@ -71,6 +71,16 @@ module Sentinel
 
     def deny(by, rationale)
       Verdict.new(decision: "deny", decided_by: by, rationale: rationale)
+    end
+
+    # A constraint is the scope of a grant, and scope can be petitioned for:
+    # say so, or the agent reads the refusal as final (skipsy and fsa-claims,
+    # 2026-11-07). Only the agent's own exact rule is re-grantable this way.
+    def petition_hint(rule)
+      return "" unless rule.principal_id == @agent.id && rule.specificity == 2
+
+      ". To widen this grant's scope, petition (POST /v1/sentinel/petitions) for #{rule.capability}, " \
+        "saying what you need it to cover and why"
     end
 
     def rule_label(rule)

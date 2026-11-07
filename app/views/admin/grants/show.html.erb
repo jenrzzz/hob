@@ -6,15 +6,16 @@
     <span class="muted">held since <%= @grant.created_at.to_date %></span>
   </div>
   <dl class="facts">
-    <dt>Constraints</dt>
-    <dd><% if @grant.constraints.present? %><pre><%= JSON.pretty_generate(@grant.constraints) %></pre><% else %><span class="muted">none</span><% end %></dd>
     <dt>Limits</dt>
     <dd><% if @grant.limits.present? %><pre><%= JSON.pretty_generate(@grant.limits) %></pre><% else %><span class="muted">none</span><% end %></dd>
   </dl>
 
-  <h2 style="margin-top: 14px">Guidance</h2>
-  <p class="muted">What a reviewer is told when judging this agent's asks for this capability. Changing it does not touch the effect above.</p>
   <%= form_with url: admin_grant_path(@grant) do |f| %>
+    <h2 style="margin-top: 14px">Constraints</h2>
+    <p class="muted">Which arguments the agent may send, checked before the effect applies: <code>{ "collection": { "pattern": "^(amazon|fsa-claims$)" } }</code>. Keys per argument: <code>in</code>, <code>max</code>, <code>pattern</code>. Empty means none.</p>
+    <%= f.text_area :constraints, value: (JSON.pretty_generate(@grant.constraints) if @grant.constraints.present?), rows: 4, style: "width: 100%; margin-bottom: 8px; font-family: monospace", "aria-label": "Constraints" %>
+    <h2 style="margin-top: 14px">Guidance</h2>
+    <p class="muted">What a reviewer is told when judging this agent's asks for this capability. Changing either does not touch the effect above.</p>
     <%= f.text_area :guidance, value: @grant.guidance, rows: 4, style: "width: 100%; margin-bottom: 8px", "aria-label": "Guidance" %>
     <div class="row">
       <%= f.text_field :rationale, placeholder: "why (optional)", "aria-label": "Rationale" %>
@@ -25,7 +26,7 @@
 
 <h1 style="margin-top: 32px">History</h1>
 <% if @history.empty? %>
-  <p class="muted">No guidance changes recorded yet.</p>
+  <p class="muted">No scope changes recorded yet.</p>
 <% else %>
   <section class="card">
     <div class="table-wrap">
@@ -37,9 +38,16 @@
             <td><%= h.source %><% if h.petition_id %> <span class="muted">(petition <%= h.petition_id %>)</span><% end %></td>
             <td><%= h.decider&.name || h.decided_by %></td>
             <td>
-              <span class="muted"><%= h.old_guidance.presence || "(none)" %></span>
-              →
-              <%= h.new_guidance.presence || "(none)" %>
+              <% if h.constraints_changed? %>
+                <div>constraints: <code class="muted"><%= h.old_constraints.presence&.to_json || "(none)" %></code> → <code><%= h.new_constraints.presence&.to_json || "(none)" %></code></div>
+              <% end %>
+              <% if h.guidance_changed? %>
+                <div>
+                  <span class="muted"><%= h.old_guidance.presence || "(none)" %></span>
+                  →
+                  <%= h.new_guidance.presence || "(none)" %>
+                </div>
+              <% end %>
             </td>
             <td><%= h.rationale %></td>
           </tr>

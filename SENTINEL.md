@@ -356,15 +356,22 @@ breach denies.
 Tessa's household planning. Deny anything about other household members'
 private matters. Escalate purchases."*
 
-Guidance can change after the grant — an agent's petition to widen or narrow
-what an already-held capability's guidance permits (below), or a person
-editing it directly at `/admin/grants`, both writing through
-`SentinelPolicy#update_guidance!`. The effect never moves this way:
-widening guidance cannot turn a `review` into an `allow`, only reword what
-it may be used for. Every change is a `guidance_changes` row — who (the
-steward or a person), when, the old and new text, and whether a petition or
-an admin edit drove it — kept alongside the rule, never deleted. A rule's
-`/admin/grants/:id` page lists its own history.
+Guidance and constraints together are a grant's scope, and scope can change
+after the grant — an agent's petition to widen or narrow an already-held
+capability (below), or a person editing it at `/admin/grants` or over
+`PATCH /v1/sentinel/policies/:id`, all writing through
+`SentinelPolicy#update_scope!`. The effect never moves this way: widening
+scope cannot turn a `review` into an `allow`. A constraint refusal on the
+agent's own rule tells it so: "…; to widen this grant's scope, petition…".
+The steward sees each held rule's constraints, and rewrites them as a whole
+object that keeps every argument already constrained (a records grant whose
+`collection` pattern is `^amazon` becomes `^(amazon|fsa-claims$)`, never
+`.*`); a rewrite that drops a constrained argument, or any rescoping under a
+`confirm` charter, is referred to a person. Every change is a
+`guidance_changes` row — who (the steward or a person), when, the old and
+new text, the old and new constraints when they moved, and whether a
+petition or an admin edit drove it — kept alongside the rule, never
+deleted. A rule's `/admin/grants/:id` page lists its own history.
 
 ### The reviewer
 
@@ -580,10 +587,11 @@ petition is referred. An exact rule the agent already has keeps its
 effect — grant never loosens or tightens it — but a `want` that reads as
 scoping the same capability differently (skipsy asking for `browse.open`'s
 guidance to also cover read-only parcel tracking, having already been
-granted it for Amazon order pages) updates its guidance instead
-(`SentinelPolicy#update_guidance!`, logged as a `guidance_changes` row); a
-charter of `confirm` still refers a guidance change to a person, same as any
-other grant. An unreachable or refusing steward refers. A `build` verdict
+granted it for Amazon order pages, or `records.put`'s `^amazon` collection
+pattern to also admit `fsa-claims` once a person approved that collection)
+updates its guidance and constraints instead (`SentinelPolicy#update_scope!`,
+logged as a `guidance_changes` row; see "Policies"); a charter of `confirm`
+still refers a scope change to a person, same as any other grant. An unreachable or refusing steward refers. A `build` verdict
 with an incomplete spec, an invalid name, or a name that already exists is
 referred
 too, never built.

@@ -223,6 +223,70 @@ class StewardTest < ActiveSupport::TestCase
     assert_equal "approved: read-only tracking lookups are in scope", change.rationale
   end
 
+  test "grant widens a held grant's constraints to a new collection; the change is on the record and the effect kept" do
+    charter!(@muse, "review")
+    rule = policy!(@muse, "records.put", "review", guidance: "Amazon receipts only.",
+                   constraints: { "collection" => { "pattern" => "^amazon[a-z0-9_-]*$" }, "document" => { "max" => 40 } })
+    steward_says("grant", capability: "records.put", effect: "allow",
+                 constraints: { "collection" => { "pattern" => "^(amazon[a-z0-9_-]*|fsa-claims)$" }, "document" => { "max" => 40 } }.to_json,
+                 guidance: "Amazon receipts, and Jenner's own FSA claims in fsa-claims.", rationale: "a person approved fsa-claims")
+
+    row = petition("write FSA claim records into fsa-claims", capability: "records.put")
+    assert_equal "granted", row.status
+    assert_equal "review", row.effect
+
+    rule.reload
+    assert_equal "review", rule.effect, "widening scope never loosens the effect"
+    assert_equal "^(amazon[a-z0-9_-]*|fsa-claims)$", rule.constraints.dig("collection", "pattern")
+    change = rule.guidance_changes.sole
+    assert_equal row, change.petition
+    assert change.constraints_changed?
+    assert change.guidance_changed?
+    assert_equal "^amazon[a-z0-9_-]*$", change.old_constraints.dig("collection", "pattern")
+    assert_equal "^(amazon[a-z0-9_-]*|fsa-claims)$", change.new_constraints.dig("collection", "pattern")
+
+    content = @fake.calls.last.messages.last["content"]
+    assert_match(/- records.put: review — constraints: \{.*"collection":\{"pattern":"\^amazon/, content, "the steward sees what bounds the grant today")
+  end
+
+  test "a constraints-only widening is logged without touching guidance; empty constraints keep the old ones" do
+    charter!(@muse, "review")
+    rule = policy!(@muse, "records.query", "allow", guidance: "Amazon and FSA receipts.",
+                   constraints: { "collection" => { "pattern" => "^amazon" } })
+    steward_says("grant", capability: "records.query", constraints: { "collection" => { "pattern" => "^(amazon|fsa-claims$)" } }.to_json)
+    assert_equal "granted", petition("search fsa-claims").status
+    change = rule.reload.guidance_changes.sole
+    assert change.constraints_changed?
+    assert_not change.guidance_changed?
+    assert_equal "Amazon and FSA receipts.", rule.guidance
+
+    steward_says("grant", capability: "records.query", guidance: "Amazon and FSA receipts, by date.")
+    assert_equal "granted", petition("search by date").status
+    assert_equal "^(amazon|fsa-claims$)", rule.reload.constraints.dig("collection", "pattern"), "no constraints in the verdict keeps them"
+    assert_not rule.guidance_changes.recent.first.constraints_changed?
+  end
+
+  test "a rewrite that drops a constrained argument, or any rescoping under a confirm charter, goes to a person" do
+    charter!(@muse, "review")
+    rule = policy!(@muse, "records.put", "review", constraints: { "collection" => { "pattern" => "^amazon" } })
+    steward_says("grant", capability: "records.put", constraints: { "document" => { "max" => 10 } }.to_json)
+    row = petition("write anywhere")
+    assert_equal "pending", row.status
+    assert_match(/drop collection/, row.rationale)
+    assert_equal({ "collection" => { "pattern" => "^amazon" } }, rule.reload.constraints)
+
+    granted = Sentinel.decide_petition!(row, decision: "grant", decider: @principal, capability: "records.put",
+                                        constraints: { "collection" => { "pattern" => "^(amazon|fsa-claims$)" } })
+    assert_equal "granted", granted.status
+    assert_equal "^(amazon|fsa-claims$)", rule.reload.constraints.dig("collection", "pattern")
+    assert_equal @principal, rule.guidance_changes.sole.decider
+
+    SentinelPolicy.find_by!(principal: @muse, capability: Sentinel::Steward::CHARTER).update!(effect: "confirm")
+    steward_says("grant", capability: "records.put", constraints: { "collection" => { "pattern" => "^(amazon|fsa-claims|newegg-orders)$" } }.to_json)
+    assert_equal "pending", petition("also newegg").status
+    assert_equal "^(amazon|fsa-claims$)", rule.reload.constraints.dig("collection", "pattern")
+  end
+
   test "a confirm charter refers everything, with the steward's advice attached" do
     charter!(nil, "confirm")
     steward_says("grant", capability: "hob.usage", effect: "allow", rationale: "harmless")

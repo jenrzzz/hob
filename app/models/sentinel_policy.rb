@@ -57,15 +57,32 @@ class SentinelPolicy < ApplicationRecord
   # approval or an admin edit drove it. `effect` is never touched here — a
   # scope-widening or -narrowing guidance change must not loosen or tighten
   # what the grant allows. A no-op (the text is unchanged) writes nothing.
-  def update_guidance!(new_guidance, source:, decided_by:, decider: nil, petition: nil, rationale: nil)
-    new_guidance = new_guidance.to_s.presence
-    return self if new_guidance == guidance
+  def update_guidance!(new_guidance, **audit)
+    update_scope!(guidance: new_guidance, **audit)
+  end
 
-    old_guidance = guidance
+  # Change what an already-held grant reaches — its guidance, its argument
+  # constraints, or both — and log it as one GuidanceChange. A constraint
+  # rewrite is the change that actually widens access (a collection pattern
+  # that now admits fsa-claims), so it is on the record like the words are.
+  # Pass KEEP (the default) to leave either alone. Never touches `effect`.
+  KEEP = Object.new.freeze
+
+  def update_scope!(guidance: KEEP, constraints: KEEP, source:, decided_by:, decider: nil, petition: nil, rationale: nil)
+    new_guidance = guidance.equal?(KEEP) ? self.guidance : guidance.to_s.presence
+    new_constraints = constraints.equal?(KEEP) ? self.constraints : (constraints || {}).to_h.deep_stringify_keys
+    guidance_changed = new_guidance != self.guidance
+    constraints_changed = new_constraints != (self.constraints || {})
+    return self unless guidance_changed || constraints_changed
+
+    old_guidance = self.guidance
+    old_constraints = self.constraints || {}
     transaction do
-      update!(guidance: new_guidance)
+      update!(guidance: new_guidance, constraints: new_constraints)
       guidance_changes.create!(source: source, decided_by: decided_by, decider: decider, petition: petition,
-                               old_guidance: old_guidance, new_guidance: new_guidance, rationale: rationale)
+                               old_guidance: old_guidance, new_guidance: new_guidance, rationale: rationale,
+                               old_constraints: (old_constraints if constraints_changed),
+                               new_constraints: (new_constraints if constraints_changed))
     end
     self
   end

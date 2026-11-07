@@ -62,6 +62,8 @@ class SentinelTest < ActiveSupport::TestCase
 
     bad_op = submit("hob.complete", { "role" => "extractor", "messages" => [ user_message("x") ], "operation" => "other" })
     assert_match(/operation does not match/, bad_op.rationale)
+    assert_match(/petition \(POST \/v1\/sentinel\/petitions\) for hob.complete/, bad_op.rationale,
+                 "a constraint refusal on the agent's own rule says how to ask for more")
 
     @fake.reply("fine")
     ok = submit("hob.complete", { "role" => "extractor", "messages" => [ user_message("x") ], "operation" => "muse.x" })

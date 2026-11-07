@@ -55,7 +55,7 @@ class AdminGrantsControllerTest < ActionDispatch::IntegrationTest
                    rationale: "widened after the petition was approved" }
     assert_redirected_to "/admin/grants/#{rule.id}"
     follow_redirect!
-    assert_select ".flash.notice", /Updated guidance/
+    assert_select ".flash.notice", /Updated muse.s browse.open rule/
 
     rule.reload
     assert_equal "review", rule.effect
@@ -79,5 +79,27 @@ class AdminGrantsControllerTest < ActionDispatch::IntegrationTest
     assert_no_difference -> { GuidanceChange.count } do
       post "/admin/grants/#{rule.id}", params: { guidance: "Amazon order and product pages." }
     end
+  end
+
+  test "editing constraints writes through the audited path and shows old and new in the history" do
+    rule = policy!(@muse, "records.put", "review", guidance: "Amazon receipts.", constraints: { "collection" => { "pattern" => "^amazon" } })
+    admin_sign_in
+
+    post "/admin/grants/#{rule.id}", params: { guidance: "Amazon receipts.", constraints: '{"collection":{"pattern":"^(amazon|fsa-claims$)"}}',
+                                               rationale: "fsa-claims approved" }
+    follow_redirect!
+    assert_equal "^(amazon|fsa-claims$)", rule.reload.constraints.dig("collection", "pattern")
+    change = rule.guidance_changes.sole
+    assert change.constraints_changed?
+    assert_not change.guidance_changed?
+    assert_select "table td code", /fsa-claims/
+
+    post "/admin/grants/#{rule.id}", params: { guidance: "Amazon receipts.", constraints: "[1]" }
+    follow_redirect!
+    assert_select ".flash.alert", /JSON object/
+    post "/admin/grants/#{rule.id}", params: { guidance: "Amazon receipts.", constraints: '{"collection":{"nope":1}}' }
+    follow_redirect!
+    assert_select ".flash.alert", /unknown keys/
+    assert_equal 1, rule.guidance_changes.count
   end
 end

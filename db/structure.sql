@@ -511,7 +511,9 @@ CREATE TABLE public.guidance_changes (
     new_guidance text,
     rationale text,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    old_constraints jsonb,
+    new_constraints jsonb
 );
 
 
@@ -4416,6 +4418,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261107000001'),
 ('20261103000001'),
 ('20261102000004'),
 ('20261102000003'),

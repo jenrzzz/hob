@@ -4,6 +4,12 @@
 # sentinel_requests, the audit trail — who approved it, when, the old text,
 # the new text, and whether it came from a petition approval or an admin
 # edit (`source`).
+#
+# A change to the grant's argument constraints (the collection pattern a
+# records grant admits, say) is logged the same way: old_constraints and
+# new_constraints are set only when the constraints changed, and the
+# guidance columns then still show the text before and after (equal when
+# only the constraints moved).
 class GuidanceChange < ApplicationRecord
   SOURCES = %w[petition admin].freeze
   DECIDERS = %w[steward human].freeze
@@ -19,6 +25,14 @@ class GuidanceChange < ApplicationRecord
   before_create { self.id ||= ULID.generate }
 
   scope :recent, -> { order(created_at: :desc) }
+
+  def guidance_changed?
+    old_guidance != new_guidance
+  end
+
+  def constraints_changed?
+    !new_constraints.nil?
+  end
 
   private
 

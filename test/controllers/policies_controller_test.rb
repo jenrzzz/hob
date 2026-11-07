@@ -3,7 +3,7 @@ require "test_helper"
 # The rules over HTTP (SENTINEL.md, "Policies"): people only. Updating
 # guidance writes through the same audited path (GuidanceChange) as a
 # petition's approval and the admin UI, no matter which door it came
-# through; effect, constraints, and limits stay unaudited config.
+# through, and so do constraints; effect and limits stay unaudited config.
 class PoliciesControllerTest < ActionDispatch::IntegrationTest
   setup { @muse, = agent("muse") }
 
@@ -43,6 +43,17 @@ class PoliciesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "allow", rule.effect
     assert_equal "new", rule.guidance
     assert_equal 1, rule.guidance_changes.count
+  end
+
+  test "updating constraints is audited like guidance" do
+    rule = policy!(@muse, "records.get", "allow", constraints: { "collection" => { "pattern" => "^amazon" } })
+    patch "/v1/sentinel/policies/#{rule.id}", params: { constraints: { collection: { pattern: "^(amazon|fsa-claims$)" } } },
+          headers: auth, as: :json
+    assert_response :ok
+    assert_equal "^(amazon|fsa-claims$)", body.dig("constraints", "collection", "pattern")
+    change = rule.guidance_changes.sole
+    assert_equal({ "collection" => { "pattern" => "^amazon" } }, change.old_constraints)
+    assert_equal @principal, change.decider
   end
 
   test "updating effect without guidance is not audited" do

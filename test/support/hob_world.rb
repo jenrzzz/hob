@@ -103,6 +103,13 @@ module HobWorld
                         config: { "url" => "http://mini.test:8379", "key_env" => "HOB_TEST_HERALD_KEY" }.merge(config.stringify_keys))
   end
 
+  # A note backend row (NOTES.md). There is no fake kind: the quire adapter
+  # is pointed at FakeQuire (test/support/fake_quire.rb) through its transport.
+  def note_backend(name = "jenner-notes", realm: "personal", owner: @principal, **config)
+    NoteBackend.create!(name: name, kind: "quire", realm: realm, principal: owner,
+                        config: { "url" => "http://mini.test:8380", "key_env" => "HOB_TEST_QUIRE_KEY" }.merge(config.stringify_keys))
+  end
+
   # A browser row (BROWSE.md). The default kind is the in-memory Fake,
   # whose pages live in Browse::Backends::Fake.site(name) until Fake.reset!.
   def browser(name = "mini", realm: "personal", kind: "fake", owner: @principal, **attrs)

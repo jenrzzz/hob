@@ -653,6 +653,25 @@ ALTER SEQUENCE public.model_roles_id_seq OWNED BY public.model_roles.id;
 
 
 --
+-- Name: note_backends; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.note_backends (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    kind character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.note_backends FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: people; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1895,6 +1914,14 @@ ALTER TABLE ONLY public.model_roles
 
 
 --
+-- Name: note_backends note_backends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.note_backends
+    ADD CONSTRAINT note_backends_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: people_cursors people_cursors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2627,6 +2654,20 @@ CREATE INDEX index_missions_on_sentinel_request_id ON public.missions USING btre
 --
 
 CREATE UNIQUE INDEX index_model_roles_on_role ON public.model_roles USING btree (role);
+
+
+--
+-- Name: index_note_backends_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_note_backends_on_name ON public.note_backends USING btree (name);
+
+
+--
+-- Name: index_note_backends_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_note_backends_on_principal_id ON public.note_backends USING btree (principal_id);
 
 
 --
@@ -3458,6 +3499,14 @@ ALTER TABLE ONLY public.guidance_changes
 
 
 --
+-- Name: note_backends fk_rails_4ae409ad45; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.note_backends
+    ADD CONSTRAINT fk_rails_4ae409ad45 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: people fk_rails_530d9e4397; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4040,6 +4089,12 @@ ALTER TABLE public.message_nodes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.missions ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: note_backends; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.note_backends ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: people; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4208,6 +4263,15 @@ CREATE POLICY realm_visibility ON public.message_nodes USING ((( SELECT realms.r
 CREATE POLICY realm_visibility ON public.missions USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (missions.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: note_backends realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.note_backends USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (note_backends.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -4418,6 +4482,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261114000001'),
 ('20261107000001'),
 ('20261103000001'),
 ('20261102000004'),

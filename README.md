@@ -8,7 +8,7 @@ full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 [TODOS.md](TODOS.md) for the household's todos,
 [BUDGET.md](BUDGET.md) for its budget, [CALENDARS.md](CALENDARS.md) for its
 calendars, [MAIL.md](MAIL.md) for its mail, [TEXTS.md](TEXTS.md) for its
-text messages, [RECORDS.md](RECORDS.md) for what
+text messages, [NOTES.md](NOTES.md) for its notes, [RECORDS.md](RECORDS.md) for what
 its agents keep, [PEOPLE.md](PEOPLE.md) for who it knows,
 [SITUATION.md](SITUATION.md) for each person's present moment, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure,
@@ -346,6 +346,32 @@ bin/rails hob:people:loops OLDER_THAN=7                   # what has waited a we
 bin/rails "hob:people:realm[+15550001111,household]"      # let household agents know someone exists
 bin/rails "hob:sentinel:policy[muse,people.*,allow]"      # merges, handles, and dismissals still wait for a person
 ```
+
+## Notes
+
+The household's notes ([NOTES.md](NOTES.md)) come from the Notes app on
+the Mac mini, by way of [quire](NOTES.md#quire-and-notes), an HTTP wrapper
+that asks the app itself, through its scripting interface, for everything
+it reads and writes, the way tally wraps OmniFocus. One contract for
+folders and notes, and a *backend* row per quire key. Agents can list
+folders, search notes by folder, words, hashtag, or when they changed,
+read one in full, and create, append to, or update one; there is no
+delete. Writes stay in the household, so a policy decides them, as with
+todos; allow `note.append` without `note.update` to let an agent add to a
+list but never rewrite it. To share one Household folder with household
+agents, register a second row on the same quire with a key quire has
+*scoped* to that folder, at realm `household`.
+
+```sh
+export QUIRE_KEY=... QUIRE_HOUSEHOLD_KEY=...               # quire's bearer keys, in hob's environment
+bin/rails "hob:notes:backend[jenner-notes,quire,http://mini.tailnet.ts.net:8380,personal]" KEY_ENV=QUIRE_KEY ADDR=100.90.105.100
+bin/rails "hob:notes:backend[house-notes,quire,http://mini.tailnet.ts.net:8380,household]" KEY_ENV=QUIRE_HOUSEHOLD_KEY ADDR=100.90.105.100
+bin/rails hob:notes:backends                               # what is registered, and whether each answers
+bin/rails "hob:notes:check[house-notes]"                   # quire's status: Notes, the counts, the key's scope
+bin/rails "hob:sentinel:policy[muse,note.*,allow]"
+```
+
+`OWNER=`, `KEY=`, `READ_ONLY=1`, and `ENABLED=0` are the other knobs.
 
 ## Meals: mise
 

@@ -16,5 +16,14 @@ module Hob
     def tool_calls?
       status == "tool_calls" || tool_calls.any?
     end
+
+    # The native tools hob ran inside this turn: [{ id, name, arguments, content, error }].
+    def native
+      Array(@data["native"])
+    end
+
+    def usage
+      @usage ||= Usage.new(@data["usage"])
+    end
   end
 end

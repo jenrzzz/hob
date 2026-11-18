@@ -66,16 +66,220 @@ module Hob
       convo[:messages] << user if user
       Array(args[:tool_results]).each { |r| convo[:messages] << { "role" => "user", "kind" => "tool_result", "content" => r[:content] || r["content"] } }
 
+      native = (@native_queue || []).dup
+      @native_queue = []
+      native.each do |step|
+        on_event&.call(Event.new(step.slice("id", "name", "arguments").merge("type" => "native_call")))
+        on_event&.call(Event.new(step.slice("id", "name", "content", "error").merge("type" => "native_result")))
+      end
       data = take(&on_event)
       raise Refused.new(data["error"]) if data["status"] == "refused"
 
-      assistant = finish(convo, data, on_event)
+      assistant = finish(convo, data.merge("native" => native), on_event)
       Turn.new("status" => data["status"], "user" => user, "assistant" => assistant, "assistants" => [ assistant ].compact,
-               "tool_calls" => data["tool_calls"], "snapshot" => next_id("snap"))
+               "tool_calls" => data["tool_calls"], "native" => native, "usage" => data["usage"], "snapshot" => next_id("snap"))
     end
 
     def conversations
       @conversations ||= FakeConversations.new(self)
+    end
+
+    # In-memory memory with the real client's surface: deposit, then recall
+    # by words (every word of the query that appears counts), file, and the
+    # observation lifecycle. Realms are not modelled.
+    def memory
+      @memory ||= FakeMemory.new(self)
+    end
+
+    # In-memory sheets: propose, apply, reject, rollback, show.
+    def sheets
+      @sheets ||= FakeSheets.new(self)
+    end
+
+    # Script a native tool step for the next chat: it appears in Turn#native
+    # and, streaming, as native_call / native_result events.
+    def native(name, arguments = {}, content: "{}", error: false)
+      (@native_queue ||= []) << { "id" => next_id("native"), "name" => name.to_s, "arguments" => stringify(arguments),
+                                  "content" => content.is_a?(String) ? content : JSON.generate(content), "error" => error }
+      self
+    end
+
+    class FakeMemory
+      attr_reader :observations, :entities
+
+      def initialize(fake)
+        @fake = fake
+        @entities = {}
+        @observations = {}
+      end
+
+      def entities(q: nil, type: nil, limit: nil)
+        @entities.values.select { |e| (type.nil? || e["type"] == type) && (q.nil? || e["name"].downcase.include?(q.downcase)) }
+                 .first(limit || 100).map { |e| Entity.new(e) }
+      end
+
+      def entity(id)
+        Entity.new(resolve(id))
+      end
+
+      def create_entity(type:, name:, ref: nil, aliases: nil)
+        existing = ref && @entities.values.find { |e| e["ref"] == ref }
+        return Entity.new(existing) if existing
+
+        e = { "id" => @fake.send(:next_id, "ent"), "type" => type, "name" => name, "ref" => ref, "aliases" => aliases || [] }
+        @entities[e["id"]] = e
+        Entity.new(e)
+      end
+
+      def remember(about:, body:, kind: nil, persona: nil, evidence: nil, observed_at: nil)
+        deposit([ { about: about, body: body, kind: kind, persona: persona, evidence: evidence, observed_at: observed_at } ]).first
+      end
+
+      def deposit(observations)
+        raise Invalid, "observations: give 1 to 500" if observations.empty? || observations.size > 500
+
+        rows = observations.map do |o|
+          o = @fake.send(:stringify, o)
+          raise Invalid, "body is required" if o["body"].to_s.strip.empty?
+
+          about = resolve(o["about"], create: true)
+          author = o["persona"] && resolve("persona:#{o['persona']}", create: true)
+          { "id" => @fake.send(:next_id, "obs"), "about" => about["id"], "author" => author && author["id"],
+            "kind" => o["kind"] || "note", "body" => o["body"], "realm" => "fake", "status" => "current",
+            "evidence" => o["evidence"] || [], "observed_at" => o["observed_at"] || Time.now.utc.iso8601 }
+        end
+        rows.each { |r| @observations[r["id"]] = r }
+        rows.map { |r| Observation.new(r) }
+      end
+
+      def observation(id)
+        Observation.new(fetch(id))
+      end
+
+      def supersede(id, body:, kind: nil, evidence: nil, reason: nil)
+        old = fetch(id)
+        raise Invalid, "observation #{id} is #{old['status']}" unless old["status"] == "current"
+
+        row = old.merge("id" => @fake.send(:next_id, "obs"), "body" => body, "kind" => kind || old["kind"],
+                        "evidence" => evidence || old["evidence"], "supersedes" => id, "observed_at" => Time.now.utc.iso8601)
+        old.merge!("status" => "superseded", "superseded_by" => row["id"], "retire_reason" => reason)
+        @observations[row["id"]] = row
+        Observation.new(row)
+      end
+
+      def retire(id, reason:)
+        Observation.new(fetch(id).merge!("status" => "retired", "retire_reason" => reason))
+      end
+
+      def recall(query: nil, about: nil, persona: nil, scope: nil, limit: nil, budget: nil)
+        words = query.to_s.downcase.scan(/[[:alnum:]]{2,}/)
+        about_ids = Array(about).map { |a| resolve(a)["id"] }
+        author = persona && resolve("persona:#{persona}", create: true)["id"]
+        hits = @observations.values.select { |o| o["status"] == "current" }.filter_map do |o|
+          next if scope.to_s == "mine" && o["author"] != author
+
+          score = words.count { |w| o["body"].downcase.include?(w) } + (about_ids.include?(o["about"]) ? 1 : 0)
+          next if score.zero? && !(words.empty? && about_ids.empty?)
+
+          o.merge("score" => score)
+        end
+        hits.sort_by { |o| -o["score"] }.first(limit || 20).map { |o| Observation.new(o) }
+      end
+
+      def file(persona:, about:, all: nil, limit: nil)
+        author = resolve("persona:#{persona}", create: true)["id"]
+        target = resolve(about)["id"]
+        @observations.values.select { |o| o["author"] == author && o["about"] == target && (all || o["status"] == "current") }
+                     .reverse.first(limit || 100).map { |o| Observation.new(o) }
+      end
+
+      private
+
+      def fetch(id)
+        @observations.fetch(id) { raise NotFound, "no observation #{id}" }
+      end
+
+      def resolve(spec, create: false)
+        spec = @fake.send(:stringify, spec)
+        if spec.is_a?(Hash)
+          found = @entities.values.find { |e| spec["ref"] && e["ref"] == spec["ref"] }
+          return found || create_entity(type: spec["type"], name: spec["name"], ref: spec["ref"]).to_h
+        end
+        found = @entities[spec] || @entities.values.find { |e| e["ref"] == spec || e["name"] == spec }
+        return found if found
+        raise NotFound, "no entity #{spec}" unless create && spec.include?(":")
+
+        create_entity(type: spec.split(":").first, name: spec.split(":", 2).last, ref: spec).to_h
+      end
+    end
+
+    class FakeSheets
+      def initialize(fake)
+        @fake = fake
+        @revisions = Hash.new { |h, k| h[k] = [] }
+        @version = 0
+      end
+
+      def show(persona, version: nil)
+        sections = {}
+        @revisions[persona].select { |r| r["status"] == "applied" && r["kind"] == "edit" && (version.nil? || r["version"] <= version) }
+                           .sort_by { |r| r["applied_seq"] }.each do |r|
+          r["ops"].each_with_index do |op, i|
+            entries = (sections[op["section"]] ||= [])
+            entry = { "id" => "#{r['id']}.#{i}", "text" => op["text"], "realm" => "fake" }
+            case op["op"]
+            when "add" then entries << entry
+            when "set" then entries.replace([ entry ])
+            when "remove" then entries.reject! { |e| e["id"] == op["entry"] }
+            when "replace" then (at = entries.index { |e| e["id"] == op["entry"] }) && entries[at] = entry
+            end
+          end
+        end
+        Sheet.new("persona" => persona, "version" => version || @revisions[persona].select { |r| r["status"] == "applied" }.map { |r| r["version"] }.max || 0,
+                  "sections" => sections.reject { |_, v| v.empty? })
+      end
+
+      def revisions(persona, status: nil)
+        @revisions[persona].select { |r| status.nil? || r["status"] == status }.reverse.map { |r| SheetRevision.new(r) }
+      end
+
+      def propose(persona, ops:, citations:, rationale: nil)
+        raise Invalid, "a revision cites the observations that justify it" if Array(citations).empty?
+
+        ops = @fake.send(:stringify, ops)
+        raise Invalid, "system_core is the persona's constitution and is not on the sheet" if ops.any? { |op| %w[system_core constitution].include?(op["section"]) }
+
+        rev = { "id" => @fake.send(:next_id, "rev"), "persona" => persona, "version" => (@version += 1), "kind" => "edit",
+                "status" => "proposed", "ops" => ops, "citations" => citations, "rationale" => rationale }
+        @revisions[persona] << rev
+        SheetRevision.new(rev)
+      end
+
+      def apply(persona, revision_id)
+        SheetRevision.new(find(persona, revision_id).merge!("status" => "applied", "applied_seq" => (@version += 1)))
+      end
+
+      def reject(persona, revision_id)
+        SheetRevision.new(find(persona, revision_id).merge!("status" => "rejected"))
+      end
+
+      def rollback(persona, version:, rationale: nil)
+        @revisions[persona].each { |r| r["status"] = "reverted" if r["status"] == "applied" && r["version"] > version }
+        rev = { "id" => @fake.send(:next_id, "rev"), "persona" => persona, "version" => (@version += 1), "kind" => "rollback",
+                "status" => "applied", "rollback_to" => version, "rationale" => rationale, "ops" => [], "citations" => [] }
+        @revisions[persona] << rev
+        SheetRevision.new(rev)
+      end
+
+      def accrete(persona, **)
+        { "proposed" => [], "dropped" => [], "window" => { "observations" => 0 }, "completion" => nil }
+      end
+
+      private
+
+      def find(persona, id)
+        @revisions[persona].find { |r| r["id"] == id } || raise(NotFound, "no revision #{id}")
+      end
     end
 
     def usage(**)

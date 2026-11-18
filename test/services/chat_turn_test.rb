@@ -15,7 +15,8 @@ class ChatTurnTest < ActiveSupport::TestCase
     assert_equal result.snapshot.digest, result.assistant_node.prompt_snapshot_hash
     assert_equal "conversation/#{convo.id}", UsageEvent.last.ref
     assert_equal result.snapshot.digest, UsageEvent.last.snapshot_digest
-    assert_equal [ user_message("hi") ], @fake.calls.last.messages
+    # The history's last message is where the cacheable prefix ends.
+    assert_equal [ user_message("hi").merge("cache" => true) ], @fake.calls.last.messages
   end
 
   test "the assistant speaks at the head with no content, chaining under its own node" do
@@ -120,9 +121,11 @@ class ChatTurnToolsTest < ActiveSupport::TestCase
     assert_equal "success", second.status
     assert_nil second.user_node
     messages = @fake.calls.last.messages
-    assert_equal %w[user assistant assistant tool], messages.map { |m| m["role"] }
-    assert_equal "call_1", messages[2]["tool_calls"].first["id"]
-    assert_equal({ "role" => "tool", "tool_call_id" => "call_1", "content" => "bees: ok" }, messages.last)
+    # The text said before the call and the call are one assistant turn.
+    assert_equal %w[user assistant tool], messages.map { |m| m["role"] }
+    assert_equal "Let me check.", messages[1]["content"]
+    assert_equal "call_1", messages[1]["tool_calls"].first["id"]
+    assert_equal({ "role" => "tool", "tool_call_id" => "call_1", "content" => "bees: ok", "cache" => true }, messages.last)
     assert_equal "tool_result", second.assistant_node.parent.kind
     assert_equal %w[user assistant tool_call tool_result assistant], convo.branch.reload.timeline.map { |n| n.kind == "text" ? n.role : n.kind }
   end

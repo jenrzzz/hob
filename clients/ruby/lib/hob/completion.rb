@@ -4,8 +4,10 @@ module Hob
   class ToolCall < Record
     attribute :id, :name, :arguments, :node
 
+    # content: a String, any JSON, or blocks with images ([{ type: "text", text: }, Hob.image(...)]).
     def result(content, error: nil)
-      content = JSON.generate(content) unless content.is_a?(String)
+      blocks = content.is_a?(Array) && content.all? { |b| b.is_a?(Hash) && %w[text image].include?((b[:type] || b["type"]).to_s) }
+      content = JSON.generate(content) unless content.is_a?(String) || blocks
       { id: id, content: content, error: error }.compact
     end
   end

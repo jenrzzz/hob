@@ -1722,4 +1722,37 @@ namespace :hob do
       abort e.message
     end
   end
+
+  # The memory plane (MEMORY.md).
+  namespace :memory do
+    desc "Embed observations that have no vector yet, through the `embedding` role (MEMORY.md). LIMIT=1000"
+    task embed: :environment do
+      abort "no `embedding` model role; observations recall by entity, words, and recency until there is one" unless Memory::Embedder.available?
+
+      Clearance.with("intimate") do
+        todo = Observation.where(embedding: nil).order(:created_at).limit(ENV.fetch("LIMIT", 1000).to_i).to_a
+        done = Memory::Embedder.embed!(todo)
+        puts "embedded #{done.size} of #{todo.size}"
+      end
+    end
+
+    desc "What a persona has noted about someone: bin/rails \"hob:memory:file[velvet,principal:jenner]\" REALM=intimate"
+    task :file, [ :persona, :about ] => :environment do |_task, args|
+      Clearance.with(ENV.fetch("REALM", "intimate")) do
+        persona = Persona.find_by!(key: args[:persona])
+        Memory.file(persona: persona, about: args[:about]).each { |o| puts Memory.line(o) + " [#{o.realm}]" }
+      end
+    end
+
+    desc "A persona's sheet as a clearance sees it, and its pending revisions: bin/rails \"hob:memory:sheet[velvet]\" REALM=intimate"
+    task :sheet, [ :persona ] => :environment do |_task, args|
+      Clearance.with(ENV.fetch("REALM", "intimate")) do
+        persona = Persona.find_by!(key: args[:persona])
+        puts PersonaSheet.new(persona).render || "(an empty sheet)"
+        persona.sheet_revisions.where(status: "proposed").order(:version).each do |rev|
+          puts "proposed v#{rev.version} (#{rev.realm}, via #{rev.proposed_via}): #{rev.rationale} — cites #{rev.citations.join(', ')}"
+        end
+      end
+    end
+  end
 end

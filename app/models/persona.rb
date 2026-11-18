@@ -2,7 +2,27 @@ class Persona < ApplicationRecord
   validates :key, presence: true, uniqueness: true
   validates :name, presence: true
 
+  belongs_to :entity, optional: true
+  has_many :sheet_revisions, class_name: "PersonaSheetRevision", dependent: :restrict_with_exception
+
   before_create { self.id ||= ULID.generate }
+
+  MEMORY_OPTIONS = %w[recall tools budget about].freeze
+
+  # The entity this persona *is* (DESIGN.md: "memory scope"), made on first
+  # use: what she notices and decides are observations she authors.
+  def memory_entity
+    return entity if entity
+
+    made = Entity.find_or_create_by!(ref: "persona:#{key}") { |e| e.kind = "persona"; e.name = name; e.created_by = "hob" }
+    update!(entity: made)
+    made
+  end
+
+  # The persona's default memory options; a request's `memory:` overrides.
+  def memory_options
+    (memory || {}).slice(*MEMORY_OPTIONS)
+  end
 
   # prompt keys: system_core (required), greetings [], examples [],
   # instruction (optional trailing user-turn text, B3)

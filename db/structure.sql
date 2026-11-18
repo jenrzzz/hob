@@ -121,6 +121,22 @@ ALTER TABLE ONLY public.authorization_claims FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: blobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.blobs (
+    realm character varying NOT NULL,
+    digest character varying NOT NULL,
+    media_type character varying NOT NULL,
+    bytes bytea NOT NULL,
+    size integer NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.blobs FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: board_posts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -464,6 +480,22 @@ ALTER SEQUENCE public.devices_id_seq OWNED BY public.devices.id;
 
 
 --
+-- Name: entities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.entities (
+    id character varying NOT NULL,
+    kind character varying NOT NULL,
+    name character varying NOT NULL,
+    aliases character varying[] DEFAULT '{}'::character varying[] NOT NULL,
+    ref character varying,
+    created_by character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: gofer_key_changes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -568,7 +600,8 @@ CREATE TABLE public.message_nodes (
     content text NOT NULL,
     meta jsonb DEFAULT '{}'::jsonb NOT NULL,
     prompt_snapshot_hash character varying,
-    created_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) without time zone NOT NULL,
+    attachments jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 
 ALTER TABLE ONLY public.message_nodes FORCE ROW LEVEL SECURITY;
@@ -669,6 +702,59 @@ CREATE TABLE public.note_backends (
 );
 
 ALTER TABLE ONLY public.note_backends FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: observations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.observations (
+    id character varying NOT NULL,
+    entity_id character varying NOT NULL,
+    author_entity_id character varying,
+    kind character varying DEFAULT 'note'::character varying NOT NULL,
+    body text NOT NULL,
+    realm character varying NOT NULL,
+    principal_id bigint,
+    surface character varying NOT NULL,
+    conversation_id character varying,
+    node_hash character varying,
+    evidence character varying[] DEFAULT '{}'::character varying[] NOT NULL,
+    source jsonb DEFAULT '{}'::jsonb NOT NULL,
+    observed_at timestamp(6) without time zone NOT NULL,
+    embedding public.vector,
+    embedding_model character varying,
+    supersedes_id character varying,
+    superseded_by_id character varying,
+    retired_at timestamp(6) without time zone,
+    retired_by character varying,
+    retire_reason text,
+    document tsvector GENERATED ALWAYS AS (to_tsvector('english'::regconfig, body)) STORED,
+    txid bigint DEFAULT ((pg_current_xact_id())::text)::bigint NOT NULL,
+    seq bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.observations FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: observations_seq_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.observations_seq_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: observations_seq_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.observations_seq_seq OWNED BY public.observations.seq;
 
 
 --
@@ -822,6 +908,65 @@ ALTER TABLE ONLY public.person_handles FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: persona_sheet_applied_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.persona_sheet_applied_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: persona_sheet_revisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.persona_sheet_revisions (
+    id character varying NOT NULL,
+    persona_id character varying NOT NULL,
+    version bigint NOT NULL,
+    kind character varying DEFAULT 'edit'::character varying NOT NULL,
+    realm character varying NOT NULL,
+    ops jsonb DEFAULT '[]'::jsonb NOT NULL,
+    rationale text,
+    citations character varying[] DEFAULT '{}'::character varying[] NOT NULL,
+    status character varying DEFAULT 'proposed'::character varying NOT NULL,
+    proposed_by_id bigint,
+    proposed_via character varying NOT NULL,
+    provenance jsonb DEFAULT '{}'::jsonb NOT NULL,
+    rollback_to bigint,
+    decided_by_id bigint,
+    decided_at timestamp(6) without time zone,
+    applied_seq bigint,
+    reverted_by_id character varying,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.persona_sheet_revisions FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: persona_sheet_revisions_version_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.persona_sheet_revisions_version_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: persona_sheet_revisions_version_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.persona_sheet_revisions_version_seq OWNED BY public.persona_sheet_revisions.version;
+
+
+--
 -- Name: personas; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -834,7 +979,9 @@ CREATE TABLE public.personas (
     voice_id character varying,
     card_import jsonb,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    entity_id character varying,
+    memory jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 
@@ -1643,6 +1790,20 @@ ALTER TABLE ONLY public.model_roles ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: observations seq; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.observations ALTER COLUMN seq SET DEFAULT nextval('public.observations_seq_seq'::regclass);
+
+
+--
+-- Name: persona_sheet_revisions version; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.persona_sheet_revisions ALTER COLUMN version SET DEFAULT nextval('public.persona_sheet_revisions_version_seq'::regclass);
+
+
+--
 -- Name: plugins id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1735,6 +1896,14 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 ALTER TABLE ONLY public.authorization_claims
     ADD CONSTRAINT authorization_claims_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: blobs blobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.blobs
+    ADD CONSTRAINT blobs_pkey PRIMARY KEY (realm, digest);
 
 
 --
@@ -1842,6 +2011,14 @@ ALTER TABLE ONLY public.devices
 
 
 --
+-- Name: entities entities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.entities
+    ADD CONSTRAINT entities_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: gofer_key_changes gofer_key_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1922,6 +2099,14 @@ ALTER TABLE ONLY public.note_backends
 
 
 --
+-- Name: observations observations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.observations
+    ADD CONSTRAINT observations_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: people_cursors people_cursors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1975,6 +2160,14 @@ ALTER TABLE ONLY public.people
 
 ALTER TABLE ONLY public.person_handles
     ADD CONSTRAINT person_handles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: persona_sheet_revisions persona_sheet_revisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.persona_sheet_revisions
+    ADD CONSTRAINT persona_sheet_revisions_pkey PRIMARY KEY (id);
 
 
 --
@@ -2216,6 +2409,13 @@ CREATE INDEX idx_on_browser_id_key_name_created_at_febc83505f ON public.gofer_ke
 
 
 --
+-- Name: idx_on_persona_id_status_applied_seq_8f305f88e1; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_persona_id_status_applied_seq_8f305f88e1 ON public.persona_sheet_revisions USING btree (persona_id, status, applied_seq);
+
+
+--
 -- Name: idx_on_text_backend_id_key_name_created_at_64862c4f81; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2290,6 +2490,13 @@ CREATE INDEX index_authorization_claims_on_sentinel_request_id ON public.authori
 --
 
 CREATE INDEX index_authorization_claims_on_status ON public.authorization_claims USING btree (status);
+
+
+--
+-- Name: index_blobs_on_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_blobs_on_digest ON public.blobs USING btree (digest);
 
 
 --
@@ -2517,6 +2724,27 @@ CREATE UNIQUE INDEX index_devices_on_token ON public.devices USING btree (token)
 
 
 --
+-- Name: index_entities_on_aliases; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_entities_on_aliases ON public.entities USING gin (aliases);
+
+
+--
+-- Name: index_entities_on_kind_and_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_entities_on_kind_and_name ON public.entities USING btree (kind, name);
+
+
+--
+-- Name: index_entities_on_ref; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_entities_on_ref ON public.entities USING btree (ref);
+
+
+--
 -- Name: index_gofer_key_changes_on_browser_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2671,6 +2899,48 @@ CREATE INDEX index_note_backends_on_principal_id ON public.note_backends USING b
 
 
 --
+-- Name: index_observations_changes; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_observations_changes ON public.observations USING btree (txid, seq);
+
+
+--
+-- Name: index_observations_current_by_entity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_observations_current_by_entity ON public.observations USING btree (entity_id, observed_at) WHERE ((retired_at IS NULL) AND (superseded_by_id IS NULL));
+
+
+--
+-- Name: index_observations_file; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_observations_file ON public.observations USING btree (author_entity_id, entity_id, observed_at);
+
+
+--
+-- Name: index_observations_on_document; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_observations_on_document ON public.observations USING gin (document);
+
+
+--
+-- Name: index_observations_on_evidence; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_observations_on_evidence ON public.observations USING gin (evidence);
+
+
+--
+-- Name: index_observations_on_supersedes_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_observations_on_supersedes_id ON public.observations USING btree (supersedes_id);
+
+
+--
 -- Name: index_people_cursors_on_source; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2709,7 +2979,7 @@ CREATE INDEX index_people_events_on_recorded_by_id ON public.people_events USING
 -- Name: index_people_events_on_source_kind_and_source_ref; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY ((ARRAY['text'::character varying, 'mail'::character varying, 'calendar'::character varying])::text[])));
+CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY (ARRAY[('text'::character varying)::text, ('mail'::character varying)::text, ('calendar'::character varying)::text])));
 
 
 --
@@ -2815,6 +3085,20 @@ CREATE UNIQUE INDEX index_person_handles_on_kind_and_address ON public.person_ha
 --
 
 CREATE INDEX index_person_handles_on_person_id ON public.person_handles USING btree (person_id);
+
+
+--
+-- Name: index_persona_sheet_revisions_on_persona_id_and_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_persona_sheet_revisions_on_persona_id_and_version ON public.persona_sheet_revisions USING btree (persona_id, version);
+
+
+--
+-- Name: index_personas_on_entity_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_personas_on_entity_id ON public.personas USING btree (entity_id);
 
 
 --
@@ -3595,11 +3879,27 @@ ALTER TABLE ONLY public.missions
 
 
 --
+-- Name: persona_sheet_revisions fk_rails_70fb4f0515; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.persona_sheet_revisions
+    ADD CONSTRAINT fk_rails_70fb4f0515 FOREIGN KEY (decided_by_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: people_groups fk_rails_713fb7689b; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.people_groups
     ADD CONSTRAINT fk_rails_713fb7689b FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: observations fk_rails_765cd3da16; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.observations
+    ADD CONSTRAINT fk_rails_765cd3da16 FOREIGN KEY (entity_id) REFERENCES public.entities(id);
 
 
 --
@@ -3707,6 +4007,14 @@ ALTER TABLE ONLY public.calendar_events
 
 
 --
+-- Name: observations fk_rails_a353890a72; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.observations
+    ADD CONSTRAINT fk_rails_a353890a72 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: record_versions fk_rails_a481e04532; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3779,6 +4087,14 @@ ALTER TABLE ONLY public.budget_backends
 
 
 --
+-- Name: personas fk_rails_b8baffeb22; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.personas
+    ADD CONSTRAINT fk_rails_b8baffeb22 FOREIGN KEY (entity_id) REFERENCES public.entities(id);
+
+
+--
 -- Name: situation_observations fk_rails_baefe80638; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3808,6 +4124,14 @@ ALTER TABLE ONLY public.todo_backends
 
 ALTER TABLE ONLY public.people_loops
     ADD CONSTRAINT fk_rails_c1e479025a FOREIGN KEY (person_id) REFERENCES public.people(id);
+
+
+--
+-- Name: persona_sheet_revisions fk_rails_c37de3906e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.persona_sheet_revisions
+    ADD CONSTRAINT fk_rails_c37de3906e FOREIGN KEY (proposed_by_id) REFERENCES public.principals(id);
 
 
 --
@@ -3856,6 +4180,14 @@ ALTER TABLE ONLY public.authorization_claims
 
 ALTER TABLE ONLY public.group_memberships
     ADD CONSTRAINT fk_rails_d05778f88b FOREIGN KEY (group_id) REFERENCES public.people_groups(id);
+
+
+--
+-- Name: observations fk_rails_d1bb0fc601; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.observations
+    ADD CONSTRAINT fk_rails_d1bb0fc601 FOREIGN KEY (author_entity_id) REFERENCES public.entities(id);
 
 
 --
@@ -3987,6 +4319,14 @@ ALTER TABLE ONLY public.missions
 
 
 --
+-- Name: persona_sheet_revisions fk_rails_f785fcdd17; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.persona_sheet_revisions
+    ADD CONSTRAINT fk_rails_f785fcdd17 FOREIGN KEY (persona_id) REFERENCES public.personas(id);
+
+
+--
 -- Name: ward_observations fk_rails_f90f44b0cd; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4015,6 +4355,12 @@ ALTER TABLE ONLY public.consoles
 --
 
 ALTER TABLE public.authorization_claims ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: blobs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.blobs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: board_posts; Type: ROW SECURITY; Schema: public; Owner: -
@@ -4095,6 +4441,12 @@ ALTER TABLE public.missions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.note_backends ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: observations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.observations ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: people; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4137,6 +4489,12 @@ ALTER TABLE public.people_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.person_handles ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: persona_sheet_revisions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.persona_sheet_revisions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: petitions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4155,6 +4513,15 @@ ALTER TABLE public.prompt_snapshots ENABLE ROW LEVEL SECURITY;
 CREATE POLICY realm_visibility ON public.authorization_claims USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (authorization_claims.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: blobs realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.blobs USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (blobs.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -4275,6 +4642,15 @@ CREATE POLICY realm_visibility ON public.note_backends USING ((( SELECT realms.r
 
 
 --
+-- Name: observations realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.observations USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (observations.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
 -- Name: people realm_visibility; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -4335,6 +4711,15 @@ CREATE POLICY realm_visibility ON public.people_notes USING ((( SELECT realms.ra
 CREATE POLICY realm_visibility ON public.person_handles USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (person_handles.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: persona_sheet_revisions realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.persona_sheet_revisions USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (persona_sheet_revisions.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -4482,6 +4867,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261118000001'),
 ('20261114000001'),
 ('20261107000001'),
 ('20261103000001'),

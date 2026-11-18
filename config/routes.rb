@@ -54,6 +54,26 @@ Rails.application.routes.draw do
     end
     resources :personas, param: :key, only: %i[index show create update] do
       post :import, on: :collection
+      # A persona's sheet (MEMORY.md): proposed revisions, applied by a person.
+      get "sheet", to: "persona_sheets#show"
+      get "sheet/revisions", to: "persona_sheets#revisions"
+      post "sheet/revisions", to: "persona_sheets#propose"
+      post "sheet/revisions/:id/apply", to: "persona_sheets#apply"
+      post "sheet/revisions/:id/reject", to: "persona_sheets#reject"
+      post "sheet/rollback", to: "persona_sheets#rollback"
+      post "sheet/accrete", to: "persona_sheets#accrete"
+    end
+    # The memory plane (MEMORY.md): entities, observations, recall.
+    scope "memory", controller: "memory", as: "memory" do
+      get "entities", action: :entities
+      post "entities", action: :create_entity
+      get "entities/:id", action: :entity, constraints: { id: %r{[^/]+} }
+      post "observations", action: :deposit
+      get "observations/:id", action: :observation
+      post "observations/:id/supersede", action: :supersede
+      post "observations/:id/retire", action: :retire
+      post "recall", action: :recall
+      get "file", action: :file
     end
     resources :presets, param: :key, only: %i[index show create update destroy]
     resources :snapshots, only: :show

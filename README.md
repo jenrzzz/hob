@@ -10,7 +10,8 @@ full design, [CHATELAINE.md](CHATELAINE.md) for the chat frontend,
 calendars, [MAIL.md](MAIL.md) for its mail, [TEXTS.md](TEXTS.md) for its
 text messages, [NOTES.md](NOTES.md) for its notes, [RECORDS.md](RECORDS.md) for what
 its agents keep, [PEOPLE.md](PEOPLE.md) for who it knows,
-[SITUATION.md](SITUATION.md) for each person's present moment, mise's `docs/HOB.md` for its kitchen,
+[SITUATION.md](SITUATION.md) for each person's present moment,
+[MEMORY.md](MEMORY.md) for what its personas remember and who they are becoming, mise's `docs/HOB.md` for its kitchen,
 [WARD.md](WARD.md) for the watch it keeps over the household's exposure,
 [THREATS.md](THREATS.md) for the threats it is told about,
 [SCHEDULES.md](SCHEDULES.md) for its clock,
@@ -534,8 +535,9 @@ GET  /v1/conversations?kind=chat|pipeline|all
 GET  /v1/conversations/:id?branch=main
 POST /v1/conversations/:id/chat        { content?, branch, persona | personas[], context,
                                          instruction, role, preset, situation, regenerate_at,
-                                         tools, tool_choice, tool_results, max_iterations }
-                                       Accept: text/event-stream → delta… tool_call… usage done
+                                         tools, tool_choice, tool_results, max_iterations, memory }
+                                       Accept: text/event-stream → delta… native_call/native_result… tool_call… usage done
+                                       content / tool_results[].content: a string or [{ type: text|image, ... }]
                                        no content: the assistant speaks at the branch head
                                        context: string | hash | [{ name, body, budget, volatile }]
 GET  /v1/situation                     the signed-in person's visible facets and topics
@@ -567,16 +569,25 @@ GET  /v1/browse_sessions[/:id?screenshot=1] · DELETE /v1/browse_sessions/:id
 POST /v1/browse_sessions/:id/actions   { action: navigate|click|type|press|select|hover|scroll|back|forward|reload|wait|read, ... }
 GET/POST/PATCH/DELETE /v1/browsers[/:name] · POST /v1/browsers/:name/check   (a person)
 GET  /v1/personas · /v1/models · /v1/snapshots/:hash
+POST /v1/memory/observations           { observations: [{ about, body, kind?, persona?, evidence?, observed_at? }] }
+POST /v1/memory/recall                 { query?, about?, persona?, scope?, limit?, budget? }
+GET  /v1/memory/file?persona=&about=   what a persona has noted about someone
+GET  /v1/memory/entities · /observations/:id · POST …/supersede · …/retire
+GET  /v1/personas/:key/sheet · POST …/sheet/revisions · …/revisions/:id/apply · …/sheet/rollback · …/sheet/accrete
 ```
 
-Tools are client-session: `tools: [{ name, description, input_schema }]`
-declares what the *caller* can run. When the model calls one, hob appends a
+Tools are client-session by default: `tools: [{ name, description, input_schema }]`
+declares what the *caller* can run. With `memory:` on (MEMORY.md), hob also
+offers a persona its own native `recall` and `remember`, runs them inside the
+request, and hands back only the caller's calls. When the model calls one, hob appends a
 `tool_call` node per call, answers with `status: tool_calls`, and ends the
 request. The caller executes and posts `tool_results: [{ id, content }]` to
 the same endpoint (with the completion's `id`, or the conversation's next
 turn); hob appends `tool_result` nodes and asks the model again. Past
 `max_iterations` rounds (default 10) the tools stay declared but the model
-may not call them, so it has to answer.
+may not call them, so it has to answer. A tool result's `content` may carry
+images (`{ type: "image", media_type, data }` blocks) and `error: true`, which
+reaches the model as a failed result.
 
 A refusal is HTTP 200 with `status: refused` (the call happened and was
 metered). Upstream rate limits and outages are 503 with `Retry-After` when

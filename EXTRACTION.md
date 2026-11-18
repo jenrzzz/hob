@@ -26,6 +26,17 @@ directly and hands the calls back unexecuted. The gem is `hob` 0.1.0 in
 `clients/ruby` (the 0.0.1 name reservation), with `Hob::Fake` and no runtime
 dependencies. Open question 4 (an interview conductor helper) is still open.
 
+*(2026-11-18, [MEMORY.md](MEMORY.md).)* The client session is no longer the
+only venue: with `memory:` on, hob runs a persona's native `recall` and
+`remember` inside the request, loops server-side when a round called only
+those, and hands back only the caller's calls when a round mixed both.
+Messages and tool results carry images (bytes in `blobs`, digests on nodes);
+a tool result's `error` reaches the model; Anthropic thinking blocks are kept
+on the turn's node and replayed on resume; and the last history message is a
+cache breakpoint, so a tool loop's rounds read the previous round's prefix.
+Section 2.8's "memory plane later" has begun: those three datasets map onto
+observations with `evidence` refs.
+
 ---
 
 ## 1. What exists today

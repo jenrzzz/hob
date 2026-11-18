@@ -76,7 +76,51 @@ module Gateway
       raise last_error
     end
 
+    # Embeddings for `texts` through `role`'s chain (MEMORY.md). Metered like
+    # every call. -> [vectors, model]
+    def embed(role:, texts:, operation: "embed", ref: nil)
+      texts = Array(texts).map(&:to_s)
+      raise Invalid, "nothing to embed" if texts.empty?
+
+      request = Request.new(role: role.to_s, operation: operation, ref: ref, metadata: {}, params: {})
+      candidates = ModelRole.find_role!(request.role).candidates
+      raise NoProviderError, "no available provider for role #{role.inspect}" if candidates.empty?
+
+      last_error = nil
+      candidates.each do |resolution|
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        begin
+          result = transport.embed(resolution: resolution, texts: texts)
+        rescue Unauthorized, Unavailable, RateLimited, Invalid => e
+          meter(request, resolution, status: e.is_a?(RateLimited) ? "rate_limited" : "error",
+                error: "#{e.class.name.demodulize}: #{e.message}", started: started)
+          raise if resolution.strict? || !e.is_a?(Unavailable) && !e.is_a?(RateLimited)
+
+          last_error = e
+          next
+        end
+        UsageEvent.record(
+          principal: Current.principal, surface: Current.surface, role: request.role,
+          provider: resolution.provider.slug, model: result[:model] || resolution.model, operation: operation,
+          status: "success", duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round,
+          error: nil, metadata: { "texts" => texts.size }, snapshot_digest: nil, ref: ref,
+          units: { "input_tokens" => result[:input_tokens].to_i }
+        )
+        return [ result[:vectors], resolution.model ]
+      end
+      raise last_error
+    end
+
     private
+
+    def attachments_of(message)
+      Array(message["attachments"]).map do |a|
+        a = a.to_h.stringify_keys
+        raise Invalid, "attachments are { type: image, digest }" unless a["type"] == "image" && a["digest"].present?
+
+        a.slice("type", "media_type", "digest")
+      end
+    end
 
     # One chain link: call, parse, meter. Retries exactly once when a schema
     # was given and the reply didn't parse; a second failure is a refusal.
@@ -144,20 +188,27 @@ module Gateway
       Array(messages).map do |m|
         m = m.to_h.deep_stringify_keys
         role = m["role"].to_s
-        case role
+        normalized = case role
         when "user"
-          { "role" => role, "content" => m["content"].to_s }
+          { "role" => role, "content" => m["content"].to_s, "attachments" => attachments_of(m) }
         when "assistant"
           calls = Array(m["tool_calls"]).map { |tc| tc.to_h.stringify_keys.slice("id", "name", "arguments") }
           calls.each { |tc| raise Invalid, "tool_calls need id and name" if tc["id"].blank? || tc["name"].blank? }
-          { "role" => role, "content" => m["content"].to_s, "tool_calls" => calls }.tap { |h| h.delete("tool_calls") if calls.empty? }
+          { "role" => role, "content" => m["content"].to_s, "tool_calls" => calls, "reasoning" => m["reasoning"].presence }
+            .tap { |h| h.delete("tool_calls") if calls.empty? }
         when "tool"
           raise Invalid, "tool messages need a tool_call_id" if m["tool_call_id"].blank?
 
-          { "role" => role, "content" => m["content"].to_s, "tool_call_id" => m["tool_call_id"] }
+          { "role" => role, "content" => m["content"].to_s, "tool_call_id" => m["tool_call_id"],
+            "attachments" => attachments_of(m), "error" => m["error"] ? true : nil }
         else
           raise Invalid, "message role must be user, assistant, or tool, got #{role.inspect}"
         end
+        # attachments: [{ type: image, media_type, digest }] (bytes in Blob);
+        # reasoning: a provider's thinking blocks to replay; cache: the
+        # stable prefix ends here (Transport sets the provider breakpoint).
+        normalized["cache"] = true if m["cache"]
+        normalized.compact.reject { |k, v| k == "attachments" && v.empty? }
       end
     end
   end

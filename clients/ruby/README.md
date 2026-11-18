@@ -80,6 +80,38 @@ hob.conversations.event(convo.id, content: "Added soup to the plan")  # a side e
 `hob.conversations` also has `show`, `list`, `branches`, `fork(id, name:, at:)`,
 `set_head(id, head:)`, and `siblings(id, hash)`.
 
+Content and tool results may carry images; `memory:` gives the persona her
+own memory in the turn (hob's MEMORY.md). With memory tools on, hob runs her
+`recall` and `remember` itself and hands back only your tools' calls:
+
+```ruby
+turn = hob.chat(conversation: convo, persona: "presence", memory: true, tools: KAT_TOOLS,
+                content: [{ type: "text", text: "this one?" }, Hob.image(jpeg, "image/jpeg")]) do |event|
+  log(event.to_h) if %w[native_call native_result].include?(event.type)
+end
+turn.native            # [{ "name" => "recall", "content" => "{...}", ... }]
+hob.chat(conversation: convo, persona: "presence", memory: true, tools: KAT_TOOLS,
+         tool_results: [look.result([{ type: "text", text: "on screen" }, Hob.image(frame, "image/jpeg")]),
+                        show.result("shown"), stage.result("no such scene", error: true)])
+```
+
+## memory and sheets
+
+```ruby
+hob.memory.deposit([{ about: "principal:jenner", body: "replayed scene 4 twice", kind: "evidence",
+                      evidence: ["kat:media:30880"] }])          # at the key's clearance, up to 500, all or nothing
+hob.memory.recall(query: "what holds him", about: ["principal:jenner"], persona: "presence")
+hob.memory.file(persona: "presence", about: "principal:jenner") # what she has noted about him
+hob.memory.supersede(id, body: "corrected", reason: "he said so")  # never rewritten; history kept
+hob.sheets.show("presence")
+hob.sheets.propose("presence", ops: [{ op: "add", section: "tastes", text: "patience" }], citations: [id])
+hob.sheets.accrete("presence")                                  # the model proposes; a person applies
+hob.sheets.apply("presence", revision_id)                       # a person's key
+```
+
+`Hob::Fake#memory` and `#sheets` keep both in memory; `Hob::Fake#native(:recall, { query: "x" }, content: {...})`
+scripts a native step for the next `chat`.
+
 ## usage
 
 ```ruby

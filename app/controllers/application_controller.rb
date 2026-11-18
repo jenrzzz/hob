@@ -148,12 +148,16 @@ class ApplicationController < ActionController::API
   def node_json(node)
     return nil if node.nil?
 
+    # Thinking blocks stay on the node for replay; callers get only that
+    # there were some.
+    meta = node.meta.key?("reasoning") ? node.meta.except("reasoning").merge("thinking" => true) : node.meta
     { hash: node.content_hash, parent: node.parent_hash, role: node.role, speaker: node.speaker,
-      kind: node.kind, content: node.content, meta: node.meta, snapshot: node.prompt_snapshot_hash,
-      created_at: node.created_at }
+      kind: node.kind, content: node.content, attachments: node.attachments.presence, meta: meta,
+      snapshot: node.prompt_snapshot_hash, created_at: node.created_at }.compact
   end
 
   # A tool_call node as the caller sees it: the call plus where it lives.
+  # (Only client calls are ever pending; native ones are answered by hob.)
   def tool_call_json(node)
     node.tool_call.merge("node" => node.content_hash)
   end
@@ -165,6 +169,36 @@ class ApplicationController < ActionController::API
     return nil if value.blank?
 
     value.respond_to?(:permit!) ? value.permit!.to_h : value.to_h
+  end
+
+  # content: a string, or a list of text/image blocks (Attachments).
+  def content_param(value = params[:content])
+    return value if value.nil? || value.is_a?(String)
+
+    deep_plain(value)
+  end
+
+  def deep_plain(value)
+    case value
+    when ActionController::Parameters then value.permit!.to_h
+    when Array then value.map { |v| deep_plain(v) }
+    else value
+    end
+  end
+
+  # memory: true | false | { recall, tools, budget, about }
+  def memory_param
+    value = params[:memory]
+    return nil if value.nil?
+    return value if [ true, false ].include?(value)
+    return value == "true" if %w[true false].include?(value)
+
+    deep_plain(value)
+  end
+
+  # A native tool's step, on the stream.
+  def sse_native(kind, payload)
+    sse_write(type: kind == :call ? "native_call" : "native_result", **payload.symbolize_keys)
   end
 
   def array_param(name)

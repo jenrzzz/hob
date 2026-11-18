@@ -20,7 +20,9 @@ class TransportTest < ActiveSupport::TestCase
       env = Faraday::Env.new
       env.status = 200
       env.body = ""
-      req.options.on_data.call(StubbedPost.sse, StubbedPost.sse.bytesize, env)
+      # An array of streams answers successive requests in order.
+      body = StubbedPost.sse.is_a?(Array) ? StubbedPost.sse.shift : StubbedPost.sse
+      req.options.on_data.call(body, body.bytesize, env)
       Faraday::Response.new(env)
     end
   end
@@ -151,5 +153,107 @@ class TransportToolsTest < TransportTest
     assert_equal "tool_result", rendered[2][:content].first[:type]
     assert_equal "toolu_1", rendered[2][:content].first[:tool_use_id]
     assert_equal({ type: :none }, StubbedPost.payloads.last[:tool_choice])
+  end
+end
+
+# MEMORY.md, "Verifying the tool loop": what hob sends Anthropic for images,
+# failed tool results, thinking across a tool round, and cache breakpoints.
+class TransportConductorTest < TransportTest
+  TOOLS = TransportToolsTest::TOOLS
+  PNG = "\x89PNG\r\n\x1A\n#{'x' * 32}".b
+
+  def thinking_tool_stream(signature: "sig-abc")
+    sse(
+      { type: "message_start", message: { model: "claude-sonnet-5", usage: { input_tokens: 30 } } },
+      { type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } },
+      { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "He lingered; look closer." } },
+      { type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: signature } },
+      { type: "content_block_stop", index: 0 },
+      { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "toolu_1", name: "lookup", input: {} } },
+      { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: '{"q":"scene 4"}' } },
+      { type: "content_block_stop", index: 1 },
+      { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { output_tokens: 12 } },
+      { type: "message_stop" }
+    )
+  end
+
+  test "a thinking block streamed before a tool call comes back verbatim, signature and all" do
+    StubbedPost.sse = thinking_tool_stream
+    result = call(tools: TOOLS)
+    assert_equal [ { "type" => "thinking", "thinking" => "He lingered; look closer.", "signature" => "sig-abc" } ],
+                 result.reasoning["anthropic"]
+    assert_equal "toolu_1", result.tool_calls.first["id"]
+  end
+
+  test "a thinking-enabled tool round survives the resume: the blocks lead the replayed assistant turn" do
+    Gateway.transport = Gateway::Transport.new
+    StubbedPost.sse = [ thinking_tool_stream, @default_sse = StubbedPost.sse ]
+    StubbedPost.sse[1] = sse(
+      { type: "message_start", message: { model: "claude-sonnet-5", usage: { input_tokens: 40 } } },
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Scene four, then." } },
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 5 } },
+      { type: "message_stop" }
+    )
+    convo = conversation
+    preset = Preset.create!(key: "thinking", name: "Thinking", stages: Assembly::Pipeline::STAGE_DEFAULTS,
+                            params: { "thinking" => { "type" => "adaptive" } })
+    first = ChatTurn.new(conversation: convo, branch: convo.branch, content: "what now?", tools: TOOLS,
+                         role: "interviewer", preset: preset).call
+    assert_equal "tool_calls", first.status
+    assert first.tool_call_nodes.first.meta["reasoning"], "the call node keeps the thinking blocks"
+
+    ChatTurn.new(conversation: convo, branch: convo.branch, tools: TOOLS, role: "interviewer", preset: preset,
+                 tool_results: [ { "id" => "toolu_1", "content" => "scene 4: 3 replays" } ]).call
+    replayed = StubbedPost.payloads.last[:messages]
+    assert_equal %w[user assistant user], replayed.map { |m| m[:role] }
+    blocks = replayed[1][:content]
+    assert_equal({ "type" => "thinking", "thinking" => "He lingered; look closer.", "signature" => "sig-abc" }, blocks.first)
+    assert_equal "tool_use", blocks.last[:type]
+    assert_equal({ type: "adaptive" }, StubbedPost.payloads.last[:thinking])
+  end
+
+  test "images ride in user turns and tool results as base64 image blocks" do
+    blob = Blob.store!(bytes: PNG, media_type: "image/png", realm: "personal")
+    image = [ { "type" => "image", "media_type" => "image/png", "digest" => blob.digest } ]
+    messages = [ { "role" => "user", "content" => "what is this?", "attachments" => image },
+                 { "role" => "assistant", "content" => "", "tool_calls" => [ { "id" => "toolu_1", "name" => "lookup", "arguments" => {} } ] },
+                 { "role" => "tool", "tool_call_id" => "toolu_1", "content" => "the frame", "attachments" => image } ]
+    call(messages: messages, tools: TOOLS)
+    rendered = StubbedPost.payloads.last[:messages]
+    user_image = rendered[0][:content].find { |b| b[:type] == "image" }
+    assert_equal({ type: "base64", media_type: "image/png", data: Base64.strict_encode64(PNG) }, user_image[:source])
+    tool_result = rendered[2][:content].first
+    assert_equal "tool_result", tool_result[:type]
+    assert_equal %w[text image], tool_result[:content].map { |b| b[:type] }
+  end
+
+  test "a failed tool result reaches Anthropic with is_error" do
+    messages = [ user_message("go"),
+                 { "role" => "assistant", "content" => "", "tool_calls" => [ { "id" => "toolu_1", "name" => "lookup", "arguments" => {} } ] },
+                 { "role" => "tool", "tool_call_id" => "toolu_1", "content" => "no such scene", "error" => true } ]
+    call(messages: messages, tools: TOOLS)
+    block = StubbedPost.payloads.last[:messages].last[:content].first
+    assert_equal true, block[:is_error]
+    assert_equal "toolu_1", block[:tool_use_id]
+  end
+
+  test "an openai_compat tool result that failed says so in words" do
+    @resolution = ModelRole.find_role!("extractor").candidates.last
+    StubbedPost.sse = "data: #{JSON.generate(choices: [ { delta: { content: "ok" }, finish_reason: 'stop' } ])}\n\ndata: [DONE]\n\n"
+    messages = [ user_message("go"),
+                 { "role" => "assistant", "content" => "", "tool_calls" => [ { "id" => "c1", "name" => "lookup", "arguments" => {} } ] },
+                 { "role" => "tool", "tool_call_id" => "c1", "content" => "no such scene", "error" => true } ]
+    call(messages: messages, tools: TOOLS)
+    assert_equal "[tool error] no such scene", StubbedPost.payloads.last[:messages].last[:content]
+  end
+
+  test "the cache breakpoint sits where the caller marked the stable prefix's end" do
+    messages = [ user_message("one"), { "role" => "assistant", "content" => "two" },
+                 user_message("three").merge("cache" => true), user_message("[Situation: now]") ]
+    call(messages: messages)
+    rendered = StubbedPost.payloads.last[:messages]
+    marked = rendered.flat_map { |m| m[:content] }.select { |b| b[:cache_control] }
+    assert_equal [ "three" ], marked.map { |b| b[:text] }
+    assert_equal({ type: "ephemeral" }, marked.first[:cache_control])
   end
 end

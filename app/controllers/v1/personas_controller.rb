@@ -33,6 +33,8 @@ module V1
     def persona_params
       params.permit(:key, :name, :model_role, :voice_id).to_h.tap do |h|
         h[:prompt] = params[:prompt].permit(:system_core, :instruction, greetings: [], examples: []).to_h if params[:prompt].present?
+        # Memory defaults (MEMORY.md): off unless set; a turn's memory: overrides.
+        h[:memory] = params[:memory].permit(:recall, :tools, :budget, about: []).to_h if params[:memory].respond_to?(:permit)
       end
     end
 
@@ -40,7 +42,7 @@ module V1
       {
         id: persona.id, key: persona.key, name: persona.name,
         prompt: persona.prompt, model_role: persona.model_role,
-        voice_id: persona.voice_id
+        voice_id: persona.voice_id, memory: persona.memory, entity: persona.entity&.as_json
       }
     end
   end

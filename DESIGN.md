@@ -98,6 +98,8 @@ Every request's context is composed by an ordered pipeline of **stages**, each w
 persona → world/lore → memory recall → surface context → history → tool schemas
 ```
 
+*(As built: `persona → memory → scenario → history → situation → instruction`; the persona stage also renders the persona's sheet after its constitution. MEMORY.md.)*
+
 - Stages are pluggable units registered in hob; surfaces and personas can override the stage list or budgets, but the *defaults are opinionated* — this is where ST's prompt-manager spaghetti goes to die.
 - **History** is budget-aware: newest-first fill, with rolling summarization of the evicted middle (summaries are themselves realm-tainted derived artifacts).
 - **Surface context** is the host app's injection point: mise passes the recipe on screen, kat passes the media item. Arbitrary structured blob, rendered by a template the surface registers.
@@ -109,11 +111,13 @@ Every assembled prompt is snapshotted (hash-referenced) so any reply can answer 
 
 ## Plane 3 — Memory & ontology
 
+> **Status (2026-11-18):** v1 is built on the `memory` branch, sized to two personas: entities, observations with realm and provenance, supersede/retire instead of rewrite, hybrid recall (entity + words + pgvector + recency) under RLS, a `memory` recall stage, the native `recall`/`remember` tools, and a persona's versioned sheet that accretes by proposed, cited revisions. Relations, extraction jobs, the promotion queue, and per-clearance digests are not built. [MEMORY.md](MEMORY.md) is the contract and says where it departs from this section.
+
 ### Shape
 
 - **Entities** are global and realm-less: people, personas, media items, recipes, articles, topics, projects, places. Typed, but types are free-form strings with a small blessed core (`person`, `work`, `event`, `place`, `preference`); rigid ontologies die on contact with real life. Stable ULIDs.
 - **Observations** — timestamped facts about entities — carry a **realm** and **provenance** (source surface, conversation ref, extraction job, author principal). "Jenner is allergic to shellfish" (`household`, from mise chat 2026-07-01). Provenance is non-negotiable: the graph must know *why* it believes things.
-- **Relations** (typed edges) also carry realms — edges are exactly where the sensitive stuff lives.
+- **Relations** (typed edges) also carry realms — edges are exactly where the sensitive stuff lives. *(Deferred in v1; MEMORY.md, "Schema".)*
 - **Embeddings** on everything (messages, observations, documents, entity digests), rows carry the realm of their source. Recall is hybrid: graph traversal from entities present in context + pgvector similarity, both realm-filtered *inside the query*.
 
 ### Extraction & the promotion queue
@@ -177,7 +181,7 @@ A tool registration = JSON schema + **source/sink realm annotations** + cost cla
 ### Venues
 
 1. **App-hosted** — surfaces register tools with a webhook endpoint (`mise: add_to_meal_plan`). hob calls back with a signed request. Apps own their domain actions. The native venue for household surfaces, and the primary one, *because* registration carries the realm annotations the IFC gate needs.
-2. **Native** — `recall`, `remember`, `speak`, `search`. Available to every persona everywhere.
+2. **Native** — `recall`, `remember`, `speak`, `search`. Available to every persona everywhere. *(`recall` and `remember` built 2026-11-18, opt-in per persona or turn, executed inside the turn and mixed with client-session tools in one model turn; MEMORY.md, "Native tools".)*
 3. **MCP bridge** — hob acts as MCP *client* to consumer-provided MCP servers; an MCP server is just a tool provider whose schemas are discovered (`list_tools`) instead of declared. This is the "home AI substrate" play: existing MCP servers plug in without hob-specific code. MCP has no realm concept, so a server registers with **per-server default source/sink realms and per-tool overrides**, annotated in hob at registration time.
 4. **Client-session** — browser surfaces (chatelaine) can't host webhooks; their tools round-trip over the live connection instead: hob emits the `tool_call` SSE event, the client executes locally and POSTs the result back, the loop resumes. Also the path for client-side capabilities (clipboard, local files) hob should never see.
 5. **Sandboxed compute (agentbox)** — a first-class `code_execution` tool driving Coder's REST/CLI, exactly the headless path in `infra/agentbox/coder`: provision from template → execute → return output → teardown. gVisor + fail-closed egress allowlist means personas get real compute with no path to the fleet or secrets — the precondition for letting a roleplay character run code. Two flavors:
@@ -211,9 +215,11 @@ realms            slug PK, rank int                     -- household=0, personal
 principals        id, kind(human|persona|worker|surface), name, max_clearance
 api_keys          token_digest, principal_id, surface, default_clearance
 
-entities          ulid PK, type, name, aliases[], created_by
-observations      ulid, entity_id, body, realm, provenance jsonb,
-                  observed_at, embedding vector, promoted_from ulid?     [RLS]
+entities          ulid PK, type, name, aliases[], ref, created_by          -- built (MEMORY.md)
+observations      ulid, entity_id, author_entity_id?, body, realm, provenance,
+                  observed_at, embedding vector, supersedes/superseded_by [RLS]   -- built; promoted_from not yet
+blobs             (realm, digest) PK, media_type, bytes                  [RLS]   -- images in messages and tool results
+persona_sheet_revisions  persona, version, realm, ops, citations, status [RLS]   -- a persona's accreting sheet
 relations         ulid, from_id, to_id, kind, realm, provenance jsonb    [RLS]
 entity_digests    entity_id, clearance, body, refreshed_at               [RLS]
 promotions        observation_id, suggested_realm, status(pending|approved|rejected)
@@ -224,7 +230,7 @@ message_nodes     content_hash PK, conversation_id, parent_hash, role,
                   prompt_snapshot_hash?                                  [RLS]
 branches          conversation_id, name, head_hash
 personas          ulid, entity_id, prompt jsonb, voice_id, default_role,
-                  card_import jsonb?
+                  memory jsonb (defaults), card_import jsonb?
 prompt_snapshots  hash PK, assembled jsonb                               [RLS]
 
 providers         id, kind(anthropic|openai_compat|elevenlabs|transient), config

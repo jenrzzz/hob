@@ -16,7 +16,9 @@ module V1
     def create
       run = if params[:id].present?
         conversation = Conversation.pipelines.find(params[:id])
-        ->(&on_event) { Completion.resume(conversation, tool_results: array_param(:tool_results) || [], &on_event) }
+        lambda do |on_native: nil, &on_event|
+          Completion.resume(conversation, tool_results: array_param(:tool_results) || [], on_native: on_native, &on_event)
+        end
       else
         completion = Completion.new(
           role: params.require(:role), operation: params[:operation].presence,
@@ -25,16 +27,19 @@ module V1
           schema: hash_param(:schema), tools: array_param(:tools), tool_choice: params[:tool_choice].presence,
           max_iterations: params[:max_iterations].presence,
           params: hash_param(:params) || {}, metadata: hash_param(:metadata) || {},
-          ref: params[:ref].presence, realm: requested_realm, situation: situation_param
+          ref: params[:ref].presence, realm: requested_realm, situation: situation_param, memory: memory_param
         )
-        ->(&on_event) { completion.call(&on_event) }
+        lambda do |on_native: nil, &on_event|
+          completion.on_native = on_native
+          completion.call(&on_event)
+        end
       end
 
       if streaming_requested?
         stream_events do
-          result = run.call(&sse_gateway_events)
+          result = run.call(on_native: ->(kind, payload) { sse_native(kind, payload) }, &sse_gateway_events)
           result.tool_call_nodes.each { |n| sse_write(type: "tool_call", **tool_call_json(n).symbolize_keys) }
-          sse_write(type: "usage", **usage_json(result.response))
+          sse_write(type: "usage", **usage_json(result))
           sse_write(type: "done", **serialize(result))
         end
       else
@@ -62,7 +67,11 @@ module V1
     private
 
     def messages_param
-      Array(params[:messages]).map { |m| m.respond_to?(:permit) ? m.permit(:role, :content).to_h : m.to_h }
+      # content: a string, or text/image blocks (Attachments).
+      Array(params[:messages]).map do |m|
+        m = deep_plain(m).to_h.stringify_keys
+        { "role" => m["role"], "content" => content_param(m["content"]) }
+      end
     end
 
     def situation_param
@@ -83,7 +92,8 @@ module V1
         id: result.conversation.id, status: result.status,
         content: response.refused? ? nil : response.content, parsed: response.parsed,
         tool_calls: result.tool_call_nodes.map { |n| tool_call_json(n) },
-        usage: usage_json(response), model: response.model, provider: response.provider,
+        native: result.native,
+        usage: usage_json(result), model: response.model, provider: response.provider,
         stop_reason: response.stop_reason, snapshot: result.snapshot.digest,
         node: node_json(result.assistant_node)
       }

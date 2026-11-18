@@ -34,12 +34,12 @@ module Hob
     # A block streams events (delta, retry, tool_call, usage, done).
     def complete(role: nil, messages: nil, system: nil, persona: nil, schema: nil, tools: nil, tool_choice: nil,
                  max_iterations: nil, operation: nil, metadata: {}, params: {}, ref: nil, realm: nil,
-                 id: nil, tool_results: nil, &on_event)
+                 id: nil, tool_results: nil, memory: nil, &on_event)
       body = {
         role: role, messages: messages, system: system, persona: persona, schema: schema, tools: tools,
         tool_choice: tool_choice, max_iterations: max_iterations, operation: operation,
         metadata: presence(metadata), params: presence(params), ref: ref, realm: realm,
-        id: id, tool_results: tool_results
+        id: id, tool_results: tool_results, memory: memory
       }.compact
       raise ArgumentError, "complete needs role: and messages:, or id: and tool_results:" unless body[:role] || body[:id]
 
@@ -57,15 +57,21 @@ module Hob
     end
 
     # POST /v1/conversations/:id/chat → Hob::Turn. With a block, streams
-    # (delta events carry the text as it arrives).
+    # (delta events carry the text as it arrives; native_call / native_result
+    # events show hob running a persona's memory tools).
+    #
+    # content and a tool result's content: a String, or blocks —
+    #   [{ type: "text", text: }, Hob.image(bytes, "image/jpeg")]
+    # memory: true | false | { recall:, tools:, budget:, about: [refs] } (MEMORY.md)
     def chat(conversation:, branch: "main", content: nil, persona: nil, personas: nil, context: nil,
              instruction: nil, preset: nil, role: nil, regenerate_at: nil, tools: nil, tool_choice: nil,
-             tool_results: nil, max_iterations: nil, &on_event)
+             tool_results: nil, max_iterations: nil, memory: nil, situation: nil, &on_event)
       id = conversation.respond_to?(:id) ? conversation.id : conversation
       body = {
         branch: branch, content: content, persona: persona, personas: personas, context: context,
         instruction: instruction, preset: preset, role: role, regenerate_at: regenerate_at,
-        tools: tools, tool_choice: tool_choice, tool_results: tool_results, max_iterations: max_iterations
+        tools: tools, tool_choice: tool_choice, tool_results: tool_results, max_iterations: max_iterations,
+        memory: memory, situation: situation
       }.compact
       path = "/v1/conversations/#{id}/chat"
       data = on_event ? @http.stream(path, body, &on_event) : @http.post(path, body)
@@ -76,6 +82,16 @@ module Hob
 
     def conversations
       @conversations ||= Conversations.new(@http)
+    end
+
+    # /v1/memory: observations, recall, a persona's file (MEMORY.md).
+    def memory
+      @memory ||= Memory.new(@http)
+    end
+
+    # /v1/personas/:key/sheet: a persona's sheet and its revisions.
+    def sheets
+      @sheets ||= Sheets.new(@http)
     end
 
     # /v1/sentinel: an external agent asks; a person decides (SENTINEL.md).

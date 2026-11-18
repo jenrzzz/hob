@@ -40,7 +40,8 @@ module V1
     def serialize_node(node)
       {
         hash: node.content_hash, parent: node.parent_hash, role: node.role,
-        speaker: node.speaker, kind: node.kind, content: node.content, meta: node.meta,
+        speaker: node.speaker, kind: node.kind, content: node.content, attachments: node.attachments.presence,
+        meta: node.meta.key?("reasoning") ? node.meta.except("reasoning").merge("thinking" => true) : node.meta,
         swipes: node.siblings.count, snapshot: node.prompt_snapshot_hash,
         created_at: node.created_at
       }

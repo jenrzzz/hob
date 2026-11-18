@@ -6,6 +6,13 @@
 module Clearance
   module_function
 
+  # The clearance in force: the request's, or (in a job, a console, a test)
+  # whatever app.clearance the connection holds.
+  def current
+    Current.clearance.presence ||
+      ActiveRecord::Base.connection.select_value("SELECT current_setting('app.clearance', true)").presence
+  end
+
   def with(realm)
     connection = ActiveRecord::Base.connection
     previous = connection.select_value("SELECT current_setting('app.clearance', true)")

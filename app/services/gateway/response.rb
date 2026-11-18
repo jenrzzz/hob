@@ -4,12 +4,13 @@ module Gateway
     REFUSAL_STOP_REASONS = %w[refusal content_filter].freeze
 
     attr_accessor :content, :parsed, :stop_reason, :input_tokens, :output_tokens, :cache_read_tokens,
-                  :cache_creation_tokens, :model, :provider, :duration_ms, :tool_calls
+                  :cache_creation_tokens, :model, :provider, :duration_ms, :tool_calls, :reasoning
 
     def self.from_transport(result, resolution:, started:)
       new.tap do |r|
         r.content = result.content.to_s
         r.stop_reason = result.stop_reason
+        r.reasoning = result.respond_to?(:reasoning) ? result.reasoning.presence : nil
         r.tool_calls = Array(result.tool_calls).map { |tc| tc.to_h.stringify_keys.slice("id", "name", "arguments") }
         r.input_tokens = result.input_tokens.to_i
         r.output_tokens = result.output_tokens.to_i

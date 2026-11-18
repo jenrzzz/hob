@@ -1,4 +1,9 @@
 module Hob
+  # An image block for a message's or a tool result's content.
+  def self.image(bytes, media_type)
+    { type: "image", media_type: media_type, data: [ bytes ].pack("m0") }
+  end
+
   # A thin reader over one of hob's JSON objects: string-keyed data, explicit
   # accessors, no surprises.
   class Record

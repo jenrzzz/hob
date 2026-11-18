@@ -2,7 +2,11 @@ module V1
   # POST /v1/conversations/:conversation_id/chat
   # { content?, branch: "main", persona? | personas[]?, context?, instruction?,
   #   role?, preset?, situation?, regenerate_at?, tools?, tool_choice?, tool_results?,
-  #   max_iterations? }
+  #   max_iterations?, memory? }
+  # content and tool_results[].content: a string, or text/image blocks.
+  # memory: true | false | { recall, tools, budget, about } (MEMORY.md); with
+  # tools on, native recall/remember run inside the turn and stream as
+  # native_call / native_result events.
   # Accept: text/event-stream streams `delta` events, then any `tool_call`
   # events, `usage`, and `done`; anything else blocks and returns the full
   # turn as JSON with status success|tool_calls.
@@ -18,17 +22,19 @@ module V1
 
       turn = ChatTurn.new(
         conversation: conversation, branch: branch, persona: persona, personas: personas,
-        content: params[:content], context: context_param, instruction: params[:instruction].presence,
+        content: content_param, context: context_param, instruction: params[:instruction].presence,
         role: params[:role].presence, regenerate_at: params[:regenerate_at].presence,
         preset: preset, situation: situation_param, tools: array_param(:tools), tool_choice: params[:tool_choice].presence,
-        tool_results: array_param(:tool_results), max_iterations: params[:max_iterations].presence
+        tool_results: array_param(:tool_results), max_iterations: params[:max_iterations].presence,
+        memory: memory_param
       )
 
       if streaming_requested?
         stream_events do
+          turn.on_native = ->(kind, payload) { sse_native(kind, payload) }
           result = turn.call { |delta| sse_write(type: "delta", content: delta) }
           result.tool_call_nodes.each { |n| sse_write(type: "tool_call", **tool_call_json(n).symbolize_keys) }
-          sse_write(type: "usage", **result.response.units.symbolize_keys, cost: result.response.cost&.to_f)
+          sse_write(type: "usage", **result.units.symbolize_keys, cost: result.cost&.to_f, rounds: result.rounds)
           sse_write(type: "done", **serialize_result(result))
         end
       else
@@ -64,6 +70,8 @@ module V1
         assistant: node_json(result.assistant_node),
         assistants: result.assistant_nodes.map { |n| node_json(n) },
         tool_calls: result.tool_call_nodes.map { |n| tool_call_json(n) },
+        native: result.native,
+        usage: result.units.merge("cost" => result.cost&.to_f, "rounds" => result.rounds),
         snapshot: result.snapshot.digest
       }
     end

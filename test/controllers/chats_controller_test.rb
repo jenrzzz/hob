@@ -104,6 +104,6 @@ class ChatsControllerToolsTest < ActionDispatch::IntegrationTest
     assert_equal "Soup is on the plan.", events.select { |e| e["type"] == "delta" }.map { |e| e["content"] }.join
     assert_equal "success", events.last["status"]
     assert_equal [], events.last["tool_calls"]
-    assert_equal %w[user assistant assistant tool], @fake.calls.last.messages.map { |m| m["role"] }
+    assert_equal %w[user assistant tool], @fake.calls.last.messages.map { |m| m["role"] }
   end
 end

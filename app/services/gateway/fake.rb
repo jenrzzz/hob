@@ -13,11 +13,38 @@ module Gateway
     end
 
     def reply(content, stop_reason: "end_turn", input_tokens: 10, output_tokens: 5, cache_read_tokens: 0, model: nil,
-              tool_calls: [])
+              tool_calls: [], reasoning: nil)
       @queue << Transport::Result.new(content: content, stop_reason: stop_reason, input_tokens: input_tokens,
                                       output_tokens: output_tokens, cache_read_tokens: cache_read_tokens,
-                                      cache_creation_tokens: 0, model: model, tool_calls: tool_calls)
+                                      cache_creation_tokens: 0, model: model, tool_calls: tool_calls, reasoning: reasoning)
       self
+    end
+
+    # Several calls in one turn with the ids given: [{ id, name, arguments }].
+    # reasoning: thinking blocks as Anthropic returns them, { "anthropic" => [...] }.
+    def call_tools(calls, content: "", reasoning: nil)
+      calls = calls.map { |c| c.to_h.deep_stringify_keys.tap { |h| h["arguments"] ||= {} } }
+      reply(content, stop_reason: "tool_use", tool_calls: calls, reasoning: reasoning)
+    end
+
+    # Deterministic bag-of-words vectors: texts sharing words are near.
+    # Every embed call is recorded in #embeds.
+    DIMENSIONS = 32
+
+    def embeds
+      @embeds ||= []
+    end
+
+    def embed(resolution:, texts:)
+      embeds << texts
+      vectors = texts.map do |text|
+        v = Array.new(DIMENSIONS, 0.0)
+        text.downcase.scan(/[[:alnum:]]{3,}/).each { |w| v[Digest::MD5.hexdigest(w).to_i(16) % DIMENSIONS] += 1.0 }
+        v[0] += 0.001 # never the zero vector
+        norm = Math.sqrt(v.sum { |x| x * x })
+        v.map { |x| (x / norm).round(6) }
+      end
+      { vectors: vectors, model: resolution.model, input_tokens: texts.sum { |t| t.split.size } }
     end
 
     def refuse

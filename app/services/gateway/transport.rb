@@ -10,13 +10,40 @@ module Gateway
   # ends the request instead.
   class Transport
     Result = Struct.new(:content, :stop_reason, :input_tokens, :output_tokens, :cache_read_tokens,
-                        :cache_creation_tokens, :model, :tool_calls, keyword_init: true)
+                        :cache_creation_tokens, :model, :tool_calls, :reasoning, keyword_init: true)
+
+    # A tool result that failed. ruby_llm renders tool results without
+    # Anthropic's `is_error`, so this message carries the flag and
+    # ErrorFlag (below) adds it to the block.
+    class ToolResultMessage < RubyLLM::Message
+      attr_reader :hob_error
+
+      def initialize(options = {})
+        @hob_error = options.delete(:hob_error)
+        super
+      end
+    end
+
+    # Prepended onto ruby_llm's Anthropic tool renderer: `is_error: true` on
+    # a failed result's block, so the model reads it as a failure, not output.
+    module ErrorFlag
+      def format_tool_result_block(msg)
+        block = super
+        msg.respond_to?(:hob_error) && msg.hob_error ? block.merge(is_error: true) : block
+      end
+    end
+    RubyLLM::Protocols::Anthropic::Tools.singleton_class.prepend(ErrorFlag)
 
     def call(resolution:, system:, messages:, schema:, params:, tools: [], tool_choice: nil, &on_delta)
+      anthropic = resolution.provider.kind == "anthropic"
       chat = build_chat(resolution, params)
       chat = chat.with_instructions(system) if system.present?
       chat = chat.with_schema(schema) if schema
-      messages.each { |m| chat.add_message(**message_attributes(m)) }
+      messages.each { |m| chat.add_message(message_for(m, anthropic: anthropic)) }
+      # One explicit breakpoint where the caller marked the stable prefix
+      # ends (the last history message), else at the last message, so each
+      # round of a tool loop reads the previous round's prefix from cache.
+      mark_cache_boundary(chat, messages) if anthropic
 
       text = +""
       stop_reason = nil
@@ -34,7 +61,8 @@ module Gateway
         input_tokens: message.tokens&.input, output_tokens: message.tokens&.output,
         cache_read_tokens: message.tokens&.cache_read, cache_creation_tokens: message.tokens&.cache_write,
         model: message.model,
-        tool_calls: (message.tool_calls || {}).values.map { |tc| { "id" => tc.id, "name" => tc.name, "arguments" => tc.arguments } }
+        tool_calls: (message.tool_calls || {}).values.map { |tc| { "id" => tc.id, "name" => tc.name, "arguments" => tc.arguments } },
+        reasoning: reasoning_from(message)
       )
     rescue RubyLLM::RateLimitError => e
       raise RateLimited.new(e.message, retry_after: retry_after_from(e))
@@ -47,7 +75,45 @@ module Gateway
       raise Invalid, e.message
     end
 
+    # -> { vectors:, model:, input_tokens: }
+    def embed(resolution:, texts:)
+      provider = resolution.provider
+      raise Invalid, "#{provider.slug} (#{provider.kind}) has no embeddings" if provider.kind == "anthropic"
+
+      context = RubyLLM.context do |config|
+        config.openai_api_key = provider.api_key
+        config.openai_api_base = provider.config["base_url"]
+      end
+      result = context.embed(texts, model: resolution.model, provider: :openai, assume_model_exists: true)
+      vectors = result.vectors
+      vectors = [ vectors ] unless vectors.first.is_a?(Array)
+      { vectors: vectors, model: result.model, input_tokens: result.input_tokens }
+    rescue RubyLLM::RateLimitError => e
+      raise RateLimited.new(e.message, retry_after: retry_after_from(e))
+    rescue RubyLLM::OverloadedError, RubyLLM::ServiceUnavailableError, RubyLLM::ServerError,
+           Faraday::ConnectionFailed, Faraday::TimeoutError => e
+      raise Unavailable, e.message
+    rescue RubyLLM::UnauthorizedError, RubyLLM::ForbiddenError, RubyLLM::PaymentRequiredError => e
+      raise Unauthorized, e.message
+    rescue RubyLLM::Error => e
+      raise Invalid, e.message
+    end
+
     private
+
+    # Anthropic's thinking blocks, verbatim with their signatures, as the
+    # provider returned them. A tool-use turn produced with thinking must be
+    # replayed with these blocks first in the assistant turn, so hob keeps
+    # them on the node (MEMORY.md, "Thinking and tools").
+    def reasoning_from(message)
+      raw = message.raw_reasoning
+      raw.is_a?(Hash) && raw["anthropic"].present? ? { "anthropic" => raw["anthropic"] } : nil
+    end
+
+    def mark_cache_boundary(chat, messages)
+      index = messages.rindex { |m| m["cache"] } || (messages.size - 1)
+      chat.messages.reject { |m| m.role == :system }[index]&.cache_until_here
+    end
 
     def build_chat(resolution, params)
       provider = resolution.provider
@@ -83,19 +149,39 @@ module Gateway
       chat.generate(&block)
     end
 
-    # user / assistant text, an assistant message carrying tool calls, or a
-    # tool result (role "tool", which each provider renders its own way).
-    def message_attributes(m)
+    # user / assistant text, an assistant message carrying tool calls (and
+    # the thinking that preceded them), or a tool result (role "tool", which
+    # each provider renders its own way). Images ride as attachments, their
+    # bytes read from Blob by digest at the last moment.
+    def message_for(m, anthropic:)
+      attachments = attachments_for(m)
       case m["role"]
       when "tool"
-        { role: :tool, content: m["content"].to_s, tool_call_id: m["tool_call_id"] }
+        content = m["content"].to_s
+        # Only Anthropic has an error flag on the block; elsewhere the model
+        # is told in words.
+        content = "[tool error] #{content}" if m["error"] && !anthropic
+        ToolResultMessage.new(role: :tool, content: content, tool_call_id: m["tool_call_id"],
+                              attachments: attachments, hob_error: m["error"] && anthropic)
       when "assistant"
         calls = Array(m["tool_calls"]).to_h do |tc|
           [ tc["id"], RubyLLM::ToolCall.new(id: tc["id"], name: tc["name"], arguments: tc["arguments"] || {}) ]
         end
-        calls.empty? ? { role: :assistant, content: m["content"] } : { role: :assistant, content: m["content"].presence, tool_calls: calls }
+        reasoning = anthropic ? m["reasoning"] : nil
+        content = calls.empty? ? m["content"] : m["content"].presence
+        RubyLLM::Message.new(role: :assistant, content: content, tool_calls: calls.presence, raw_reasoning: reasoning)
       else
-        { role: :user, content: m["content"] }
+        RubyLLM::Message.new(role: :user, content: m["content"], attachments: attachments)
+      end
+    end
+
+    EXTENSIONS = { "image/png" => "png", "image/jpeg" => "jpg", "image/gif" => "gif", "image/webp" => "webp" }.freeze
+
+    def attachments_for(m)
+      Array(m["attachments"]).map do |a|
+        blob = Blob.fetch!(a["digest"])
+        RubyLLM::Attachment.new(StringIO.new(blob.bytes),
+                                filename: "#{blob.digest.delete_prefix('sha256:')[0, 16]}.#{EXTENSIONS.fetch(blob.media_type)}")
       end
     end
 

@@ -318,6 +318,33 @@ dropped and reported, never silently fixed. Revisions are only proposed;
 `accretion` when that row exists, else the persona's role, else
 `chat-default`.
 
+### Review
+
+```
+POST /v1/personas/:key/sheet/review   { role? }
+  → { proposed: [revisions], insights: [observations], ruts: [observations], dropped, window, completion }
+personas.memory.review                { every_days: 7, realm: "intimate" }      opts in to the clock
+```
+
+Accretion is her own model reading the day, and it can only add to what is
+there, so left alone it deepens whatever is already on the sheet. A review
+is the occasional second reader: the `review` model role, a different and
+larger model, given the constitution, the sheet with its entry ids, her last
+40 revisions and what became of them, her newest 150 notes, what was noted
+about her, the newest 200 observations about whoever she watches, and a
+random 100 of the observations no revision of hers has ever cited. It is
+asked for three things: **ruts** (where she repeats herself), what on the
+sheet has gone **stale**, and what she has **missed**.
+
+It writes revisions (proposed, cited, `proposed_via: review`), and two kinds
+of observation with no author: `insight`, about whoever she watches, and
+`rut`, about her. Both cite what they were read from as `observation:<id>`
+evidence. A rut is about her, so the next accretion pass reads it as
+evidence about herself, and recall can bring it into a turn. One `review`
+observation about her dates the pass. Nothing is applied. With no `review`
+role the pass refuses: falling back to her own model would defeat it.
+`PersonaReviewJob` runs each morning and reviews the personas that are due.
+
 ## HTTP
 
 ```
@@ -336,6 +363,7 @@ POST /v1/personas/:key/sheet/revisions           { ops, citations, rationale? }
 POST /v1/personas/:key/sheet/revisions/:id/apply | /reject     (a person)
 POST /v1/personas/:key/sheet/rollback            { version, rationale? }                (a person)
 POST /v1/personas/:key/sheet/accrete             { since?, observations?, role?, limit? }
+POST /v1/personas/:key/sheet/review              { role? }
 ```
 
 Any model-facing key may read, deposit, and propose; agents are turned away

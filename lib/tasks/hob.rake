@@ -1744,6 +1744,19 @@ namespace :hob do
       end
     end
 
+    desc "The long look: a review of a persona's file by the `review` role: bin/rails \"hob:memory:review[presence]\" REALM=intimate"
+    task :review, [ :persona ] => :environment do |_task, args|
+      Clearance.with(ENV.fetch("REALM", "intimate")) do
+        Current.set(surface: "review") do
+          outcome = PersonaSheet::Review.new(Persona.find_by!(key: args[:persona])).call
+          puts "window #{outcome.window.to_json}"
+          outcome.proposed.each { |rev| puts "proposed v#{rev.version}: #{rev.rationale}\n   #{rev.ops.to_json}" }
+          (outcome.insights + outcome.ruts).each { |o| puts "#{o.kind}: #{o.body}" }
+          outcome.dropped.each { |d| puts "dropped: #{d[:reason]}" }
+        end
+      end
+    end
+
     desc "A persona's sheet as a clearance sees it, and its pending revisions: bin/rails \"hob:memory:sheet[velvet]\" REALM=intimate"
     task :sheet, [ :persona ] => :environment do |_task, args|
       Clearance.with(ENV.fetch("REALM", "intimate")) do

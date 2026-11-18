@@ -24,6 +24,9 @@ production:
   situation_sweep:
     class: SituationSweepJob
     schedule: every day at 3:17am
+  persona_review:
+    class: PersonaReviewJob
+    schedule: every day at 4:41am
   clear_solid_queue_finished_jobs:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
     schedule: every hour at minute 12

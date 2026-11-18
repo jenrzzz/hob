@@ -57,6 +57,12 @@ end
     { "provider" => "anthropic", "model" => "claude-opus-5-5", "params" => { "max_tokens" => 8192, "output_config" => { "effort" => "high" } } },
     { "provider" => "anthropic", "model" => "claude-sonnet-5-5", "params" => { "max_tokens" => 8192 } }
   ],
+  # MEMORY.md, "Review": the occasional second reader of a persona's file. A
+  # different and larger model than the one that runs her, a few calls a month.
+  "review" => [
+    { "provider" => "anthropic", "model" => "claude-fable-5-2",
+      "params" => { "thinking" => { "type" => "adaptive" }, "max_tokens" => 32000 } }
+  ],
   # WARD.md: reads what changed in a security check's report and tells a
   # person what matters; a few calls a week.
   "ward-triage" => [

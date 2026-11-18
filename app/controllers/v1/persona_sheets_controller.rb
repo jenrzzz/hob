@@ -10,6 +10,7 @@ module V1
   #   POST /v1/personas/:key/sheet/revisions/:id/apply | /reject
   #   POST /v1/personas/:key/sheet/rollback              { version, rationale? }
   #   POST /v1/personas/:key/sheet/accrete               { since?, observations?, role?, limit? }
+  #   POST /v1/personas/:key/sheet/review                { role? }
   class PersonaSheetsController < ApplicationController
     before_action :require_trusted!, only: %i[apply reject rollback]
 
@@ -48,6 +49,14 @@ module V1
                  role: params[:role].presence, limit: params[:limit].presence
       ).call
       render json: { proposed: outcome.proposed.map(&:as_json), dropped: outcome.dropped,
+                     window: outcome.window, completion: outcome.completion }, status: :created
+    end
+
+    # The long look: a second, larger model reads the whole file (MEMORY.md, "Review").
+    def review
+      outcome = PersonaSheet::Review.new(persona, role: params[:role].presence).call
+      render json: { proposed: outcome.proposed.map(&:as_json), dropped: outcome.dropped,
+                     insights: outcome.insights.map(&:as_json), ruts: outcome.ruts.map(&:as_json),
                      window: outcome.window, completion: outcome.completion }, status: :created
     end
 

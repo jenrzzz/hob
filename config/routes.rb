@@ -62,6 +62,7 @@ Rails.application.routes.draw do
       post "sheet/revisions/:id/reject", to: "persona_sheets#reject"
       post "sheet/rollback", to: "persona_sheets#rollback"
       post "sheet/accrete", to: "persona_sheets#accrete"
+      post "sheet/review", to: "persona_sheets#review"
     end
     # The memory plane (MEMORY.md): entities, observations, recall.
     scope "memory", controller: "memory", as: "memory" do

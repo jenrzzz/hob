@@ -123,5 +123,11 @@ module Hob
       data = @http.post("/v1/personas/#{persona}/sheet/accrete", { since: since, observations: observations, role: role, limit: limit }.compact)
       data.merge("proposed" => data["proposed"].map { |r| SheetRevision.new(r) })
     end
+
+    # A review by the `review` model role: { "proposed" => [SheetRevision], "insights" => [...], "ruts" => [...], ... }
+    def review(persona, role: nil)
+      data = @http.post("/v1/personas/#{persona}/sheet/review", { role: role }.compact)
+      data.merge("proposed" => data["proposed"].map { |r| SheetRevision.new(r) })
+    end
   end
 end

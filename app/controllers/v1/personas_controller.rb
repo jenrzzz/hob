@@ -34,7 +34,7 @@ module V1
       params.permit(:key, :name, :model_role, :voice_id).to_h.tap do |h|
         h[:prompt] = params[:prompt].permit(:system_core, :instruction, greetings: [], examples: []).to_h if params[:prompt].present?
         # Memory defaults (MEMORY.md): off unless set; a turn's memory: overrides.
-        h[:memory] = params[:memory].permit(:recall, :tools, :budget, about: []).to_h if params[:memory].respond_to?(:permit)
+        h[:memory] = params[:memory].permit(:recall, :tools, :budget, about: [], review: %i[every_days realm]).to_h if params[:memory].respond_to?(:permit)
       end
     end
 

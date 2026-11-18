@@ -275,6 +275,10 @@ module Hob
         { "proposed" => [], "dropped" => [], "window" => { "observations" => 0 }, "completion" => nil }
       end
 
+      def review(persona, **)
+        { "proposed" => [], "dropped" => [], "insights" => [], "ruts" => [], "window" => { "observations" => 0 }, "completion" => nil }
+      end
+
       private
 
       def find(persona, id)

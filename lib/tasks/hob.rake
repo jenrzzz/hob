@@ -1828,5 +1828,35 @@ namespace :hob do
       puts agent ? "#{persona.key} asks the sentinel as #{agent} (at most #{Principal.find_by!(name: agent).max_clearance})" :
                    "#{persona.key} has no agent"
     end
+
+    desc "Where a persona's whispers land (PersonaLife): her home conversation, the one a bridge follows. " \
+         "bin/rails \"hob:persona:home[meluzina,<conversation id>]\"; no id lists her recent chat conversations"
+    task :home, [ :persona, :conversation ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:persona:home[persona,conversation id]\"" if args[:persona].blank?
+
+      Clearance.with("intimate") do
+        persona = Persona.find_by!(key: args[:persona])
+        abort "#{persona.key} has no life; push one first" if persona.life.blank?
+
+        if args[:conversation].blank?
+          Conversation.where(kind: "chat").order(updated_at: :desc).limit(10).each do |c|
+            puts "#{c.id}  #{c.surface}  #{c.realm}  #{c.updated_at.utc.iso8601}  #{c.title}"
+          end
+          next
+        end
+
+        conversation = Conversation.find(args[:conversation])
+        persona.update!(life: persona.life.merge("home" => conversation.id))
+        puts "#{persona.key} whispers into #{conversation.id} (#{conversation.surface}, #{conversation.realm}); " \
+             "dial #{PersonaLife.new(persona).dial}"
+      end
+    end
+
+    desc "Run one beat of a persona's life now, whatever the odds: bin/rails \"hob:persona:beat[meluzina]\""
+    task :beat, [ :persona ] => :environment do |_task, args|
+      PersonaLifeJob.perform_now(force: args[:persona])
+      life = PersonaLife.new(Persona.find_by!(key: args[:persona]))
+      Clearance.with(life.realm) { puts JSON.pretty_generate(life.as_json.except("diary").merge("diary" => life.as_json["diary"].last(1))) }
+    end
   end
 end

@@ -101,6 +101,11 @@ module Assembly
           text = "#{text}\n\n#{rendered}"
           sheets[voiced.first.key] = version
         end
+        # Her life between conversations (PersonaLife), at the same realm.
+        if voiced.first.life.present?
+          life = Clearance.with(realm) { PersonaLife.new(voiced.first).render }
+          text = "#{text}\n\n#{life}" if life.present?
+        end
       end
       { "name" => "persona", "persona" => voiced.map(&:key), "sheet" => sheets.presence,
         tokens: Assembly.estimate_tokens(text), system: text }.compact

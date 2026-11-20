@@ -89,6 +89,11 @@ module Hob
       @memory ||= Memory.new(@http)
     end
 
+    # /v1/personas/:key/life: a persona's life between conversations.
+    def lives
+      @lives ||= Lives.new(@http)
+    end
+
     # /v1/personas/:key/sheet: a persona's sheet and its revisions.
     def sheets
       @sheets ||= Sheets.new(@http)

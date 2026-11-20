@@ -51,6 +51,7 @@ Rails.application.routes.draw do
       resource :chat, only: :create, controller: "chats"
       resources :events, only: :create
       get "nodes/:hash/siblings", to: "nodes#siblings"
+      get "nodes", to: "nodes#index"
     end
     resources :personas, param: :key, only: %i[index show create update] do
       post :import, on: :collection
@@ -63,6 +64,11 @@ Rails.application.routes.draw do
       post "sheet/rollback", to: "persona_sheets#rollback"
       post "sheet/accrete", to: "persona_sheets#accrete"
       post "sheet/review", to: "persona_sheets#review"
+      # Her life between conversations (PersonaLife): read, a chew from a
+      # conversation, and a one-time import of a life kept elsewhere.
+      get "life", to: "persona_lives#show"
+      post "life/chew", to: "persona_lives#chew"
+      post "life/import", to: "persona_lives#import"
     end
     # The memory plane (MEMORY.md): entities, observations, recall.
     scope "memory", controller: "memory", as: "memory" do

@@ -81,3 +81,26 @@ class MemoryFakeTest < Minitest::Test
     assert_equal "recall", turn.native.first["name"]
   end
 end
+
+class LivesClientTest < Minitest::Test
+  def setup
+    @http = FakeHTTP.new
+    @hob = Hob::Client.new(http: @http)
+  end
+
+  def test_lives_and_follow
+    @http.respond("diary" => [], "dial" => "rare")
+    assert_equal "rare", @hob.lives.show("mel")["dial"]
+    assert_equal "/v1/personas/mel/life", @http.requests.last.path
+
+    @http.respond("chew" => { "subject" => "x" })
+    @hob.lives.chew("mel", move: "pick_up", subject: "x")
+    assert_equal({ move: "pick_up", subject: "x" }, @http.requests.last.body)
+
+    @http.respond("head" => "h2", "nodes" => [ { "hash" => "h2", "meta" => { "whisper" => true } } ])
+    page = @hob.conversations.follow("c1", after: "h1", wait: 25)
+    assert_equal "/v1/conversations/c1/nodes", @http.requests.last.path
+    assert_equal "h1", @http.requests.last.query[:after]
+    assert_equal true, page["nodes"].first["meta"]["whisper"]
+  end
+end

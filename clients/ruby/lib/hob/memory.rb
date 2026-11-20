@@ -130,4 +130,28 @@ module Hob
       data.merge("proposed" => data["proposed"].map { |r| SheetRevision.new(r) })
     end
   end
+
+  # /v1/personas/:key/life: a persona's life between conversations (her
+  # diary, mood and chew, kept by hob at the life's realm).
+  class Lives
+    def initialize(http)
+      @http = http
+    end
+
+    # -> { "diary" => [{ "entry", "at", "lane"? }], "mood" => {...}?, "chew" => {...}?, "dial", "last_beat_at", ... }
+    def show(persona)
+      @http.get("/v1/personas/#{persona}/life")
+    end
+
+    # move: pick_up | chew | spit_out. -> the life, after.
+    def chew(persona, move:, subject: nil, from: nil, note: nil, take: nil)
+      @http.post("/v1/personas/#{persona}/life/chew",
+                 { move: move, subject: subject, from: from, note: note, take: take }.compact)
+    end
+
+    # Once, into an empty life: the diary, mood and chew kept somewhere else.
+    def import(persona, diary: [], mood: nil, chew: nil)
+      @http.post("/v1/personas/#{persona}/life/import", { diary: diary, mood: mood, chew: chew }.compact)
+    end
+  end
 end

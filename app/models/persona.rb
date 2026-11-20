@@ -1,7 +1,7 @@
 class Persona < ApplicationRecord
   validates :key, presence: true, uniqueness: true
   validates :name, presence: true
-  validate :clock_reads, :tools_read
+  validate :clock_reads, :tools_read, :life_reads
 
   belongs_to :entity, optional: true
   has_many :sheet_revisions, class_name: "PersonaSheetRevision", dependent: :restrict_with_exception
@@ -66,6 +66,10 @@ class Persona < ApplicationRecord
 
   def tools_read
     (CorpusTools.problems(tools || {}) + AgentTools.problems(tools || {})).each { |problem| errors.add(:tools, problem) }
+  end
+
+  def life_reads
+    PersonaLife.problems(life || {}).each { |problem| errors.add(:life, problem) }
   end
 
   def clock_reads

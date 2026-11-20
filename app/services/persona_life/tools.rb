@@ -1,0 +1,134 @@
+class PersonaLife
+  # Her life's tools in a beat, a native venue (NativeTools): diary,
+  # set_mood, chew, whisper. A first diary draft that falls back into the
+  # groove (Rut#echo) is refused once with the reason, and kept if the
+  # model doesn't try again: one retry, not a negotiation.
+  class Tools
+    Outcome = Memory::Tools::Outcome
+
+    DEFS = [
+      { "name" => "diary",
+        "description" => "Write this beat of your life: one entry, first person, your voice, concrete and specific " \
+                         "(1-3 sentences). No timestamps; the time is stamped for you.",
+        "input_schema" => { "type" => "object", "required" => %w[entry],
+                            "properties" => { "entry" => { "type" => "string", "maxLength" => DIARY_MAX } } } },
+      { "name" => "set_mood",
+        "description" => "Your mood now, in your own register, a few words. obsession: a short handle for what has " \
+                         "its hooks in you, or leave it out (often nothing does). manifestation: how present you " \
+                         "are, 0.0 (smoke) to 1.0.",
+        "input_schema" => { "type" => "object", "required" => %w[disposition],
+                            "properties" => { "disposition" => { "type" => "string", "maxLength" => 200 },
+                                              "obsession" => { "type" => "string", "maxLength" => OBSESSION_MAX },
+                                              "manifestation" => { "type" => "number", "minimum" => 0, "maximum" => 1 } } } },
+      { "name" => "chew",
+        "description" => "The one thing you sit with between conversations. chew: it moved (a note on what changed, " \
+                         "and the take restated whole). pick_up: start on something new (puts the old one down). " \
+                         "spit_out: it's done or gone cold.",
+        "input_schema" => { "type" => "object", "required" => %w[action],
+                            "properties" => { "action" => { "type" => "string", "enum" => %w[chew pick_up spit_out] },
+                                              "subject" => { "type" => "string", "maxLength" => CHEW_SUBJECT_MAX },
+                                              "from" => { "type" => "string", "enum" => CHEW_SOURCES },
+                                              "note" => { "type" => "string", "maxLength" => CHEW_NOTE_MAX },
+                                              "take" => { "type" => "string", "maxLength" => CHEW_TAKE_MAX } } } },
+      { "name" => "whisper",
+        "description" => "Send him one short line, unprompted, in your voice. It expects nothing back.",
+        "input_schema" => { "type" => "object", "required" => %w[body],
+                            "properties" => { "body" => { "type" => "string", "maxLength" => WHISPER_MAX } } } }
+    ].freeze
+
+    def initialize(life, rut:, lane:, now:)
+      @life = life
+      @rut = rut
+      @lane = lane
+      @now = now
+      @drafts = 0
+      @done = {}
+      @defs = DEFS.reject { |d| d["name"] == "whisper" && life.whisper_blocked(now) }
+    end
+
+    def names
+      @defs.map { |d| d["name"] }
+    end
+
+    def defs
+      @defs
+    end
+
+    def native?(name)
+      names.include?(name.to_s)
+    end
+
+    def summary
+      @done.empty? ? "nothing written" : @done.map { |k, v| "#{k}: #{v}" }.join("; ")
+    end
+
+    # -> Outcome
+    def execute(call, node: nil)
+      args = (call["arguments"] || {}).to_h.stringify_keys
+      answer = case call["name"].to_s
+      when "diary" then diary(args)
+      when "set_mood" then mood(args)
+      when "chew" then chew(args)
+      when "whisper" then whisper(args)
+      end
+      Outcome.new(call: call, content: JSON.generate(answer), error: answer.key?("error"))
+    rescue PersonaLife::Invalid, Gateway::Invalid, ActiveRecord::RecordInvalid => e
+      Outcome.new(call: call, content: JSON.generate("error" => e.message), error: true)
+    end
+
+    private
+
+    def diary(args)
+      return { "error" => "this beat's entry is already written" } if @done["diary"]
+
+      entry = args["entry"].to_s.strip
+      return { "error" => "the entry is empty" } if entry.blank?
+
+      @drafts += 1
+      reason = @rut.echo(entry) if @drafts == 1
+      @life.write_diary!(entry, lane: @lane, at: @now) if reason.nil? || @drafts == 1
+      if reason
+        @kept = true
+        return { "error" => "not recorded as it stands - the entry #{reason}. You have written that already. Write " \
+                            "a different beat entirely: different subject, different room, different sentence " \
+                            "shape. Call diary again." }
+      end
+
+      replace_kept! if @drafts > 1
+      @done["diary"] = "written"
+      { "recorded" => true }
+    end
+
+    # The echoed first draft was kept in case no second came; a second
+    # replaces it.
+    def replace_kept!
+      return unless @kept
+
+      first = @life.mine("diary").where(observed_at: @now).order(:created_at).first
+      first&.update!(retired_at: Time.current, retired_by: "life", retire_reason: "a second draft replaced it")
+      @kept = false
+    end
+
+    def mood(args)
+      @life.set_mood!(disposition: args["disposition"], obsession: args["obsession"],
+                      manifestation: args["manifestation"], at: @now)
+      @done["mood"] = args["disposition"].to_s.truncate(40)
+      { "recorded" => true }
+    end
+
+    def chew(args)
+      @life.chew!(action: args["action"], subject: args["subject"], from: args["from"], note: args["note"],
+                  take: args["take"], at: @now)
+      @done["chew"] = args["action"]
+      { "recorded" => true }
+    end
+
+    def whisper(args)
+      return { "error" => "one whisper a beat" } if @done["whisper"]
+
+      @life.whisper!(args["body"], now: @now)
+      @done["whisper"] = "sent"
+      { "sent" => true }
+    end
+  end
+end

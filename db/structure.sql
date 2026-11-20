@@ -983,7 +983,8 @@ CREATE TABLE public.personas (
     entity_id character varying,
     memory jsonb DEFAULT '{}'::jsonb NOT NULL,
     clock jsonb DEFAULT '{}'::jsonb NOT NULL,
-    tools jsonb DEFAULT '{}'::jsonb NOT NULL
+    tools jsonb DEFAULT '{}'::jsonb NOT NULL,
+    life jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 
@@ -2984,7 +2985,7 @@ CREATE INDEX index_people_events_on_recorded_by_id ON public.people_events USING
 -- Name: index_people_events_on_source_kind_and_source_ref; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY (ARRAY[('text'::character varying)::text, ('mail'::character varying)::text, ('calendar'::character varying)::text])));
+CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY ((ARRAY['text'::character varying, 'mail'::character varying, 'calendar'::character varying])::text[])));
 
 
 --
@@ -4879,6 +4880,7 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261120000001'),
 ('20261119000001'),
 ('20261118000002'),
 ('20261118000001'),

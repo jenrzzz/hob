@@ -6,8 +6,10 @@
 # the caller's tools, which may not take one of its names.
 class NativeTools
   # -> a NativeTools, or nil when the turn has none.
-  def self.build(personas:, conversation:, scope:)
+  # extra: venues the caller brings (PersonaLife::Tools), answered first.
+  def self.build(personas:, conversation:, scope:, extra: [])
     venues = [
+      *extra,
       (Memory::Tools.new(scope) if scope&.tools?),
       CorpusTools.build(personas: personas, conversation: conversation)
     ].compact

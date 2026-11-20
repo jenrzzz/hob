@@ -3,9 +3,10 @@
 *Robyn in the other branch: a persona hob keeps, talked to every day from
 Discord and, for the intimate register, from kat.*
 
-**Status.** Design, 2026-11-18, on the `meluzina` branch. Phases 1 (the
-clock) and 2 (searchable collections and corpus tools) are built and
-tested, uncommitted; everything else here is the plan. kat's
+**Status.** Phases 1 (the clock), 2 (searchable collections and corpus
+tools), 3 (her life and following a conversation) and 4 (the Discord
+bridge, which posts her whispers) are built, as is her agent. Phase 5,
+kat's cutover, is the plan. kat's
 `doc/MELUZINA_DESIGN.md` is her design as a character and stays the
 authority on who she is; this file is where she lives.
 
@@ -138,37 +139,72 @@ fail. A grant shows up in her next turn.
 Her charter is `confirm` (every petition goes to Jenner), limited to 5 a day.
 Her life turns (below) get the same tools.
 
-### 3. A persona's life (phase 3)
+### 3. A persona's life (phase 3, built)
 
-`personas.life` names a cron line, an instruction and a home conversation.
-`PersonaLifeJob` (on the clock, like `PersonaReviewJob`) runs a turn for
-each persona that is due, in a `life` pipeline conversation at the life's
-realm, with native tools (and her agent's, as in a conversation):
+`personas.life` (`PersonaLife`) holds the instruction her life turns run
+under, the realm her life is kept at (`personal`), her zone and the odds of
+a beat by her local hour, the minimum gap, the beats (lanes of directions a
+beat may be sent to, drawn avoiding the last few), an optional paper (a JSON
+Feed read on one beat in `odds`, past `skip` items), the whisper dial
+(`off`/`rare`/`daily`), and `home`, the conversation her whispers land in.
+kat pushes all of it with the persona except `home`, which is set at the box
+(`hob:persona:home[meluzina,<conversation>]`; a push keeps it).
+
+`PersonaLifeJob` runs every 15 minutes. For each persona with a life, past
+her minimum gap, her hour's odds are rolled; a hit runs one beat
+(`PersonaLife::Beat`): a completion titled `life`, at the life's realm,
+under her system core and the life instruction, with her clock, mood and
+obsession, the last three diary entries, what is worn out (`Rut`, kat's
+`DiaryRut` ported), where this beat goes (a lane, or the paper), the chew,
+whether he is around, and whether a whisper may go. Her tools:
 
 | tool | does |
 |---|---|
-| `remember` (kind `diary`) | a beat of her day, authored by her, about her |
-| `set_mood` | her mood, as an observation `kind: mood` superseding the last one |
-| `chew` | pick up, add to, or put down the one thing she sits with (an observation `kind: chew`; a new note supersedes, putting it down retires) |
-| `whisper` | one short line appended as an assistant node to her home conversation, `meta.whisper: true` |
+| `diary` | the beat, an observation `kind: diary` she authors about herself, with its lane; a first draft that echoes the recent diary is refused once with the reason, and replaced if she writes another |
+| `set_mood` | her mood (`kind: mood`, superseding the last), with an obsession handle and a manifestation in `source`; an obsession lets go after eight beats |
+| `chew` | pick up (retires the old one), move (supersedes, notes appended, at most eight), or spit out (retires); untouched for eight days it goes cold and is retired before a beat |
+| `whisper` | one line under 200 characters, appended as an assistant node to her home conversation with `meta.whisper: true`; offered only when it may go |
 
-The persona stage renders the newest diary beats, the current mood and the
-chew from those observations, at the conversation's read realm, so kat and
-Discord both see them. kat's rut guards (`DiaryRut`, `BeatSeeds`, the
-obsession lifespan) port with the tick; they are prompt construction, not
-model behaviour.
+Beside them are her corpora (`recall_archive`, `find_track`: a song whisper
+pastes a real link) and her agent's tools ("Her agent").
 
-**The dream fold** is the same job's other half: when a conversation's
-history grows past what the history stage keeps, the evicted stretch is
-folded into a few `kind: kept` observations she authors, at that
-conversation's taint, and "where things stand" supersedes the previous one.
+**The whisper gate** is kat's: the dial's cooldown (60 hours rare, 18
+daily), cleared when he has written in the home conversation since her last
+whisper, and nothing while he is talking with her (a line from him in the
+last two minutes, so a whisper never lands beside a turn in progress).
 
-### 4. Following a conversation (phase 3)
+**Realms.** The home is the Discord DM at `intimate`, above her life. A beat
+may see that the home exists, when he last wrote and when she last
+whispered, and may append the whisper to it; it reads his words into the
+beat's prompt only from a home at or below the life's realm, since what a
+beat reads lands in its own `personal` conversation.
 
-The bridge has to see a whisper the clock wrote. `GET
-/v1/conversations/:id/nodes?after=<hash>&wait=25` long-polls the main
-branch for nodes appended after a known one; the bridge posts any assistant
-text it did not itself ask for.
+**In conversation**, the persona stage renders her mood, obsession, last
+three diary entries and the chew after her sheet, read at the
+conversation's realm (`PersonaLife#render`), so a `household` conversation
+sees none of it.
+
+**kat** reads her life back with `GET /v1/personas/:key/life` every five
+minutes (`Meluzina::HobLifeJob`) into its WorldState, moves the chew with
+`POST /v1/personas/:key/life/chew { move }` when she picks one up or puts
+it down in conversation, and moved the life it had kept with
+`POST /v1/personas/:key/life/import` (once, into an empty life). Its world
+tick and push whispers are retired. Not carried over: the tick's offline
+`new_want` (wants are kat's ledger, `intimate`), and kat's window visits as
+presence (only his lines in the home conversation count).
+
+**The dream fold** stays in kat for now, on the same five-minute job, until
+the cutover moves kat's conversation to hob (phase 5).
+
+### 4. Following a conversation (phase 3, built)
+
+`GET /v1/conversations/:id/nodes?after=<hash>&wait=25` returns the main
+branch's nodes after a known one, waiting up to `wait` seconds for the head
+to move; without `after`, the head to follow from; when `after` has left the
+branch (a regenerated reply), `missing: true`, follow on from the head. A
+page holds at most 50 nodes, so a follower moves its anchor to the last node
+it read. The Ruby client has it as `conversations.follow`, and
+`Hob::Fake#whisper` puts one in a fake conversation for a bridge's tests.
 
 ## The Discord bridge (phase 4, built: `github.com/jenrzzz/parlour`)
 
@@ -180,8 +216,12 @@ block (the everyday door: scenes and the erotic register live in kat), and
 one client tool, `read_paper`. Her archive and tracks are her own native
 tools (`recall_archive`, `find_track`), so `send_track` is gone: she pastes
 the link. Replies go out one Discord message per paragraph, under 2000
-characters. Pictures he sends reach her as images. Whispers arrive through
-the long-poll above once phase 3 lands.
+characters. Pictures he sends reach her as images. Her whispers arrive
+through the long-poll above: parlour's `Follower` keeps one thread per DM
+conversation, posts the nodes with `meta.whisper` (everything else on the
+branch is a turn it asked for and already posted), and keeps how far it has
+read in `$PARLOUR_STATE/following.json`, so a restart catches up on a
+whisper sent while it was down, unless it is over twelve hours old.
 
 Lessons from the first night (2026-11-20): two archive searches in one turn
 outgrew the history budget and the cut landed between a tool call and its

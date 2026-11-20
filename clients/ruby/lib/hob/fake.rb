@@ -91,6 +91,20 @@ module Hob
       @memory ||= FakeMemory.new(self)
     end
 
+    # In-memory lives: what was imported or chewed, read back as hob shapes it.
+    def lives
+      @lives ||= FakeLives.new
+    end
+
+    # A whisper her life appended to a conversation (PersonaLife), for a
+    # bridge's follow loop to find.
+    def whisper(conversation, content, persona: "meluzina")
+      node = { "role" => "assistant", "kind" => "text", "content" => content,
+               "meta" => { "whisper" => true, "persona" => persona }, "hash" => next_id("node") }
+      @store.fetch(conversation)[:messages] << node
+      node
+    end
+
     # In-memory sheets: propose, apply, reject, rollback, show.
     def sheets
       @sheets ||= FakeSheets.new(self)
@@ -689,6 +703,47 @@ module Hob
       end
     end
 
+    class FakeLives
+      def initialize
+        @lives = Hash.new { |h, k| h[k] = { "diary" => [], "mood" => nil, "chew" => nil, "dial" => "off" } }
+      end
+
+      attr_reader :lives
+
+      def show(persona)
+        @lives[persona.to_s].dup
+      end
+
+      def chew(persona, move:, subject: nil, from: nil, note: nil, take: nil)
+        life = @lives[persona.to_s]
+        now = Time.now.utc.iso8601
+        case move.to_s
+        when "pick_up"
+          life["chew"] = { "subject" => subject, "from" => from, "take" => take.to_s,
+                           "notes" => note ? [ { "note" => note, "at" => now } ] : [], "picked_up_at" => now, "moved_at" => now }
+        when "chew"
+          raise Error, "she isn't chewing on anything" unless life["chew"]
+
+          life["chew"]["notes"] += [ { "note" => note, "at" => now } ] if note
+          life["chew"]["take"] = take if take
+          life["chew"]["moved_at"] = now
+        when "spit_out"
+          life["chew"] = nil
+        end
+        show(persona)
+      end
+
+      def import(persona, diary: [], mood: nil, chew: nil)
+        life = @lives[persona.to_s]
+        raise Error, "#{persona} already has a diary" if life["diary"].any?
+
+        life["diary"] = diary.map { |d| d.transform_keys(&:to_s) }
+        life["mood"] = mood&.transform_keys(&:to_s)
+        life["chew"] = chew&.transform_keys(&:to_s)
+        show(persona)
+      end
+    end
+
     # In-memory conversations with the same surface as Hob::Conversations.
     class FakeConversations
       def initialize(fake)
@@ -725,6 +780,17 @@ module Hob
 
       def siblings(id, hash)
         show(id).messages.select { |m| m["hash"] == hash }
+      end
+
+      def follow(id, after: nil, wait: nil, branch: nil)
+        messages = show(id).messages
+        head = messages.last&.dig("hash")
+        return { "head" => head, "nodes" => [] } if after.nil?
+
+        index = messages.index { |m| m["hash"] == after }
+        return { "head" => head, "nodes" => [], "missing" => true } if index.nil?
+
+        { "head" => head, "nodes" => messages.drop(index + 1) }
       end
 
       def event(id, content:, branch: nil, meta: nil)

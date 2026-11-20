@@ -36,6 +36,15 @@ module Hob
       @http.get("/v1/conversations/#{id}/nodes/#{hash}/siblings")
     end
 
+    # Follow a conversation: the branch's nodes after `after`, waiting up to
+    # `wait` seconds (≤ 30) for the head to move. Without `after`, just the
+    # head to follow from. -> { "head", "nodes" => [...], "missing"? }; on
+    # missing (after left the branch), follow on from the head. Follow on
+    # from the last node returned, not the head: a page holds at most 50.
+    def follow(id, after: nil, wait: nil, branch: nil)
+      @http.get("/v1/conversations/#{id}/nodes", { after: after, wait: wait, branch: branch })
+    end
+
     # A surface's side effect in the timeline, out of the prompt (B6).
     def event(id, content:, branch: nil, meta: nil)
       @http.post("/v1/conversations/#{id}/events", { content: content, branch: branch, meta: meta }.compact)

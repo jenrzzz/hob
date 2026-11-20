@@ -27,6 +27,8 @@ module V1
       # The agent link (AgentTools) is a person's to set, at the box: a push
       # replaces the corpora and keeps it.
       attrs[:tools] = attrs[:tools].merge(persona.tools.to_h.slice("agent")) if attrs.key?(:tools)
+      # Likewise where her whispers land (life.home): set with hob:persona:home.
+      attrs[:life] = attrs[:life].merge(persona.life.to_h.slice("home")) if attrs.key?(:life) && attrs[:life].present?
       persona.update!(attrs)
       render json: serialize(persona)
     end
@@ -42,6 +44,13 @@ module V1
         # Native corpus tools (MELUZINA.md, "Searchable collections"); {} turns them off.
         # Not `agent`: that link is set with hob:persona:agent only.
         h[:tools] = params[:tools].permit(corpora: %i[tool collection description]).to_h if params[:tools].respond_to?(:permit)
+        # Her life between conversations (PersonaLife); {} turns it off. Not `home`.
+        if params[:life].respond_to?(:permit)
+          h[:life] = params[:life].permit(:instruction, :realm, :zone, :min_gap_minutes, :role, :dial,
+                                          odds: {}, paper: %i[url odds skip], beats: {}).to_h
+          h[:life][:beats] = params[:life][:beats].permit!.to_h if params[:life][:beats].respond_to?(:permit!)
+          h[:life][:odds] = params[:life][:odds].permit!.to_h if params[:life][:odds].respond_to?(:permit!)
+        end
         # Her sense of time (MELUZINA.md, "The clock"); {} turns it off.
         if params[:clock].respond_to?(:permit)
           h[:clock] = params[:clock].permit(:drift_gap_minutes, :visit_gap_hours, :calendar_window_days,
@@ -54,7 +63,7 @@ module V1
       {
         id: persona.id, key: persona.key, name: persona.name,
         prompt: persona.prompt, model_role: persona.model_role,
-        voice_id: persona.voice_id, memory: persona.memory, clock: persona.clock, tools: persona.tools, entity: persona.entity&.as_json
+        voice_id: persona.voice_id, memory: persona.memory, clock: persona.clock, tools: persona.tools, life: persona.life, entity: persona.entity&.as_json
       }
     end
   end

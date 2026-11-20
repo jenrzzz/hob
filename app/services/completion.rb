@@ -41,7 +41,7 @@ class Completion
   # messages fold into `system`; `persona` supplies it when given instead.
   def initialize(role:, messages:, system: nil, persona: nil, schema: nil, tools: nil, tool_choice: nil,
                  max_iterations: nil, params: {}, operation: nil, metadata: {}, ref: nil, realm:, situation: false,
-                 memory: nil, resumed_system: nil)
+                 memory: nil, resumed_system: nil, venues: [])
     @role = role
     @messages = Array(messages).map { |m| m.to_h.deep_stringify_keys }
     system_messages, @messages = @messages.partition { |m| m["role"].to_s == "system" }
@@ -63,6 +63,9 @@ class Completion
 
     @situation = situation == true
     @memory = memory
+    # Native venues the caller brings (a persona's life tools): answered here
+    # like memory's, never resumed, so not in the snapshot.
+    @venues = Array(venues)
   end
 
   def call(&on_event)
@@ -149,7 +152,7 @@ class Completion
   # again; the caller's tools end the request.
   def run(conversation, branch, &on_event)
     scope = Memory::Scope.build(personas: [ @persona ].compact, conversation: conversation, request: @memory)
-    native = NativeTools.build(personas: [ @persona ].compact, conversation: conversation, scope: scope)
+    native = NativeTools.build(personas: [ @persona ].compact, conversation: conversation, scope: scope, extra: @venues)
     tools = native ? native.declare(@tools) : @tools
     outcomes = []
     units = Hash.new(0)

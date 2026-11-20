@@ -44,4 +44,25 @@ class FakeTest < Minitest::Test
     assert_equal %w[user assistant event], @hob.conversations.show(convo.id).messages.map { |m| m["role"] }
     assert_equal "saffron", @hob.calls.last.args[:persona]
   end
+
+  def test_following_a_conversation_finds_her_whispers
+    convo = @hob.conversations.create(title: "dm")
+    start = @hob.conversations.follow(convo.id)
+    assert_empty start["nodes"]
+    @hob.reply("hey")
+    @hob.chat(conversation: convo.id, content: "hi")
+    whisper = @hob.whisper(convo.id, "rar")
+    nodes = @hob.conversations.follow(convo.id, after: start["head"] || @hob.conversations.show(convo.id).messages.first["hash"])["nodes"]
+    assert_equal whisper["hash"], nodes.last["hash"]
+    assert_equal true, nodes.last["meta"]["whisper"]
+    assert @hob.conversations.follow(convo.id, after: "gone")["missing"]
+  end
+
+  def test_lives_import_once_and_chew
+    life = @hob.lives.import("mel", diary: [ { entry: "soup", at: "2026-11-19T08:00:00Z" } ], mood: { disposition: "rar" })
+    assert_equal "soup", life["diary"].first["entry"]
+    assert_raises(Hob::Error) { @hob.lives.import("mel", diary: [ { entry: "again" } ]) }
+    assert_equal "kerbal", @hob.lives.chew("mel", move: "pick_up", subject: "kerbal")["chew"]["subject"]
+    assert_nil @hob.lives.chew("mel", move: "spit_out")["chew"]
+  end
 end

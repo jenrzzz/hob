@@ -8,7 +8,7 @@ class Persona < ApplicationRecord
 
   before_create { self.id ||= ULID.generate }
 
-  MEMORY_OPTIONS = %w[recall tools budget about].freeze
+  MEMORY_OPTIONS = %w[recall tools budget about own].freeze
 
   # The entity this persona *is* (DESIGN.md: "memory scope"), made on first
   # use: what she notices and decides are observations she authors.

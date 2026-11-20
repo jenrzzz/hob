@@ -79,7 +79,7 @@ module Memory
       # names someone else; it widens recall, it never filters it.
       about = args["about"].presence ? [ args["about"] ] : @scope.about
       hits = @scope.read do
-        Memory.recall(query: query, about: about, author: @scope.author, scope: args["scope"].presence || "all",
+        Memory.recall(query: query, about: about, author: @scope.author, scope: @scope.recall_scope(args["scope"]),
                       limit: (args["limit"] || 10).to_i.clamp(1, 50), budget: @scope.budget_tokens * 4)
           .map { |hit| render(hit) }
       end

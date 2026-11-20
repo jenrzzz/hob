@@ -11,7 +11,7 @@ module Records
     # A neighbour below this is noise (Memory::MIN_SIMILARITY's reasoning).
     MIN_SIMILARITY = 0.2
     EMBED_BATCH = 64
-    DEFAULT_LIMIT = 5
+    DEFAULT_LIMIT = 3
     MAX_LIMIT = 20
 
     Hit = Struct.new(:record, :score, :reasons, keyword_init: true)

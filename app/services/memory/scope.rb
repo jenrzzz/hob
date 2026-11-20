@@ -14,7 +14,7 @@ module Memory
   # - writes land at the conversation's taint, capped by the request's
   #   clearance: what the model knew when it decided to remember.
   class Scope
-    OPTIONS = %w[recall tools budget about].freeze
+    OPTIONS = %w[recall tools budget about own].freeze
     DEFAULT_BUDGET = 600 # tokens
 
     attr_reader :persona, :conversation, :about
@@ -27,7 +27,7 @@ module Memory
       when nil then {}
       when true then { "recall" => true, "tools" => true }
       when Hash, ActionController::Parameters then request.to_h.stringify_keys
-      else raise Gateway::Invalid, "memory is true, false, or { recall, tools, budget, about }"
+      else raise Gateway::Invalid, "memory is true, false, or { recall, tools, budget, about, own }"
       end
       unknown = options.keys - OPTIONS
       raise Gateway::Invalid, "unknown memory option: #{unknown.join(', ')}" if unknown.any?
@@ -53,6 +53,17 @@ module Memory
 
     def tools?
       !!@options["tools"]
+    end
+
+    # Her memory is hers alone: recall reads only what she authored, never
+    # another persona's notes or a surface's authorless evidence.
+    def own?
+      !!@options["own"]
+    end
+
+    # The recall scope a read in this turn may use.
+    def recall_scope(requested = nil)
+      own? ? "mine" : (requested.presence || "all")
     end
 
     def budget_tokens

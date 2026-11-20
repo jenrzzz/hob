@@ -154,4 +154,28 @@ class NativeToolsTest < ActiveSupport::TestCase
     assert_equal "Lace.", result.response.content
     assert_equal [ "recall" ], result.native.map { |n| n["name"] }
   end
+
+  test "a persona whose memory is her own recalls only what she authored" do
+    other = persona("presence")
+    Memory.remember!(about: @jenner, body: "He lingers on lace, says the presence.", realm: "intimate", author: other.memory_entity)
+    Memory.deposit!([ { "about" => "principal:tester", "body" => "Lace, by evidence.", "kind" => "evidence" } ], realm: "intimate")
+    convo = conversation(realm: "intimate")
+
+    @velvet.update!(memory: { "recall" => true, "tools" => true })
+    @fake.reply("Hi.")
+    turn(convo, content: "lace?").call
+    assert_match(/says the presence/, @fake.calls.last.system, "shared by default")
+
+    @velvet.update!(memory: { "recall" => true, "tools" => true, "own" => true })
+    @fake.reply("Hi.")
+    turn(convo, content: "lace?").call
+    assert_match(/He lingers on lace\./, @fake.calls.last.system)
+    refute_match(/says the presence|by evidence/, @fake.calls.last.system)
+
+    @fake.call_tools([ { id: "o1", name: "recall", arguments: { query: "lace", scope: "all" } } ])
+    @fake.reply("Lace.")
+    result = turn(convo, content: "what do I like?").call
+    assert_equal [ @noted.id ], JSON.parse(result.native.first["content"])["observations"].map { |o| o["id"] },
+                 "asking for all does not widen her own memory"
+  end
 end

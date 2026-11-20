@@ -13,7 +13,8 @@ module Assembly
   module Transcript
     module_function
 
-    def render(nodes, tag_speakers: false)
+    # elide: { content_hash => shorter text } for tool results to shorten.
+    def render(nodes, tag_speakers: false, elide: {})
       messages = []
       nodes.each do |node|
         case node.kind
@@ -34,7 +35,8 @@ module Assembly
           end
           messages.last["reasoning"] ||= node.meta["reasoning"] if node.meta["reasoning"]
         when "tool_result"
-          messages << { "role" => "tool", "tool_call_id" => node.meta["tool_call_id"], "content" => node.content,
+          messages << { "role" => "tool", "tool_call_id" => node.meta["tool_call_id"],
+                        "content" => elide.fetch(node.content_hash, node.content),
                         "hash" => node.content_hash, "error" => node.meta["error"] ? true : nil,
                         "attachments" => node.attachments.presence }.compact
         else

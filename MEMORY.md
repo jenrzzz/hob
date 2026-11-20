@@ -161,8 +161,8 @@ copies one down.
 A chat turn or a completion opts in per persona or per request:
 
 ```
-personas.memory               { recall: true, tools: true, budget: 600, about: ["principal:jenner"] }    the defaults
-POST /v1/conversations/:id/chat { ..., memory: true | false | { recall, tools, budget, about } }
+personas.memory               { recall: true, tools: true, budget: 600, about: ["principal:jenner"], own: true }    the defaults
+POST /v1/conversations/:id/chat { ..., memory: true | false | { recall, tools, budget, about, own } }
 POST /v1/completions          { ..., persona, memory: ... }
 ```
 
@@ -170,6 +170,13 @@ Off unless one of them says so; `memory: false` on the request wins over the
 persona. `true` is recall and tools. Memory needs exactly one persona (the one
 whose memory it is); an ensemble with memory is refused (open question 5).
 `about` is who the turn is about: by default the person whose key it is.
+
+`own: true` makes her memory hers alone: the recall stage and her `recall`
+tool read only observations she authored (scope `mine`), never another
+persona's notes or a surface's authorless evidence, whatever the tool call
+asks for. Without it, recall reads everything at the conversation's realm,
+which is the household's shared memory. Meluzina runs with `own`: an
+intimate fact the presence noted is not hers to bring up.
 
 ### The recall stage
 
@@ -473,7 +480,8 @@ their own pass.
    name sensitive things by opaque ref (`kat:media:30880`) and put the
    description in an observation. Should hob enforce that for some types?
 4. **Preserved thinking.** The thinking blocks are kept and replayed, but the
-   history stage still drops old messages when it runs out of budget, and
+   history stage still drops old messages when it runs out of budget (never
+   inside the turn in progress, and never starting on a tool result), and
    turns before this change kept no blocks. Models that check that replayed
    history is append-only (Opus 5.5, Sonnet 5.5, Fable 5.x) may refuse or
    drop blocks after such an edit. Unverified live.
@@ -494,3 +502,6 @@ their own pass.
 9. **Blob retention.** Images are kept forever, like nodes. A kat session
    that looks at hundreds of frames will grow `blobs` quickly; a size report
    and a purge for unreferenced blobs is the knob when it matters.
+10. **Owned by default?** `own` is opt-in per persona. Whether memory should
+   be owned by default, with sharing between personas an explicit grant,
+   is open (raised 2026-11-20).

@@ -117,7 +117,8 @@ module Assembly
       budget = [ budget || 600, @memory.budget_tokens ].min
       query = @head&.ancestry&.find { |n| n.role == "user" && n.kind == "text" }&.content
       hits = @memory.read do
-        Memory.recall(query: query, about: @memory.about, author: @memory.author, budget: budget * 4)
+        Memory.recall(query: query, about: @memory.about, author: @memory.author, scope: @memory.recall_scope,
+                      budget: budget * 4)
       end
       return nil if hits.empty?
 
@@ -195,31 +196,54 @@ module Assembly
     # Newest-first fill within budget, then flipped chronological. Event nodes
     # stay in the DAG but out of the prompt; tool calls and results are in
     # (the model needs to see what it asked for and what came back).
+    ELIDE_OVER = 600
+    ELIDE_KEEP = 400
+
     def history_stage(budget)
-      spent = 0
-      kept = []
+      nodes = (@head&.ancestry || []).select { |node| %w[user assistant].include?(node.role) }
+      # The turn in progress (his last line and every tool round since) is
+      # kept whole whatever it costs: cut inside it and the model sees a tool
+      # result whose call is gone, which providers refuse.
+      current = (nodes.index { |node| spoken_user?(node) }&.+(1)) ||
+                nodes.index { |node| !%w[tool_call tool_result].include?(node.kind) } || nodes.size
+      kept = nodes.first(current)
+      spent = kept.sum { |node| Assembly.estimate_tokens(node.content) }
 
-      (@head&.ancestry || []).each do |node|
-        next unless %w[user assistant].include?(node.role)
-
-        cost = Assembly.estimate_tokens(node.content)
-        break if spent + cost > budget && kept.any?
+      nodes.drop(current).each do |node|
+        cost = Assembly.estimate_tokens(elided(node) || node.content)
+        break if spent + cost > budget
 
         spent += cost
         kept << node
       end
+      # Cut short, older turns start where someone spoke, never mid-exchange.
+      kept.pop while kept.size > current && kept.size < nodes.size && !spoken_user?(kept.last)
 
       # Speaker tags are the multi-persona ensemble convention; with a single
       # speaker they just teach the model to echo them back.
       tag_speakers = @personas.size > 1 || kept.filter_map(&:speaker).uniq.size > 1
       chronological = kept.reverse
-      messages = Transcript.render(chronological, tag_speakers: tag_speakers)
+      elide = kept.drop(current).filter_map { |node| (text = elided(node)) && [ node.content_hash, text ] }.to_h
+      messages = Transcript.render(chronological, tag_speakers: tag_speakers, elide: elide)
       drifts = clock ? mark_drift(messages, clock.drift_markers(chronological)) : 0
       # The stable prefix ends here; volatile stages (situation, the
       # instruction) follow. Transport puts the cache breakpoint on it.
       messages.last["cache"] = true if messages.any?
       { "name" => "history", "count" => messages.size, "drifts" => drifts.nonzero?, tokens: spent,
         messages: messages }.compact
+    end
+
+    def spoken_user?(node)
+      node.role == "user" && node.kind == "text"
+    end
+
+    # A tool result from an earlier turn, shortened: the reply that used it
+    # already says what mattered, and a corpus or recall result can be
+    # thousands of tokens. -> the shortened text, or nil to keep it whole.
+    def elided(node)
+      return nil unless node.kind == "tool_result" && node.content.to_s.length > ELIDE_OVER
+
+      "#{node.content.to_s[0, ELIDE_KEEP]}… [#{node.content.to_s.length} characters; used in an earlier reply]"
     end
 
     # A persona's clock (MELUZINA.md): with one voiced persona keeping one.

@@ -161,6 +161,15 @@ the link. Replies go out one Discord message per paragraph, under 2000
 characters. Pictures he sends reach her as images. Whispers arrive through
 the long-poll above once phase 3 lands.
 
+Lessons from the first night (2026-11-20): two archive searches in one turn
+outgrew the history budget and the cut landed between a tool call and its
+result, which Anthropic refuses. History now keeps the turn in progress
+whole, starts older turns at a spoken line, and shortens earlier turns'
+tool results; corpus tools return 3 records by default. And at `intimate`
+her recall picked up the presence's authorless evidence about him, so her
+memory runs with `own` (MEMORY.md, "In a turn"). The DM runs at `intimate`
+(`PARLOUR_REALM`): it is his alone, and she remembers the dream-side there.
+
 The persona itself is pushed from kat: `rails meluzina:hob_persona`
 (`Meluzina::HobPersona`) writes her surface-neutral core (world frame,
 constitution, card, voice and a fixed sample of her real lines, geography,

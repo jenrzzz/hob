@@ -34,7 +34,7 @@ module V1
       params.permit(:key, :name, :model_role, :voice_id).to_h.tap do |h|
         h[:prompt] = params[:prompt].permit(:system_core, :instruction, greetings: [], examples: []).to_h if params[:prompt].present?
         # Memory defaults (MEMORY.md): off unless set; a turn's memory: overrides.
-        h[:memory] = params[:memory].permit(:recall, :tools, :budget, about: [], review: %i[every_days realm]).to_h if params[:memory].respond_to?(:permit)
+        h[:memory] = params[:memory].permit(:recall, :tools, :budget, :own, about: [], review: %i[every_days realm]).to_h if params[:memory].respond_to?(:permit)
         # Native corpus tools (MELUZINA.md, "Searchable collections"); {} turns them off.
         h[:tools] = params[:tools].permit(corpora: %i[tool collection description]).to_h if params[:tools].respond_to?(:permit)
         # Her sense of time (MELUZINA.md, "The clock"); {} turns it off.

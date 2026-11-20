@@ -87,7 +87,7 @@ module Gateway
       result = context.embed(texts, model: resolution.model, provider: :openai, assume_model_exists: true)
       vectors = result.vectors
       vectors = [ vectors ] unless vectors.first.is_a?(Array)
-      { vectors: vectors, model: result.model, input_tokens: result.input_tokens }
+      { vectors: vectors, model: result.model, input_tokens: result.tokens&.input }
     rescue RubyLLM::RateLimitError => e
       raise RateLimited.new(e.message, retry_after: retry_after_from(e))
     rescue RubyLLM::OverloadedError, RubyLLM::ServiceUnavailableError, RubyLLM::ServerError,

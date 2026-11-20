@@ -256,4 +256,19 @@ class TransportConductorTest < TransportTest
     assert_equal [ "three" ], marked.map { |b| b[:text] }
     assert_equal({ type: "ephemeral" }, marked.first[:cache_control])
   end
+  test "embed reads vectors and token usage off ruby_llm's Embedding" do
+    fake = Module.new do
+      def embed(texts, **)
+        RubyLLM::Embedding.new(vectors: texts.map { [ 0.1, 0.2 ] }, model: "text-embedding-test", input_tokens: 9)
+      end
+    end
+    RubyLLM::Context.prepend(fake)
+    backup = ModelRole::Resolution.new(provider: Provider.find_by!(slug: "backup"), model: "text-embedding-test", params: {}, strict: false)
+
+    result = Gateway::Transport.new.embed(resolution: backup, texts: %w[one two])
+    assert_equal [ [ 0.1, 0.2 ], [ 0.1, 0.2 ] ], result[:vectors]
+    assert_equal 9, result[:input_tokens]
+  ensure
+    fake&.send(:remove_method, :embed)
+  end
 end

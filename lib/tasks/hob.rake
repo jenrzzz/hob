@@ -1397,7 +1397,7 @@ end
 namespace :hob do
   namespace :records do
     desc "Make (or change) a record collection as a person. bin/rails \"hob:records:collection[amazon-orders,household,order_id]\" " \
-         "OWNER=jenner SCHEMA=path/to/schema.json (SCHEMA=none drops it) DESCRIPTION='...'"
+         "OWNER=jenner SCHEMA=path/to/schema.json (SCHEMA=none drops it) DESCRIPTION='...' EMBED=text (a field to search by meaning; none drops it)"
     task :collection, [ :name, :realm, :key ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:records:collection[name,realm,key]\" DESCRIPTION= SCHEMA= OWNER=" if args[:name].blank?
 
@@ -1415,6 +1415,7 @@ namespace :hob do
               attrs = { "collection" => existing.name, "reason" => "changed from a terminal" }
               attrs["description"] = ENV["DESCRIPTION"] if ENV["DESCRIPTION"].present?
               attrs["schema"] = schema unless schema == :unset
+              attrs["embed"] = ENV["EMBED"] == "none" ? nil : ENV["EMBED"] if ENV.key?("EMBED")
               result = Records.update_collection(attrs)
               row = result["collection"]
               puts "#{row['name']}: #{result['changed'] ? 'updated' : 'unchanged'}; schema version #{row['schema_version']}" \
@@ -1424,7 +1425,8 @@ namespace :hob do
               abort "usage: DESCRIPTION='what it holds and why' is required for a new collection" if ENV["DESCRIPTION"].blank?
               row = Records.create_collection(
                 { "name" => args[:name], "realm" => args[:realm].presence || "household", "key" => args[:key],
-                  "description" => ENV["DESCRIPTION"], "schema" => schema == :unset ? nil : schema }, owner: owner
+                  "description" => ENV["DESCRIPTION"], "schema" => schema == :unset ? nil : schema,
+                  "embed" => ENV["EMBED"].presence }, owner: owner
               )
               puts "#{row.name}: made; realm #{row.realm}, key #{row.key_path}, owner #{row.principal.name}, " \
                    "#{row.schema ? 'with a schema' : 'no schema'}"
@@ -1434,6 +1436,47 @@ namespace :hob do
           end
         end
       end
+    end
+
+    desc "Embed what a searchable collection has no vector for yet: bin/rails \"hob:records:embed[meluzina-archive]\" (needs an `embedding` role)"
+    task :embed, [ :name ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:records:embed[name]\"" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        collection = RecordCollection.live.find_by!(name: args[:name])
+        abort "#{collection.name} does not embed; set EMBED= with hob:records:collection" unless collection.embed_path
+        abort "no `embedding` model role" unless Memory::Embedder.available?
+
+        puts "#{collection.name}: embedded #{Records::Search.backfill!(collection)}, " \
+             "#{collection.records.live.where(embedding: nil).count} still without a vector"
+      end
+    end
+
+    desc "Import records from NDJSON ({ data, observed_at?, source?, links? } per line) as a person: " \
+         "bin/rails \"hob:records:import[meluzina-archive,path/to/archive.ndjson]\" OWNER=jenner"
+    task :import, [ :name, :path ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:records:import[name,path]\" OWNER=" if args[:name].blank? || args[:path].blank?
+
+      owner = Principal.find_by!(name: ENV["OWNER"].presence || "jenner")
+      collection = Clearance.with("intimate") { RecordCollection.live.find_by!(name: args[:name]) }
+      writer = Records::Writer.new(principal: owner, surface: "import")
+      changed = unchanged = 0
+      # At the collection's own realm: nothing here can write above it.
+      Clearance.with(collection.realm) do
+        Current.set(principal: owner, clearance: collection.realm) do
+          File.foreach(args[:path]).map { |line| line.strip.presence && JSON.parse(line) }.compact
+              .each_slice(Records::BATCH_LIMIT).with_index do |slice, index|
+            result = Records.put_many({ "collection" => collection.name, "records" => slice }, by: writer)
+            changed += result["changed"]
+            unchanged += result["unchanged"]
+            print "\r#{collection.name}: #{changed} written, #{unchanged} unchanged (batch #{index + 1})"
+          rescue Records::Error => e
+            abort "\nbatch #{index + 1}: #{e.class.name.demodulize.downcase}: #{e.message}"
+          end
+        end
+      end
+      waiting = Clearance.with(collection.realm) { collection.records.live.where(embedding: nil).count }
+      puts "\n#{collection.name}: done; #{waiting} without a vector#{waiting.positive? && collection.embed_path ? ' (hob:records:embed)' : ''}"
     end
 
     desc "List record collections: realm, owner, key, schema version, how many records, last write"

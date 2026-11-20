@@ -69,8 +69,8 @@ class ChatTurn
 
   def call(&stream)
     scope = Memory::Scope.build(personas: @personas, conversation: @conversation, request: @memory_request)
-    native = scope&.tools? ? Memory::Tools.new(scope) : nil
-    tools = declared_tools(native)
+    native = NativeTools.build(personas: @personas, conversation: @conversation, scope: scope)
+    tools = native ? native.declare(@tools).presence : @tools
 
     user_node, anchor = resolve_anchor
     assistant_nodes = []
@@ -143,17 +143,6 @@ class ChatTurn
                native: outcomes.map { |o| { "id" => o.call["id"], "name" => o.call["name"], "arguments" => o.call["arguments"],
                                             "content" => o.content, "error" => o.error } },
                snapshot: assembly.snapshot, response: response, units: units.to_h, cost: cost, rounds: rounds)
-  end
-
-  # The caller's tools, plus the native ones when memory tools are on. A
-  # caller's tool may not take a native tool's name.
-  def declared_tools(native)
-    return @tools unless native
-
-    clash = Array(@tools).map { |t| (t["name"] || t[:name]).to_s } & Memory::Tools::NAMES
-    raise Gateway::Invalid, "#{clash.join(', ')} is a native tool while memory tools are on; rename yours" if clash.any?
-
-    Array(@tools) + Memory::Tools.defs
   end
 
   # -> [new user node or nil, the node the reply hangs under (nil = root)]

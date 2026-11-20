@@ -18,6 +18,8 @@ module Sentinel
           "type" => "object",
           "properties" => {
             "collection" => COLLECTION, "reason" => REASON, "schema" => SCHEMA,
+            "embed" => { "type" => %w[string null],
+                         "description" => "Optional: the top-level text field to also search by meaning (null: none)" },
             "description" => { "type" => "string", "maxLength" => RecordCollection::DESCRIPTION_LIMIT }
           },
           "required" => %w[collection reason],

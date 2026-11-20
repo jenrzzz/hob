@@ -10,6 +10,7 @@ module Assembly
       { "name" => "memory", "enabled" => true, "budget" => 600 },
       { "name" => "scenario", "enabled" => true, "budget" => 2_000 },
       { "name" => "history", "enabled" => true, "budget" => 8_000 },
+      { "name" => "clock", "enabled" => true, "budget" => 300 },
       { "name" => "situation", "enabled" => true, "budget" => 400 },
       { "name" => "instruction", "enabled" => true, "budget" => 1_000 }
     ].freeze
@@ -40,6 +41,12 @@ module Assembly
       if @memory&.recall? && @stage_config.none? { |c| c["name"] == "memory" }
         at = (@stage_config.index { |c| c["name"] == "persona" } || -1) + 1
         @stage_config = @stage_config.dup.insert(at, { "name" => "memory", "enabled" => true, "budget" => 600 })
+      end
+      # Likewise the clock, for a persona that keeps one: right after history,
+      # with the other volatile stages.
+      if clock && @stage_config.none? { |c| c["name"] == "clock" }
+        at = (@stage_config.index { |c| c["name"] == "history" } || @stage_config.size - 1) + 1
+        @stage_config = @stage_config.dup.insert(at, { "name" => "clock", "enabled" => true, "budget" => 300 })
       end
     end
 
@@ -73,6 +80,7 @@ module Assembly
       when "memory" then memory_stage(config["budget"])
       when "scenario" then scenario_stage(config["budget"])
       when "history" then history_stage(config["budget"] || 8_000)
+      when "clock" then clock_stage
       when "situation" then situation_stage(config["budget"] || 400)
       when "instruction" then instruction_stage
       end
@@ -204,11 +212,45 @@ module Assembly
       # Speaker tags are the multi-persona ensemble convention; with a single
       # speaker they just teach the model to echo them back.
       tag_speakers = @personas.size > 1 || kept.filter_map(&:speaker).uniq.size > 1
-      messages = Transcript.render(kept.reverse, tag_speakers: tag_speakers)
+      chronological = kept.reverse
+      messages = Transcript.render(chronological, tag_speakers: tag_speakers)
+      drifts = clock ? mark_drift(messages, clock.drift_markers(chronological)) : 0
       # The stable prefix ends here; volatile stages (situation, the
       # instruction) follow. Transport puts the cache breakpoint on it.
       messages.last["cache"] = true if messages.any?
-      { "name" => "history", "count" => messages.size, tokens: spent, messages: messages }
+      { "name" => "history", "count" => messages.size, "drifts" => drifts.nonzero?, tokens: spent,
+        messages: messages }.compact
+    end
+
+    # A persona's clock (MELUZINA.md): with one voiced persona keeping one.
+    def clock
+      return @clock if defined?(@clock)
+
+      @clock = @personas.one? ? Clock.for(@personas.first) : nil
+    end
+
+    # Prefix the marked user lines, in the assembled copy only.
+    def mark_drift(messages, markers)
+      return 0 if markers.empty?
+
+      messages.count do |message|
+        marker = markers[message["hash"]]
+        next false unless marker && message["role"] == "user"
+
+        message["content"] = "#{marker}\n\n#{message['content']}"
+        true
+      end
+    end
+
+    # What time it is in each of the persona's zones, how long since the last
+    # lines, and her dates that are near. It changes every minute, so like
+    # situation it is a message after history, never part of the system
+    # prompt that heads the cached prefix.
+    def clock_stage
+      return nil unless clock
+
+      text = clock.render(head: @head)
+      { "name" => "clock", tokens: Assembly.estimate_tokens(text), messages: [ { "role" => "user", "content" => text } ] }
     end
 
     # The person's volatile present moment belongs after history, beside the

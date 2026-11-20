@@ -219,16 +219,35 @@ stepped past by a reader who already moved on.
 A collection may name an ntfy channel to post on when it changes, as a
 wake-up and never as the feed itself; not before something needs it.
 
+## Search by meaning
+
+A collection may name one top-level field of its documents to embed
+(`embed`, set with `EMBED=` on `hob:records:collection`). Each put embeds
+that field through the `embedding` model role after it commits, the way
+observations are embedded (MEMORY.md, "Embeddings"): optional, compared only
+within one model, and filled in by `hob:records:embed[name]` when the role
+was away. A put that changes the data clears the record's vector until it is
+embedded again; changing `embed` clears the whole collection's.
+
+`Records::Search.search` ranks a collection's records by similarity and the
+`tsvector` `q` already uses; `Records::Search.sample` picks at random,
+preferring records observed in this month of any year. Neither is a
+capability yet: their one reader is a persona's corpus tool (MELUZINA.md),
+which runs them under RLS at the conversation's realm.
+`hob:records:import[name,path]` loads NDJSON (`{ data, observed_at?, source?,
+links? }` per line) as a person, a hundred records to a batch.
+
 ## Collections are rows
 
 ```
 record_collections  ulid, name (unique slug), principal (the owner: a person), realm,
-                    key_path, schema jsonb, schema_version, description, notify jsonb,
+                    key_path, schema jsonb, schema_version, embed_path, description, notify jsonb,
                     proposed_by (an agent, or null), sentinel_request_id,
                     retracted_at, retracted_by, timestamps                         [RLS]
 records             ulid, collection_id, realm, key, version, schema_version, data jsonb,
                     links text[], observed_at, source, written_by, surface,
-                    retracted_at, document tsvector (generated), timestamps        [RLS]
+                    retracted_at, document tsvector (generated), embedding vector,
+                    embedding_model, timestamps                                    [RLS]
 record_versions     ulid, record_id, collection_id, realm, version, schema_version,
                     data jsonb, links text[], observed_at, source, retracted, reason,
                     principal (the writer), surface, sentinel_request_id, mission_id,

@@ -981,7 +981,9 @@ CREATE TABLE public.personas (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     entity_id character varying,
-    memory jsonb DEFAULT '{}'::jsonb NOT NULL
+    memory jsonb DEFAULT '{}'::jsonb NOT NULL,
+    clock jsonb DEFAULT '{}'::jsonb NOT NULL,
+    tools jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 
@@ -1214,7 +1216,8 @@ CREATE TABLE public.record_collections (
     retracted_at timestamp(6) without time zone,
     retracted_by_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    embed_path character varying
 );
 
 ALTER TABLE ONLY public.record_collections FORCE ROW LEVEL SECURITY;
@@ -1288,7 +1291,9 @@ CREATE TABLE public.records (
     retracted_at timestamp(6) without time zone,
     document tsvector GENERATED ALWAYS AS (jsonb_to_tsvector('simple'::regconfig, data, '["string", "numeric"]'::jsonb)) STORED,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    embedding public.vector,
+    embedding_model character varying
 );
 
 ALTER TABLE ONLY public.records FORCE ROW LEVEL SECURITY;
@@ -3312,6 +3317,13 @@ CREATE INDEX index_records_on_written_by_id ON public.records USING btree (writt
 
 
 --
+-- Name: index_records_unembedded; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_records_unembedded ON public.records USING btree (collection_id) WHERE ((embedding IS NULL) AND (retracted_at IS NULL));
+
+
+--
 -- Name: index_schedules_on_assignee_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4867,6 +4879,8 @@ ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261119000001'),
+('20261118000002'),
 ('20261118000001'),
 ('20261114000001'),
 ('20261107000001'),

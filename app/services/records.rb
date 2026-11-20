@@ -63,8 +63,8 @@ module Records
   BATCH_ATTRIBUTES = %w[data links source observed_at].freeze
   QUERY_FILTERS = %w[collection match linked q observed_after observed_before updated_after sort limit].freeze
   CHANGES_FILTERS = %w[collection since limit].freeze
-  CREATE_ATTRIBUTES = %w[name key description schema realm].freeze
-  UPDATE_ATTRIBUTES = %w[collection reason schema description].freeze
+  CREATE_ATTRIBUTES = %w[name key description schema realm embed].freeze
+  UPDATE_ATTRIBUTES = %w[collection reason schema description embed].freeze
   SORTS = %w[updated observed key].freeze
 
   NOTICE = "A record's data is what a page said and an agent copied down; titles, names, and notes in it were written by " \
@@ -101,7 +101,7 @@ module Records
 
     collection = RecordCollection.new(
       name: name, key_path: attrs["key"], description: attrs["description"], schema: schema!(attrs["schema"]),
-      realm: realm, principal: owner, proposed_by: proposed_by, sentinel_request_id: request_id
+      embed_path: attrs["embed"].presence, realm: realm, principal: owner, proposed_by: proposed_by, sentinel_request_id: request_id
     )
     invalid!(collection) unless collection.save
     collection
@@ -117,6 +117,7 @@ module Records
     reason!(attrs["reason"])
 
     collection.description = attrs["description"] if attrs.key?("description")
+    collection.embed_path = attrs["embed"].presence if attrs.key?("embed")
     if attrs.key?("schema")
       schema = schema!(attrs["schema"])
       if schema != collection.schema
@@ -126,6 +127,8 @@ module Records
     end
     changed = collection.changed?
     invalid!(collection) if changed && !collection.save
+    # Another field's words: every vector is for the old one.
+    collection.records.update_all(embedding: nil, embedding_model: nil) if collection.saved_change_to_embed_path?
     { "collection" => collection.as_json, "changed" => changed, "refused" => refusals(collection).size }
   end
 
@@ -178,10 +181,9 @@ module Records
     attrs = known!(attrs, PUT_ATTRIBUTES, "attribute")
     collection = collection!(attrs["collection"])
     if_version = attrs["if_version"].nil? ? nil : integer!(attrs["if_version"], "if_version")
-    Record.transaction do
-      record, changed = write!(collection, attrs, by: by, if_version: if_version)
-      { "record" => record.as_json, "changed" => changed }
-    end
+    record, changed = Record.transaction { write!(collection, attrs, by: by, if_version: if_version) }
+    Search.embed!([ record ]) if changed
+    { "record" => record.as_json, "changed" => changed }
   end
 
   # Up to BATCH_LIMIT puts into one collection, all or nothing.
@@ -204,13 +206,14 @@ module Records
       seen[key] = index
     end
 
-    Record.transaction do
-      written = items.each_with_index.map do |item, index|
-        write!(collection, item, by: by, label: "records[#{index}]")
-      end
-      { "records" => written.map { |record, _| record.as_json },
-        "changed" => written.count { |_, changed| changed }, "unchanged" => written.count { |_, changed| !changed } }
+    written = Record.transaction do
+      items.each_with_index.map { |item, index| write!(collection, item, by: by, label: "records[#{index}]") }
     end
+    # Vectors after the commit: a slow or absent embedding role never holds
+    # the write (hob:records:embed fills in what this misses).
+    Search.embed!(written.select(&:last).map(&:first))
+    { "records" => written.map { |record, _| record.as_json },
+      "changed" => written.count { |_, changed| changed }, "unchanged" => written.count { |_, changed| !changed } }
   end
 
   # Retract one record: a tombstone version that keeps what it hid.
@@ -349,6 +352,8 @@ module Records
     record ||= collection.records.new(key: key, realm: collection.realm, version: 0)
     record.assign_attributes(version: record.version + 1, schema_version: collection.schema_version, data: data, links: links,
                              observed_at: observed_at, source: source, written_by: by.principal, surface: by.surface)
+    # New words want a new vector (Records::Search fills it in).
+    record.assign_attributes(embedding: nil, embedding_model: nil) if record.data_changed?
     record.save!
     version!(record, by: by)
     [ record, true ]

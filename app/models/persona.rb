@@ -1,6 +1,7 @@
 class Persona < ApplicationRecord
   validates :key, presence: true, uniqueness: true
   validates :name, presence: true
+  validate :clock_reads, :tools_read
 
   belongs_to :entity, optional: true
   has_many :sheet_revisions, class_name: "PersonaSheetRevision", dependent: :restrict_with_exception
@@ -59,5 +60,17 @@ class Persona < ApplicationRecord
       prompt: { "system_core" => system_core, "greetings" => greetings, "examples" => examples },
       card_import: card
     )
+  end
+
+  private
+
+  def tools_read
+    CorpusTools.problems(tools || {}).each { |problem| errors.add(:tools, problem) }
+  end
+
+  def clock_reads
+    Assembly::Clock.for(self)
+  rescue ArgumentError, TZInfo::InvalidTimezoneIdentifier => e
+    errors.add(:clock, e.message)
   end
 end

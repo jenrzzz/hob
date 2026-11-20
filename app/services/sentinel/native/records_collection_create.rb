@@ -21,6 +21,8 @@ module Sentinel
             "key" => { "type" => "string", "description" => "The top-level field of every document that identifies it" },
             "description" => { "type" => "string", "maxLength" => RecordCollection::DESCRIPTION_LIMIT },
             "schema" => SCHEMA,
+            "embed" => { "type" => %w[string null],
+                         "description" => "Optional: the top-level text field to also search by meaning (null: none)" },
             "realm" => { "type" => "string", "description" => "household, personal, or intimate; at most your own. Default: yours" }
           },
           "required" => %w[name key description],

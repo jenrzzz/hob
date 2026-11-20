@@ -149,14 +149,8 @@ class Completion
   # again; the caller's tools end the request.
   def run(conversation, branch, &on_event)
     scope = Memory::Scope.build(personas: [ @persona ].compact, conversation: conversation, request: @memory)
-    native = scope&.tools? ? Memory::Tools.new(scope) : nil
-    tools = @tools
-    if native
-      clash = Array(@tools).map { |t| (t["name"] || t[:name]).to_s } & Memory::Tools::NAMES
-      raise Gateway::Invalid, "#{clash.join(', ')} is a native tool while memory tools are on; rename yours" if clash.any?
-
-      tools = Array(@tools) + Memory::Tools.defs
-    end
+    native = NativeTools.build(personas: [ @persona ].compact, conversation: conversation, scope: scope)
+    tools = native ? native.declare(@tools) : @tools
     outcomes = []
     units = Hash.new(0)
     cost = nil

@@ -45,6 +45,14 @@ module Memory
       @scope = scope
     end
 
+    def defs
+      DEFS
+    end
+
+    def names
+      NAMES
+    end
+
     def native?(name)
       @scope&.tools? && NAMES.include?(name.to_s)
     end

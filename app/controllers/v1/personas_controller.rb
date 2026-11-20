@@ -35,6 +35,13 @@ module V1
         h[:prompt] = params[:prompt].permit(:system_core, :instruction, greetings: [], examples: []).to_h if params[:prompt].present?
         # Memory defaults (MEMORY.md): off unless set; a turn's memory: overrides.
         h[:memory] = params[:memory].permit(:recall, :tools, :budget, about: [], review: %i[every_days realm]).to_h if params[:memory].respond_to?(:permit)
+        # Native corpus tools (MELUZINA.md, "Searchable collections"); {} turns them off.
+        h[:tools] = params[:tools].permit(corpora: %i[tool collection description]).to_h if params[:tools].respond_to?(:permit)
+        # Her sense of time (MELUZINA.md, "The clock"); {} turns it off.
+        if params[:clock].respond_to?(:permit)
+          h[:clock] = params[:clock].permit(:drift_gap_minutes, :visit_gap_hours, :calendar_window_days,
+                                            zones: %i[label zone reader], calendar: %i[month day label]).to_h
+        end
       end
     end
 
@@ -42,7 +49,7 @@ module V1
       {
         id: persona.id, key: persona.key, name: persona.name,
         prompt: persona.prompt, model_role: persona.model_role,
-        voice_id: persona.voice_id, memory: persona.memory, entity: persona.entity&.as_json
+        voice_id: persona.voice_id, memory: persona.memory, clock: persona.clock, tools: persona.tools, entity: persona.entity&.as_json
       }
     end
   end

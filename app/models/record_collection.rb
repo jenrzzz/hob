@@ -27,6 +27,8 @@ class RecordCollection < ApplicationRecord
   validates :name, presence: true, uniqueness: true, format: { with: NAME_FORMAT, message: "must be a lowercase slug, like amazon-orders" }
   validates :key_path, presence: true, format: { with: KEY_FORMAT, message: "must be the name of a top-level field, like order_id" }
   validates :description, presence: true, length: { maximum: DESCRIPTION_LIMIT }
+  # The top-level field whose text is embedded for search (Records::Search), or nil.
+  validates :embed_path, format: { with: KEY_FORMAT, message: "must be the name of a top-level field, like text" }, allow_nil: true
   validates :realm, presence: true
   validate :realm_known
   validate :owned_by_a_person
@@ -61,7 +63,7 @@ class RecordCollection < ApplicationRecord
 
   def as_json(*)
     { "name" => name, "realm" => realm, "owner" => principal&.name, "key" => key_path, "schema" => schema,
-      "schema_version" => schema_version, "description" => description, "proposed_by" => proposed_by&.name,
+      "schema_version" => schema_version, "embed" => embed_path, "description" => description, "proposed_by" => proposed_by&.name,
       "count" => records.where(retracted_at: nil).count, "updated_at" => updated_at, "created_at" => created_at }
   end
 

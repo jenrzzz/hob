@@ -1,6 +1,7 @@
 # Every tool hob answers itself in a turn (MEMORY.md, "Native tools"):
-# memory's recall/remember when the turn's memory scope offers them, and the
-# persona's corpora (CorpusTools). ToolExchange.settle_native! asks it
+# memory's recall/remember when the turn's memory scope offers them, the
+# persona's corpora (CorpusTools), and what the sentinel lets the persona's
+# agent ask for (AgentTools). ToolExchange.settle_native! asks it
 # `native?` and `execute`; ChatTurn and Completion declare its `defs` beside
 # the caller's tools, which may not take one of its names.
 class NativeTools
@@ -10,6 +11,9 @@ class NativeTools
       (Memory::Tools.new(scope) if scope&.tools?),
       CorpusTools.build(personas: personas, conversation: conversation)
     ].compact
+    taken = Memory::Tools::NAMES + venues.flat_map(&:names)
+    venues << AgentTools.build(personas: personas, conversation: conversation, taken: taken)
+    venues.compact!
     venues.any? ? new(venues) : nil
   end
 
@@ -33,8 +37,11 @@ class NativeTools
     @venues.find { |v| v.native?(call["name"]) }.execute(call, node: node)
   end
 
-  # The caller's tools plus ours; a caller's tool may not take a native name.
+  # The caller's tools plus ours; a caller's tool may not take a native name,
+  # except an agent's capability tool, which steps aside (AgentTools).
   def declare(tools)
+    caller_names = Array(tools).map { |t| (t["name"] || t[:name]).to_s }
+    @venues.each { |v| v.yield_to!(caller_names) if v.respond_to?(:yield_to!) }
     clash = Array(tools).map { |t| (t["name"] || t[:name]).to_s } & names
     raise Gateway::Invalid, "#{clash.join(', ')} is a native tool in this turn; rename yours" if clash.any?
 

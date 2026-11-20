@@ -116,12 +116,34 @@ kat's vectors are not copied, since vectors are only compared within one
 model. `send_track`'s rotation (least recently shared first) does not
 survive: `find_track` with no query is a random pick from this season.
 
+### Her agent (built)
+
+She is also an agent, `meluzina` (clearance `personal`), and the persona
+names it: `personas.tools.agent`, set at the box with
+`bin/rails "hob:persona:agent[meluzina,meluzina]"`. A push from kat
+replaces the corpora and keeps the link; no API sets it, since the link
+lends the agent's grants to whoever can run her turns.
+
+In each of her turns, `AgentTools` (a third native venue beside memory and
+the corpora) offers what hob's MCP endpoint would give that agent
+(`Mcp::Agent`): the capabilities her rules allow, `sentinel_request`, and,
+since her charter allows it, `sentinel_petition` and
+`sentinel_petition_status`. Each call is a sentinel request or a petition
+under `meluzina`, with the turn's surface (`parlour`) on the row. She acts
+at the lowest of the caller's clearance, the conversation's realm, and
+`personal`, so the `intimate` DM still asks at `personal`. A capability tool
+whose name a caller's tool already uses steps aside, so the turn doesn't
+fail. A grant shows up in her next turn.
+
+Her charter is `confirm` (every petition goes to Jenner), limited to 5 a day.
+Her life turns (below) get the same tools.
+
 ### 3. A persona's life (phase 3)
 
 `personas.life` names a cron line, an instruction and a home conversation.
 `PersonaLifeJob` (on the clock, like `PersonaReviewJob`) runs a turn for
 each persona that is due, in a `life` pipeline conversation at the life's
-realm, with native tools:
+realm, with native tools (and her agent's, as in a conversation):
 
 | tool | does |
 |---|---|

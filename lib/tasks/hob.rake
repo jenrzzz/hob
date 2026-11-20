@@ -1812,3 +1812,21 @@ namespace :hob do
     end
   end
 end
+
+namespace :hob do
+  namespace :persona do
+    desc "Let a persona ask the sentinel as an agent, in her own turns (MELUZINA.md, \"Her agent\"): " \
+         "bin/rails \"hob:persona:agent[meluzina,meluzina]\"; no agent unlinks"
+    task :agent, [ :persona, :agent ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:persona:agent[persona,agent]\"" if args[:persona].blank?
+
+      persona = Persona.find_by!(key: args[:persona])
+      tools = persona.tools.to_h.except("agent")
+      tools["agent"] = args[:agent] if args[:agent].present?
+      persona.update!(tools: tools)
+      agent = args[:agent].presence
+      puts agent ? "#{persona.key} asks the sentinel as #{agent} (at most #{Principal.find_by!(name: agent).max_clearance})" :
+                   "#{persona.key} has no agent"
+    end
+  end
+end

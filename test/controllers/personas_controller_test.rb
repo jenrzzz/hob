@@ -25,4 +25,16 @@ class PersonasControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Pip is a sparrow.", body.dig("prompt", "system_core")
     assert_equal card, Persona.find_by!(key: "pip").card_import
   end
+
+  test "a push replaces the corpora and keeps the agent link, which it cannot set" do
+    agent("meluzina", clearance: "personal")
+    agent("skipsy", clearance: "personal")
+    persona = Persona.create!(key: "mel", name: "Mel", prompt: { "system_core" => "x" }, tools: { "agent" => "meluzina" })
+
+    patch "/v1/personas/mel", params: { tools: { agent: "skipsy", corpora: [ { tool: "recall_archive", collection: "archive" } ] } },
+                              headers: auth, as: :json
+    assert_response :ok
+    assert_equal "meluzina", persona.reload.tools["agent"], "a push neither moves nor drops the link"
+    assert_equal "recall_archive", persona.tools["corpora"].first["tool"]
+  end
 end

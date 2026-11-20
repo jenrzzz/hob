@@ -23,7 +23,11 @@ module V1
 
     def update
       persona = Persona.find_by!(key: params[:key])
-      persona.update!(persona_params)
+      attrs = persona_params
+      # The agent link (AgentTools) is a person's to set, at the box: a push
+      # replaces the corpora and keeps it.
+      attrs[:tools] = attrs[:tools].merge(persona.tools.to_h.slice("agent")) if attrs.key?(:tools)
+      persona.update!(attrs)
       render json: serialize(persona)
     end
 
@@ -36,6 +40,7 @@ module V1
         # Memory defaults (MEMORY.md): off unless set; a turn's memory: overrides.
         h[:memory] = params[:memory].permit(:recall, :tools, :budget, :own, about: [], review: %i[every_days realm]).to_h if params[:memory].respond_to?(:permit)
         # Native corpus tools (MELUZINA.md, "Searchable collections"); {} turns them off.
+        # Not `agent`: that link is set with hob:persona:agent only.
         h[:tools] = params[:tools].permit(corpora: %i[tool collection description]).to_h if params[:tools].respond_to?(:permit)
         # Her sense of time (MELUZINA.md, "The clock"); {} turns it off.
         if params[:clock].respond_to?(:permit)

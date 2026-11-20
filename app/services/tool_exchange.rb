@@ -109,11 +109,14 @@ module ToolExchange
     calls.reverse.map(&:tool_call).reject { |c| done.include?(c["id"]) }
   end
 
-  # How many call/result rounds the branch has been through: the cap counts
-  # rounds, not calls, so parallel calls don't burn iterations.
+  # How many call/result rounds the turn in progress has been through: back
+  # to the last line a person spoke, not the whole branch, or a long
+  # conversation would spend the cap once and never call a tool again. The
+  # cap counts rounds, not calls, so parallel calls don't burn iterations.
   def rounds(head)
     return 0 if head.nil?
 
-    head.ancestry.each_cons(2).count { |newer, older| newer.tool_result? && !older.tool_result? }
+    turn = head.ancestry.take_while { |node| !(node.role == "user" && node.kind == "text") }
+    turn.each_cons(2).count { |newer, older| newer.tool_result? && !older.tool_result? }
   end
 end

@@ -56,6 +56,14 @@ class ToolExchangeTest < ActiveSupport::TestCase
     r2 = ToolExchange.append_results!(conversation: @convo, head: second.last, results: [ { id: "call_c", content: "3" } ])
     assert_equal 2, ToolExchange.rounds(r2.last)
 
+    reply = MessageNode.append!(conversation: @convo, parent_hash: r2.last.content_hash, role: "assistant", content: "sunny")
+    assert_equal 2, ToolExchange.rounds(reply), "the same turn still"
+    again = MessageNode.append!(conversation: @convo, parent_hash: reply.content_hash, role: "user", content: "and tomorrow?")
+    assert_equal 0, ToolExchange.rounds(again), "a new spoken line starts the count over"
+    third = calls_at(again.content_hash, "d")
+    r3 = ToolExchange.append_results!(conversation: @convo, head: third.last, results: [ { id: "call_d", content: "4" } ])
+    assert_equal 1, ToolExchange.rounds(r3.last)
+
     messages = Assembly::Transcript.render(r2.last.ancestry.reverse)
     assert_equal %w[user assistant tool tool assistant tool], messages.map { |m| m["role"] }
     assert_equal %w[call_a call_b], messages[1]["tool_calls"].map { |c| c["id"] }

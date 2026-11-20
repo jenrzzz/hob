@@ -596,8 +596,8 @@ request, and hands back only the caller's calls. When the model calls one, hob a
 request. The caller executes and posts `tool_results: [{ id, content }]` to
 the same endpoint (with the completion's `id`, or the conversation's next
 turn); hob appends `tool_result` nodes and asks the model again. Past
-`max_iterations` rounds (default 10) the tools stay declared but the model
-may not call them, so it has to answer. A tool result's `content` may carry
+`max_iterations` rounds (default 10) since the last spoken user line, the
+tools stay declared but the model may not call them, so it has to answer. A tool result's `content` may carry
 images (`{ type: "image", media_type, data }` blocks) and `error: true`, which
 reaches the model as a failed result.
 

@@ -107,6 +107,18 @@ and their guidance; a grant's own page edits the guidance text and shows its
 full history — who changed it, when, and whether a petition or this page
 did it (SENTINEL.md, "Policies").
 
+`/admin/usage` is every gateway call, kat's LLM Usage view rebuilt on the
+ledger: spend per hour/day/week stacked by operation, role, model or
+surface (or call counts), with breakdowns by who called and which tools the
+model asked for, all filterable, and refusals and failures counted apart.
+A call's own page shows why it stopped, what the model said back (kept even
+when it refused or its structured reply didn't parse, which the DAG doesn't
+keep), its tool calls with the results that answered them, the exact prompt
+from its snapshot, any retries of that prompt, and the other calls for the same
+ref. What a call *said* (`usage_payloads`) is realm-scoped like the
+snapshot it answers. Its cost is not, so the totals never depend on who's
+looking.
+
 `/admin/gofer_keys` widens or narrows a gofer browsing key's domain
 allowlist without rotating its token (BROWSE.md, "gofer"). "Load" prefills
 from what gofer says a browser row's own key's domains are now; gofer has
@@ -593,6 +605,10 @@ A refusal is HTTP 200 with `status: refused` (the call happened and was
 metered). Upstream rate limits and outages are 503 with `Retry-After` when
 known. Every gateway attempt, including failures, is a `usage_events` row;
 cost comes from `model_prices` (USD per million tokens, prefix-matched).
+Beside each row whose call got a reply, a `usage_payloads` row keeps what the model
+said (text, thinking, tool calls) at the call's realm; pass `realm:` to
+`Gateway.complete` (ChatTurn and Completion pass the conversation's taint
+realm), or it defaults to the clearance in force.
 
 ```
 bin/rails test                         # Gateway::Fake stands in for providers

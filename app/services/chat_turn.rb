@@ -94,7 +94,8 @@ class ChatTurn
         role: @role, system: assembly.system, messages: assembly.messages,
         tools: tools, tool_choice: tool_choice_for(anchor, tools),
         params: @preset&.params || {}, operation: "chat",
-        ref: "conversation/#{@conversation.id}", snapshot: assembly.snapshot.digest
+        ref: "conversation/#{@conversation.id}", snapshot: assembly.snapshot.digest,
+        realm: @conversation.taint_realm
       ) { |type, text| stream&.call(text) if type == :delta }
 
       raise Gateway::Refused, "the model declined to reply" if response.refused?

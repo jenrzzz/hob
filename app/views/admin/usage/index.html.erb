@@ -1,0 +1,196 @@
+<%= render "styles" %>
+<% report = @report %>
+<% stats = report.stats %>
+<% totals = report.series_totals %>
+<% period_label = UsageEvent::Report::PERIODS[report.period].downcase %>
+<% group_label = UsageEvent::Report::GROUPS[report.group].downcase %>
+<% chosen = report.filter_value(report.group.to_sym) %>
+<% slot_of = report.series.to_h { |s| [ s.key, s.slot ] } %>
+
+<h1>Usage</h1>
+
+<div class="controls">
+  <nav class="seg" aria-label="Period">
+    <% UsageEvent::Report::PERIODS.each do |key, label| %>
+      <%= link_to label, admin_usage_path(report.link_params(period: key, from: nil, to: nil)), class: ("on" if report.period == key) %>
+    <% end %>
+  </nav>
+  <nav class="seg" aria-label="Color by">
+    <span>Color by</span>
+    <% UsageEvent::Report::GROUPS.each do |key, label| %>
+      <%= link_to label, admin_usage_path(report.link_params(group: key)), class: ("on" if report.group == key) %>
+    <% end %>
+  </nav>
+  <nav class="seg" aria-label="Measure">
+    <% UsageEvent::Report::METRICS.each do |key, label| %>
+      <%= link_to label, admin_usage_path(report.link_params(metric: key)), class: ("on" if report.metric == key) %>
+    <% end %>
+  </nav>
+  <%= form_tag admin_usage_path, method: :get, class: "filters" do %>
+    <% report.link_params.except(:operation, :model, :role, :surface, :status).each do |key, value| %>
+      <%= hidden_field_tag key, value, id: nil %>
+    <% end %>
+    <% %i[operation role model surface].each do |dim| %>
+      <%= select_tag dim, options_for_select([ [ "Any #{dim}", "" ] ] + @options[dim].map { |o| [ o, o ] }, report.filter_value(dim)),
+                     "aria-label": dim.to_s.capitalize, onchange: "this.form.requestSubmit()" %>
+    <% end %>
+    <%= select_tag :status, options_for_select([ [ "Any status", "" ] ] + UsageEvent::Report::STATUSES.map { |k, v| [ v, k ] }, report.filter_value(:status)),
+                   "aria-label": "Status", onchange: "this.form.requestSubmit()" %>
+    <noscript><button>Filter</button></noscript>
+  <% end %>
+</div>
+
+<section class="card" id="chart">
+  <div class="hero"><%= usage_metric(totals.values.sum, report.metric) %></div>
+  <div class="muted"><%= report.metric == "calls" ? "calls" : "spent" %> over <%= period_label %> · per <%= report.unit %>, by <%= group_label %></div>
+
+  <ul class="legend<%= ' dim' if chosen %>">
+    <% report.series.each do |s| %>
+      <% next if totals[s.key].zero? && s.key != chosen %>
+      <% on = chosen == s.key %>
+      <li>
+        <%= link_to_if s.key != UsageEvent::Report::OTHER,
+              usage_swatch(s.slot) + tag.span(s.name) + tag.span(usage_metric(totals[s.key], report.metric), class: "v"),
+              admin_usage_path(report.link_params(report.group => (on ? nil : s.key))), class: ("on" if on) %>
+      </li>
+    <% end %>
+  </ul>
+
+  <% buckets = report.buckets %>
+  <% top, ticks = usage_axis(buckets.map { |b| b.values.values.sum }.max) %>
+  <div class="chart">
+    <div class="axis" aria-hidden="true">
+      <span style="bottom: 0">0</span>
+      <% ticks.each do |t| %><span style="bottom: <%= (t / top * 100).round(2) %>%"><%= usage_metric(t, report.metric) %></span><% end %>
+    </div>
+    <div class="plot" role="img" aria-label="<%= report.metric == 'calls' ? 'Calls' : 'Cost' %> per <%= report.unit %>, stacked by <%= group_label %>">
+      <% ticks.each do |t| %><div class="grid-line" style="bottom: <%= (t / top * 100).round(2) %>%"></div><% end %>
+      <% buckets.each do |b| %>
+        <% here = report.bucket_selected? && report.selected_from.to_i == b.starts_at.to_i %>
+        <%= link_to admin_usage_path(report.link_params(here ? { from: nil, to: nil } : { from: b.starts_at.iso8601, to: b.ends_at.iso8601 })),
+                    class: [ "bar", ("on" if here), ("off" if report.bucket_selected? && !here) ],
+                    "aria-label": "#{report.bucket_label(b.starts_at, long: true)}: #{b.calls} calls" do %>
+          <% report.series.each do |s| %>
+            <% v = b.values[s.key].to_f %>
+            <% next unless v.positive? %>
+            <i style="height: <%= (v / top * 100).round(3) %>%; background: var(--s<%= s.slot %>)"></i>
+          <% end %>
+          <span class="tip">
+            <strong><%= report.bucket_label(b.starts_at, long: true) %></strong>
+            <% report.series.each do |s| %>
+              <% v = b.values[s.key].to_f %>
+              <% next unless v.positive? %>
+              <div><%= usage_swatch(s.slot) %><%= s.name %><b><%= usage_metric(v, report.metric) %></b></div>
+            <% end %>
+            <div class="muted"><%= pluralize(b.calls, "call") %></div>
+          </span>
+        <% end %>
+      <% end %>
+    </div>
+    <div class="xlabels" aria-hidden="true">
+      <% every = (buckets.size / 8.0).ceil.clamp(1, 1000) %>
+      <% buckets.each_with_index do |b, i| %><span><%= report.bucket_label(b.starts_at) if (i % every).zero? %></span><% end %>
+    </div>
+  </div>
+  <p class="hint">Click a bar to see what happened then; click a legend entry to follow one <%= group_label %>.</p>
+</section>
+
+<div class="selection">
+  <% if (label = report.selection_label) %>
+    Showing <strong><%= label %></strong> · <%= link_to "clear", admin_usage_path(period: report.period, group: report.group, metric: report.metric) %>
+  <% else %>
+    <span class="muted">Showing everything in the last <%= period_label %>.</span>
+  <% end %>
+</div>
+
+<section class="card" id="stats">
+  <div class="stats">
+    <div class="stat"><b><%= usage_money(stats[:cost]) %></b><span>cost</span></div>
+    <div class="stat"><b><%= number_with_delimiter(stats[:calls]) %></b><span>calls</span></div>
+    <%= link_to admin_usage_path(report.link_params(status: report.filter_value(:status) == "refused" ? nil : "refused")), class: "stat" do %>
+      <b class="<%= 'warn' if stats[:refused].positive? %>"><%= number_with_delimiter(stats[:refused]) %></b><span>refused</span>
+    <% end %>
+    <%= link_to admin_usage_path(report.link_params(status: report.filter_value(:status) == "failed" ? nil : "failed")), class: "stat" do %>
+      <b class="<%= 'warn' if stats[:failed].positive? %>"><%= number_with_delimiter(stats[:failed]) %></b><span>failed</span>
+    <% end %>
+    <div class="stat" title="<%= number_with_delimiter(stats[:input_tokens]) %> in (<%= number_with_delimiter(stats[:cache_read_tokens]) %> from cache) · <%= number_with_delimiter(stats[:output_tokens]) %> out">
+      <b><%= usage_tokens(stats[:input_tokens].to_i + stats[:output_tokens].to_i) %></b><span>tokens</span>
+    </div>
+    <div class="stat"><b><%= usage_duration(stats[:avg_duration_ms]) %></b><span>avg duration</span></div>
+    <% if stats[:unpriced].positive? %>
+      <div class="stat"><b class="warn"><%= number_with_delimiter(stats[:unpriced]) %></b><span>unpriced calls</span></div>
+    <% end %>
+  </div>
+  <% if @unpriced_models.any? %>
+    <p class="muted" style="margin: 4px 0 0; font-size: 14px">No price for <% @unpriced_models.each do |m| %><code><%= m %></code> <% end %>— spend is understated until one is set (<code>PUT /v1/prices/:model</code> or <code>bin/rails hob:price</code>).</p>
+  <% end %>
+</section>
+
+<div class="breakdowns">
+  <%= render "breakdown", title: "Operation", rows: report.by_operation, param: :operation, mono: true,
+             swatch: (report.group == "operation" ? slot_of : nil) %>
+  <%= render "breakdown", title: "Role", rows: report.by_role, param: :role, mono: true,
+             swatch: (report.group == "role" ? slot_of : nil) %>
+  <%= render "breakdown", title: "Model", rows: report.by_model, param: :model, mono: true,
+             swatch: (report.group == "model" ? slot_of : nil) %>
+  <%= render "breakdown", title: "Surface", rows: report.by_surface, param: :surface,
+             swatch: (report.group == "surface" ? slot_of : nil) %>
+  <%= render "breakdown", title: "Who", rows: report.by_principal, param: :principal_id,
+             label: ->(r) { r[:name] } %>
+  <section class="card" id="tools">
+    <h2>Tools the model called</h2>
+    <% tools = report.by_tool %>
+    <% if tools.any? %>
+      <ol class="rows">
+        <% max = tools.map { |t| t[:calls] }.max.to_f %>
+        <% tools.each do |t| %>
+          <% on = report.filter_value(:tool) == t[:key] %>
+          <li class="<%= 'on' if on %>">
+            <%= link_to admin_usage_path(report.link_params(tool: (on ? nil : t[:key]))) do %>
+              <div class="row-top"><span class="label mono"><%= t[:key] %></span><span><%= number_with_delimiter(t[:calls]) %>×</span></div>
+              <div class="row-bar"><span style="width: <%= (t[:calls] / max * 100).round(1) %>%"></span></div>
+            <% end %>
+          </li>
+        <% end %>
+      </ol>
+    <% else %>
+      <p class="muted">No tool calls in this selection.</p>
+    <% end %>
+  </section>
+</div>
+
+<section id="calls" style="margin-top: 20px">
+  <h2>Calls <span class="muted"><%= number_with_delimiter(@total) %></span></h2>
+  <% if @events.any? %>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Operation</th><th>Who</th><th>Model</th><th class="num">Tokens</th><th class="num">Cost</th><th class="num">Duration</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <% @events.each do |e| %>
+            <tr>
+              <td><%= link_to l(e.created_at, format: "%b %-d %H:%M:%S"), admin_usage_event_path(e) %></td>
+              <td>
+                <%= link_to (e.operation.presence || "(none)"), admin_usage_event_path(e) %>
+                <% if e.tool_names.any? %><span class="sub tools" title="<%= e.tool_names.join(', ') %>">→ <%= e.tool_names.tally.map { |n, c| c > 1 ? "#{n}×#{c}" : n }.join(", ").truncate(48) %></span><% end %>
+              </td>
+              <td><%= e.principal&.name || tag.span("–", class: "muted") %><span class="sub"><%= e.surface %></span></td>
+              <td><code><%= e.model %></code><span class="sub"><%= e.role %></span></td>
+              <td class="num"><%= usage_tokens(e.tokens) %></td>
+              <td class="num"><%= e.status == "success" || e.cost ? usage_money(e.cost) : tag.span("–", class: "muted") %></td>
+              <td class="num"><%= usage_duration(e.duration_ms) %></td>
+              <td><%= usage_status(e) %><% if e.error.present? %><span class="sub" title="<%= e.error %>"><%= e.error.truncate(40) %></span><% end %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <span><%= link_to "← newer", admin_usage_path(report.link_params(page: @page - 1)) if @page > 1 %></span>
+      <span><%= link_to "older →", admin_usage_path(report.link_params(page: @page + 1)) if @more %></span>
+    </div>
+  <% else %>
+    <p class="muted">No calls match this selection.</p>
+  <% end %>
+</section>

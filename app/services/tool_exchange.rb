@@ -55,7 +55,7 @@ module ToolExchange
         conversation: conversation, parent_hash: parent_hash, role: "user", kind: "tool_result",
         content: text.presence || (attachments.any? ? "" : "(no output)"), attachments: attachments,
         meta: { "tool" => call["name"], "tool_call_id" => call["id"], "error" => result["error"] ? true : nil,
-                "venue" => venue }.compact
+                "venue" => venue, "duration_ms" => result["duration_ms"] }.compact
       )
       parent_hash = node.content_hash
       node
@@ -72,13 +72,19 @@ module ToolExchange
     native_nodes, client_nodes = call_nodes.partition { |n| native.native?(n.tool_call["name"]) }
     return [ client_nodes, [] ] if native_nodes.empty?
 
+    durations = []
     outcomes = native_nodes.map do |node|
       on_native&.call(:call, node.tool_call.merge("node" => node.content_hash))
-      native.execute(node.tool_call, node: node.content_hash)
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      native.execute(node.tool_call, node: node.content_hash).tap do
+        durations << ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+      end
     end
     nodes = append_results!(
       conversation: conversation, head: branch.head, venue: "native", partial: true,
-      results: outcomes.map { |o| { "id" => o.call["id"], "content" => o.content, "error" => o.error } }
+      results: outcomes.zip(durations).map do |o, ms|
+        { "id" => o.call["id"], "content" => o.content, "error" => o.error, "duration_ms" => ms }
+      end
     )
     branch.advance!(nodes.last)
     outcomes.zip(nodes).each do |o, n|

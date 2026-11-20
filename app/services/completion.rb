@@ -179,7 +179,8 @@ class Completion
       response = Gateway.complete(
         role: @role, system: system, messages: messages, schema: @schema, tools: tools, tool_choice: tool_choice,
         params: @params, operation: @operation, ref: @ref.presence || "conversation/#{conversation.id}",
-        metadata: @metadata.merge("conversation" => conversation.id), snapshot: snapshot.digest, &on_event
+        metadata: @metadata.merge("conversation" => conversation.id), snapshot: snapshot.digest,
+        realm: conversation.taint_realm, &on_event
       )
       response.units.each { |k, v| units[k] += v.to_i }
       cost = response.cost && (cost || 0) + response.cost

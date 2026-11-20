@@ -95,13 +95,13 @@
   </section>
 
   <section class="card" id="usage">
-    <div class="card-head"><h2>Model usage</h2></div>
+    <div class="card-head"><h2>Model usage</h2><%= link_to "all calls →", admin_usage_path %></div>
     <div class="table-wrap">
       <table>
         <tr><th></th><th>Calls</th><th>Tokens in / out</th><th>Cost</th><th>Failed</th></tr>
         <% @usage.each do |label, u| %>
           <tr>
-            <td><%= label %></td>
+            <td><%= link_to label, admin_usage_path(period: { "Today" => "today", "7 days" => "7d", "30 days" => "30d" }[label]) %></td>
             <td><%= number_with_delimiter(u[:calls]) %></td>
             <td><%= number_to_human(u[:input_tokens], format: "%n%u", units: { thousand: "k", million: "M", billion: "B" }) %> / <%= number_to_human(u[:output_tokens], format: "%n%u", units: { thousand: "k", million: "M", billion: "B" }) %></td>
             <td><%= money.(u[:cost]) %><% unless u[:priced] %> <span class="muted" title="some calls have no price">+?</span><% end %></td>
@@ -114,7 +114,7 @@
       <p class="muted" style="margin-bottom: 0">Last 30 days by model</p>
       <ul class="list">
         <% @models.each do |model, calls, cost| %>
-          <li><code><%= model || "—" %></code> <span class="muted"><%= number_with_delimiter(calls) %> calls · <%= money.(cost) %></span></li>
+          <li><%= link_to admin_usage_path(period: "30d", model: model) do %><code><%= model || "—" %></code><% end %> <span class="muted"><%= number_with_delimiter(calls) %> calls · <%= money.(cost) %></span></li>
         <% end %>
       </ul>
     <% end %>
@@ -122,7 +122,7 @@
       <details><summary><%= @usage_errors.size %> recent failures</summary>
         <ul class="list">
           <% @usage_errors.each do |e| %>
-            <li><span class="tag"><%= e.status.tr("_", " ") %></span> <code><%= e.model %></code> <span class="muted"><%= e.surface %> · <%= ago.(e.created_at) %><% if e.error.present? %> · <%= e.error.truncate(100) %><% end %></span></li>
+            <li><%= link_to e.status.tr("_", " "), admin_usage_event_path(e), class: "tag" %> <code><%= e.model %></code> <span class="muted"><%= e.surface %> · <%= ago.(e.created_at) %><% if e.error.present? %> · <%= e.error.truncate(100) %><% end %></span></li>
           <% end %>
         </ul>
       </details>

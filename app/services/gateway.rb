@@ -27,7 +27,7 @@ module Gateway
   UnknownRoleError = Class.new(Invalid)
 
   Request = Struct.new(:role, :system, :messages, :schema, :tools, :tool_choice, :params, :operation, :ref,
-                       :metadata, :snapshot, keyword_init: true)
+                       :metadata, :snapshot, :realm, keyword_init: true)
 
   class << self
     # The provider transport. Tests inject Gateway::Fake here.
@@ -50,8 +50,11 @@ module Gateway
     # tool_choice: auto (nil) | none | required | a tool name
     # params:   request-level provider params, deep-merged over the chain link's
     # operation/ref/metadata/snapshot: ledger fields
+    # realm:    the realm the call's content belongs to; its audit payload
+    #           (what the model said) is stored there. Defaults to the
+    #           clearance in force.
     def complete(role:, messages:, system: nil, schema: nil, tools: nil, tool_choice: nil, params: {},
-                 operation: nil, ref: nil, metadata: {}, snapshot: nil, &on_event)
+                 operation: nil, ref: nil, metadata: {}, snapshot: nil, realm: nil, &on_event)
       messages = normalize_messages(messages)
       unless %w[user tool].include?(messages.last&.dig("role"))
         raise Invalid, "messages must end with a user message or tool results"
@@ -61,7 +64,8 @@ module Gateway
       request = Request.new(role: role.to_s, system: system.presence, messages: messages, schema: schema,
                             tools: tool_defs, tool_choice: ToolDef.normalize_choice(tool_choice, tool_defs),
                             params: params.to_h.deep_stringify_keys, operation: operation, ref: ref,
-                            metadata: metadata.to_h, snapshot: snapshot)
+                            metadata: metadata.to_h, snapshot: snapshot,
+                            realm: realm.presence || UsageEvent.content_realm)
       candidates = ModelRole.find_role!(request.role).candidates
       raise NoProviderError, "no available provider for role #{role.inspect}" if candidates.empty?
 
@@ -82,7 +86,8 @@ module Gateway
       texts = Array(texts).map(&:to_s)
       raise Invalid, "nothing to embed" if texts.empty?
 
-      request = Request.new(role: role.to_s, operation: operation, ref: ref, metadata: {}, params: {})
+      request = Request.new(role: role.to_s, operation: operation, ref: ref, metadata: {}, params: {},
+                            realm: UsageEvent.content_realm)
       candidates = ModelRole.find_role!(request.role).candidates
       raise NoProviderError, "no available provider for role #{role.inspect}" if candidates.empty?
 
@@ -103,7 +108,7 @@ module Gateway
           principal: Current.principal, surface: Current.surface, role: request.role,
           provider: resolution.provider.slug, model: result[:model] || resolution.model, operation: operation,
           status: "success", duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round,
-          error: nil, metadata: { "texts" => texts.size }, snapshot_digest: nil, ref: ref,
+          error: nil, metadata: { "texts" => texts.size }, snapshot_digest: nil, ref: ref, realm: request.realm,
           units: { "input_tokens" => result[:input_tokens].to_i }
         )
         return [ result[:vectors], resolution.model ]
@@ -180,8 +185,24 @@ module Gateway
         role: request.role, provider: resolution.provider.slug, model: response&.model || resolution.model,
         operation: request.operation, status: status, duration_ms: duration, error: error,
         metadata: request.metadata, snapshot_digest: request.snapshot, ref: request.ref,
-        units: response&.units || {}
+        units: response&.units || {}, realm: request.realm, stop_reason: response&.stop_reason,
+        tool_names: Array(response&.tool_calls).map { |tc| tc["name"].to_s },
+        payload: response && audit_payload(request, response)
       )
+    end
+
+    # What the audit trail keeps of a call (UsagePayload). The request only
+    # when no prompt snapshot already holds it; attachments by digest only.
+    def audit_payload(request, response)
+      {
+        response: { "content" => response.content.presence, "reasoning" => response.reasoning,
+                    "tool_calls" => response.tool_calls.presence }.compact.presence,
+        request: request.snapshot.present? ? nil : {
+          "system" => request.system, "messages" => request.messages,
+          "tools" => Array(request.tools).map { |t| t.respond_to?(:name) ? t.name : t.to_h["name"] }.presence,
+          "schema" => request.schema
+        }.compact
+      }
     end
 
     def normalize_messages(messages)

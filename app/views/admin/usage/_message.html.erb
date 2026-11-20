@@ -1,0 +1,11 @@
+<% m = message.to_h %>
+<div class="msg <%= m["role"] %>">
+  <h3><span class="kind"><%= m["role"] == "tool" ? "Tool result" : m["role"] %></span><% if m["tool_call_id"] %> · <code><%= m["tool_call_id"] %></code><% end %><% if m["error"] %> <span class="tag bad">error</span><% end %></h3>
+  <% if m["content"].present? %><pre><%= m["content"] %></pre><% end %>
+  <% Array(m["tool_calls"]).each do |tc| %>
+    <p class="tools" style="margin: 4px 0">→ <%= tc["name"] %>(<%= JSON.generate(tc["arguments"] || {}).truncate(200) %>) <span class="muted"><%= tc["id"] %></span></p>
+  <% end %>
+  <% if Array(m["attachments"]).any? %>
+    <p class="muted" style="margin: 2px 0; font-size: 13px"><%= Array(m["attachments"]).map { |a| "#{a['type']} #{a['digest'].to_s.first(10)}" }.join(", ") %></p>
+  <% end %>
+</div>

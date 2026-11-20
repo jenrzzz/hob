@@ -1,0 +1,173 @@
+<%= render "styles" %>
+<% e = @event %>
+<% visible = ->(realm) { realm.blank? || Current.clearance.blank? || Realm.rank_of(realm) <= Realm.rank_of(Current.clearance) } %>
+<% hidden_note = "Recorded at #{e.realm}, above your clearance (#{Current.clearance})." %>
+
+<p><%= link_to "← Usage", admin_usage_path %></p>
+<h1><code><%= e.operation.presence || "(no operation)" %></code> <%= usage_status(e) %></h1>
+
+<% if e.status != "success" %>
+  <div class="callout" id="outcome">
+    <% case e.status %>
+    <% when "refused" %>
+      <strong>The model refused.</strong>
+      <% if e.stop_reason.present? %>Stop reason <code><%= e.stop_reason %></code>.<% end %>
+      <% if e.error.present? %><%= e.error %><% elsif @payload&.response_content.blank? %>It returned nothing.<% end %>
+    <% when "rate_limited" %>
+      <strong>Rate limited by <%= e.provider %>.</strong> <%= e.error %>
+    <% else %>
+      <strong>The call failed.</strong> <%= e.error %>
+    <% end %>
+  </div>
+<% end %>
+
+<div class="grid">
+  <section class="card" id="facts">
+    <h2>Call</h2>
+    <dl class="facts">
+      <dt>When</dt><dd><%= l(e.created_at, format: "%Y-%m-%d %H:%M:%S %Z") %></dd>
+      <dt>Who</dt><dd><%= e.principal&.name || "–" %> <span class="muted">via <%= e.surface || "–" %></span></dd>
+      <dt>Role</dt><dd><code><%= e.role %></code></dd>
+      <dt>Model</dt><dd><code><%= e.model %></code> <span class="muted">on <%= e.provider %></span></dd>
+      <% if e.stop_reason.present? %><dt>Stop reason</dt><dd><code><%= e.stop_reason %></code></dd><% end %>
+      <% if e.ref.present? %><dt>Ref</dt><dd><%= link_to e.ref, admin_usage_path(ref: e.ref, period: "all") %></dd><% end %>
+      <% if e.realm.present? %><dt>Realm</dt><dd><%= e.realm %></dd><% end %>
+      <% if e.snapshot_digest.present? %><dt>Snapshot</dt><dd><code><%= e.snapshot_digest %></code></dd><% end %>
+    </dl>
+  </section>
+  <section class="card" id="metrics">
+    <h2>Cost</h2>
+    <% units = e.units.to_h %>
+    <div class="stats">
+      <div class="stat"><b><%= usage_money(e.cost, precise: true) %></b><span>cost</span></div>
+      <div class="stat"><b><%= number_with_delimiter(units["input_tokens"].to_i) %></b><span>input tokens</span></div>
+      <div class="stat"><b><%= number_with_delimiter(units["output_tokens"].to_i) %></b><span>output tokens</span></div>
+      <div class="stat"><b><%= usage_duration(e.duration_ms) %></b><span>duration</span></div>
+    </div>
+    <% if units["cache_read_tokens"].to_i.positive? || units["cache_creation_tokens"].to_i.positive? %>
+      <p class="muted" style="margin: 0; font-size: 14px">Cache: <%= number_with_delimiter(units["cache_read_tokens"].to_i) %> read · <%= number_with_delimiter(units["cache_creation_tokens"].to_i) %> written</p>
+    <% end %>
+    <% if e.metadata.present? %>
+      <details><summary>Metadata</summary><pre><%= JSON.pretty_generate(e.metadata) %></pre></details>
+    <% end %>
+  </section>
+</div>
+
+<% if @attempts.size > 1 %>
+  <section class="card" id="attempts">
+    <h2>Attempts at this prompt</h2>
+    <p class="muted" style="margin: 4px 0; font-size: 14px">A structured reply that didn't parse is asked for once more; an unavailable provider falls back down the role's chain.</p>
+    <table>
+      <% @attempts.each_with_index do |a, i| %>
+        <tr class="<%= 'here' if a.id == e.id %>">
+          <td><%= i + 1 %></td>
+          <td><%= link_to l(a.created_at, format: "%H:%M:%S"), admin_usage_event_path(a) %></td>
+          <td><code><%= a.model %></code></td>
+          <td><%= usage_status(a) %></td>
+          <td class="muted"><%= a.error.to_s.truncate(80) %></td>
+        </tr>
+      <% end %>
+    </table>
+  </section>
+<% end %>
+
+<section class="card" id="response">
+  <h2>Response</h2>
+  <% if @payload %>
+    <% if @payload.response_content.present? %>
+      <pre><%= @payload.response_content %></pre>
+    <% elsif @payload.tool_calls.empty? %>
+      <p class="muted">No text came back.</p>
+    <% end %>
+    <% if @payload.reasoning.present? %>
+      <details><summary>Thinking</summary><pre><%= @payload.reasoning.is_a?(String) ? @payload.reasoning : JSON.pretty_generate(@payload.reasoning) %></pre></details>
+    <% end %>
+    <% @payload.tool_calls.each do |call| %>
+      <% result = @tool_results[call["id"]] %>
+      <div class="msg tool" id="tool-<%= call["id"] %>">
+        <h3>
+          <span class="kind">Tool call</span> · <code><%= call["name"] %></code>
+          <% if result %>
+            <span class="tag"><%= result.meta["venue"] || "client" %></span>
+            <% if result.meta["error"] %><span class="tag bad">error</span><% end %>
+            <% if result.meta["duration_ms"] %><span class="tag"><%= usage_duration(result.meta["duration_ms"]) %></span><% end %>
+          <% end %>
+        </h3>
+        <pre><%= JSON.pretty_generate(call["arguments"] || {}) %></pre>
+        <% if result %>
+          <details<%= ' open' if result.meta["error"] %>><summary>Result</summary><pre><%= result.content %></pre>
+            <% if result.attachments.present? %><p class="muted"><%= pluralize(result.attachments.size, "attachment") %></p><% end %>
+          </details>
+        <% else %>
+          <p class="muted" style="font-size: 14px">No result recorded<%= @conversation ? " yet" : "" %>.</p>
+        <% end %>
+      </div>
+    <% end %>
+  <% elsif !visible.(e.realm) %>
+    <p class="muted"><%= hidden_note %></p>
+  <% elsif e.status.in?(%w[error rate_limited]) && e.units.to_h["output_tokens"].to_i.zero? %>
+    <p class="muted">No response: the call failed before one came back.</p>
+  <% else %>
+    <p class="muted">Not recorded (calls before the audit trail began keep only their ledger row).</p>
+  <% end %>
+</section>
+
+<section class="card" id="prompt">
+  <h2>Prompt</h2>
+  <% request = @snapshot&.assembled || @payload&.request %>
+  <% if request %>
+    <% if @snapshot && @conversation %>
+      <p class="muted" style="margin: 4px 0; font-size: 14px">Conversation <code><%= @conversation.id %></code> · <%= @conversation.kind %> · <%= @conversation.realm %><%= " (tainted #{@conversation.taint_realm})" if @conversation.taint_realm != @conversation.realm %></p>
+    <% end %>
+    <% if request["system"].present? %>
+      <details<%= ' open' if e.status == "refused" %>><summary>System · <%= number_with_delimiter(request["system"].length) %> chars</summary><pre><%= request["system"] %></pre></details>
+    <% end %>
+    <% if request["recall"].present? %>
+      <details><summary>Recalled memory</summary><pre><%= request["recall"] %></pre></details>
+    <% end %>
+    <% if request["schema"].present? %>
+      <details><summary>Schema</summary><pre><%= JSON.pretty_generate(request["schema"]) %></pre></details>
+    <% end %>
+    <% if request["tools"].present? %>
+      <details><summary>Tools offered by the caller · <%= Array(request["tools"]).size %></summary>
+        <p class="tools"><%= Array(request["tools"]).map { |t| t.is_a?(Hash) ? t["name"] : t }.join(", ") %></p></details>
+    <% end %>
+    <% if request["stages"].present? %>
+      <details><summary>Assembly stages</summary><pre><%= JSON.pretty_generate(request["stages"]) %></pre></details>
+    <% end %>
+    <% messages = Array(request["messages"]) %>
+    <% if messages.size > 6 %>
+      <details><summary>Earlier messages · <%= messages.size - 4 %></summary>
+        <%= render partial: "message", collection: messages.first(messages.size - 4) %>
+      </details>
+      <%= render partial: "message", collection: messages.last(4) %>
+    <% else %>
+      <%= render partial: "message", collection: messages %>
+    <% end %>
+  <% elsif e.snapshot_digest.present? && !visible.(e.realm) %>
+    <p class="muted"><%= hidden_note %></p>
+  <% elsif e.operation.to_s.start_with?("memory.") || e.metadata.to_h.key?("texts") %>
+    <p class="muted">An embedding of <%= pluralize(e.metadata.to_h["texts"].to_i, "text") %>; the texts aren't kept here.</p>
+  <% else %>
+    <p class="muted">Not recorded.</p>
+  <% end %>
+</section>
+
+<% if @related.size > 1 %>
+  <section class="card" id="related">
+    <h2>Other calls for <code><%= e.ref %></code></h2>
+    <div class="table-wrap">
+      <table>
+        <% @related.each do |r| %>
+          <tr class="<%= 'here' if r.id == e.id %>">
+            <td><%= link_to l(r.created_at, format: "%b %-d %H:%M:%S"), admin_usage_event_path(r) %></td>
+            <td><code><%= r.operation %></code><% if r.tool_names.any? %><span class="sub tools">→ <%= r.tool_names.join(", ").truncate(40) %></span><% end %></td>
+            <td class="num"><%= usage_tokens(r.tokens) %></td>
+            <td class="num"><%= usage_money(r.cost) %></td>
+            <td><%= usage_status(r) %></td>
+          </tr>
+        <% end %>
+      </table>
+    </div>
+  </section>
+<% end %>

@@ -1547,7 +1547,10 @@ CREATE TABLE public.usage_events (
     duration_ms integer,
     error text,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
-    snapshot_digest character varying
+    snapshot_digest character varying,
+    realm character varying,
+    stop_reason character varying,
+    tool_names character varying[] DEFAULT '{}'::character varying[] NOT NULL
 );
 
 
@@ -1568,6 +1571,21 @@ CREATE SEQUENCE public.usage_events_id_seq
 --
 
 ALTER SEQUENCE public.usage_events_id_seq OWNED BY public.usage_events.id;
+
+
+--
+-- Name: usage_payloads; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.usage_payloads (
+    usage_event_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    request jsonb,
+    response jsonb,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.usage_payloads FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -2334,6 +2352,14 @@ ALTER TABLE ONLY public.todo_backends
 
 ALTER TABLE ONLY public.usage_events
     ADD CONSTRAINT usage_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: usage_payloads usage_payloads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_payloads
+    ADD CONSTRAINT usage_payloads_pkey PRIMARY KEY (usage_event_id);
 
 
 --
@@ -3479,6 +3505,13 @@ CREATE INDEX index_usage_events_on_created_at ON public.usage_events USING btree
 
 
 --
+-- Name: index_usage_events_on_operation_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_usage_events_on_operation_and_created_at ON public.usage_events USING btree (operation, created_at);
+
+
+--
 -- Name: index_usage_events_on_principal_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3497,6 +3530,20 @@ CREATE INDEX index_usage_events_on_ref ON public.usage_events USING btree (ref);
 --
 
 CREATE INDEX index_usage_events_on_role_and_created_at ON public.usage_events USING btree (role, created_at);
+
+
+--
+-- Name: index_usage_events_on_snapshot_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_usage_events_on_snapshot_digest ON public.usage_events USING btree (snapshot_digest);
+
+
+--
+-- Name: index_usage_events_on_status_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_usage_events_on_status_and_created_at ON public.usage_events USING btree (status, created_at);
 
 
 --
@@ -3745,6 +3792,14 @@ ALTER TABLE ONLY public.people
 
 ALTER TABLE ONLY public.gofer_key_changes
     ADD CONSTRAINT fk_rails_35aa256496 FOREIGN KEY (browser_id) REFERENCES public.browsers(id);
+
+
+--
+-- Name: usage_payloads fk_rails_3a764762d5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_payloads
+    ADD CONSTRAINT fk_rails_3a764762d5 FOREIGN KEY (usage_event_id) REFERENCES public.usage_events(id) ON DELETE CASCADE;
 
 
 --
@@ -4826,6 +4881,15 @@ CREATE POLICY realm_visibility ON public.todo_backends USING ((( SELECT realms.r
 
 
 --
+-- Name: usage_payloads realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.usage_payloads USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (usage_payloads.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
 -- Name: record_collections; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4874,12 +4938,19 @@ ALTER TABLE public.text_backends ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.todo_backends ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: usage_payloads; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
+
+--
 -- PostgreSQL database dump complete
 --
 
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261120000002'),
 ('20261120000001'),
 ('20261119000001'),
 ('20261118000002'),

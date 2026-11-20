@@ -1,0 +1,37 @@
+<%# Locals: title, rows (UsageEvent::Report#breakdown), param, and optionally
+    label (row -> text), swatch ({ key => slot } when this is the colored dimension), mono. %>
+<% label = local_assigns[:label] || ->(r) { r[:key] || "(none)" } %>
+<% swatch = local_assigns[:swatch] %>
+<% mono = local_assigns[:mono] %>
+<% report = @report %>
+<% by_calls = report.metric == "calls" || rows.sum { |r| r[:cost] }.zero? %>
+<% max = rows.map { |r| by_calls ? r[:calls] : r[:cost] }.max.to_f %>
+<% total = rows.sum { |r| by_calls ? r[:calls] : r[:cost] }.to_f %>
+<section class="card" id="by-<%= param %>">
+  <h2><%= title %></h2>
+  <% if rows.any? %>
+    <ol class="rows">
+      <% rows.each do |row| %>
+        <% value = row[:key].nil? ? UsageEvent::Report::NONE : row[:key].to_s %>
+        <% on = report.filter_value(param).to_s == value %>
+        <% amount = by_calls ? row[:calls] : row[:cost] %>
+        <li class="<%= 'on' if on %>">
+          <%= link_to admin_usage_path(report.link_params(param => (on ? nil : value))) do %>
+            <div class="row-top">
+              <span class="label<%= ' mono' if mono %>"><% if swatch && (slot = swatch[value]) %><%= usage_swatch(slot) %><% end %><%= label.call(row) %></span>
+              <span><%= by_calls ? "#{number_with_delimiter(row[:calls])}×" : usage_money(row[:cost]) %></span>
+            </div>
+            <div class="row-bar"><span style="width: <%= max.positive? ? (amount / max * 100).round(1) : 0 %>%"></span></div>
+            <div class="row-meta">
+              <%= number_with_delimiter(row[:calls]) %> calls · <%= usage_tokens(row[:tokens]) %> tokens · <%= usage_duration(row[:avg_duration_ms]) %> avg<% if total.positive? && (share = (amount / total * 100).round).positive? %> · <%= share %>%<% end %>
+              <% if row[:refused].positive? %> · <span class="warn"><%= row[:refused] %> refused</span><% end %>
+              <% if row[:failed].positive? %> · <span class="warn"><%= row[:failed] %> failed</span><% end %>
+            </div>
+          <% end %>
+        </li>
+      <% end %>
+    </ol>
+  <% else %>
+    <p class="muted">Nothing here.</p>
+  <% end %>
+</section>

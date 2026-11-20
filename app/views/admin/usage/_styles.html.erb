@@ -1,0 +1,76 @@
+<% content_for :head do %>
+<style>
+  /* Categorical slots (validated: dataviz validate_palette.js against this layout's
+     panel surfaces, #ffffff light and #201e1b dark). --s0 is the neutral "Other". */
+  :root { --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948; --s0: #a8a49c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767; --s0: #5c5852; }
+  }
+  main { max-width: 1120px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 14px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: 14px; }
+  .seg a, .seg span { padding: 4px 10px; text-decoration: none; color: var(--muted); border-left: 1px solid var(--line); }
+  .seg > :first-child { border-left: 0; }
+  .seg span { background: var(--code); }
+  .seg a.on { background: var(--accent); color: var(--accent-ink); }
+  form.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+  form.filters select { max-width: 190px; font-size: 14px; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; flex: none; }
+  .hero { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; padding: 0; font-size: 13px; }
+  .legend a { display: inline-flex; align-items: center; color: var(--ink); text-decoration: none; padding: 2px 4px; border-radius: 5px; }
+  .legend a.on { background: var(--code); outline: 1px solid var(--line); }
+  .legend .v { color: var(--muted); margin-left: 6px; font-variant-numeric: tabular-nums; }
+  .legend.dim a:not(.on) { opacity: .55; }
+  .chart { position: relative; display: grid; grid-template-columns: 52px 1fr; margin-top: 14px; }
+  .chart .axis { position: relative; height: 180px; font-size: 11px; color: var(--muted); }
+  .chart .axis span { position: absolute; right: 8px; transform: translateY(50%); font-variant-numeric: tabular-nums; }
+  .plot { position: relative; height: 180px; display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--line); }
+  .plot .grid-line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--line); pointer-events: none; }
+  .bar { position: relative; flex: 1 1 0; height: 100%; display: flex; flex-direction: column-reverse; min-width: 2px; text-decoration: none; }
+  .bar:hover, .bar:focus-visible { background: color-mix(in srgb, var(--ink) 6%, transparent); outline: none; }
+  .bar.on { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .bar.off > i { opacity: .35; }
+  .bar i { display: block; width: 100%; border-top: 2px solid var(--panel); }
+  .bar i:last-of-type { border-radius: 4px 4px 0 0; }
+  .bar i:first-of-type { border-top-width: 0; }
+  .bar .tip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 5;
+              background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+              font-size: 12px; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+  /* Bars are the plot's only <a>s (gridlines are divs): keep edge tooltips on screen. */
+  .bar:nth-of-type(-n+2) .tip { left: 0; transform: none; }
+  .bar:nth-last-of-type(-n+2) .tip { left: auto; right: 0; transform: none; }
+  .bar:hover .tip, .bar:focus-visible .tip { display: block; }
+  .tip div { display: flex; align-items: center; gap: 4px; }
+  .tip b { margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; font-weight: 550; }
+  .xlabels { display: flex; gap: 2px; font-size: 11px; color: var(--muted); grid-column: 2; }
+  .xlabels span { flex: 1 1 0; text-align: center; overflow: hidden; white-space: nowrap; min-width: 0; }
+  .hint { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+  .selection { margin: 6px 0 10px; font-size: 14px; }
+  .breakdowns { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 14px; }
+  .breakdowns .card { margin: 0; }
+  ol.rows { list-style: none; margin: 8px 0 0; padding: 0; font-size: 14px; }
+  ol.rows li a { display: block; color: var(--ink); text-decoration: none; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; }
+  ol.rows li a:hover, ol.rows li.on a { background: var(--code); }
+  .row-top { display: flex; justify-content: space-between; gap: 10px; }
+  .row-top .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; min-width: 0; }
+  .row-top .label.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .row-bar { height: 4px; background: var(--code); border-radius: 2px; margin: 3px 0; }
+  .row-bar span { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+  .row-meta { font-size: 12px; color: var(--muted); }
+  .warn { color: var(--danger); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td .sub { display: block; font-size: 12px; color: var(--muted); }
+  .status { font-size: 12px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .status.refused, .status.error, .status.rate_limited { color: var(--danger); border-color: currentColor; }
+  .tools { font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .pager { display: flex; justify-content: space-between; margin-top: 10px; font-size: 14px; }
+  .msg { border-left: 3px solid var(--line); padding: 2px 0 2px 10px; margin: 10px 0; }
+  .msg.assistant { border-left-color: var(--accent); }
+  .msg.tool { border-left-color: var(--s3); }
+  .msg h3 { font-size: 13px; font-weight: 600; margin: 0; color: var(--muted); }
+  .msg h3 .kind { text-transform: uppercase; letter-spacing: .03em; }
+  .callout { background: var(--bad-bg); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
+  tr.here td { background: var(--code); }
+</style>
+<% end %>

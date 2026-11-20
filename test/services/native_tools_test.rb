@@ -60,6 +60,7 @@ class NativeToolsTest < ActiveSupport::TestCase
     assert_includes second.tools.map { |t2| t2["name"] }, "remember"
     assert_equal 20, result.units["input_tokens"], "usage sums the rounds"
     assert_equal "native", convo.branch.timeline.find(&:tool_result?).meta["venue"]
+    assert_kind_of Integer, convo.branch.timeline.find(&:tool_result?).meta["duration_ms"], "native runs are timed for the audit"
   end
 
   test "a round mixing native and client calls answers the native ones and hands back the rest" do

@@ -213,10 +213,17 @@ the `parlour` surface at `personal`. One hob conversation per DM channel,
 remembered in a small JSON file. On a burst of his lines (2.5 s settle) it
 calls `chat` with `persona: "meluzina"`, `memory: true`, a `door` context
 block (the everyday door: scenes and the erotic register live in kat), and
-one client tool, `read_paper`. Her archive and tracks are her own native
-tools (`recall_archive`, `find_track`), so `send_track` is gone: she pastes
-the link. Replies go out one Discord message per paragraph, under 2000
-characters. Pictures he sends reach her as images. Her whispers arrive
+two client tools: `read_paper`, and `react`, which puts an emoji on his last
+line (with a reply, or as the whole reply: when she has nothing to add,
+hob's "nothing, twice" refusal ends the turn instead of failing it). Her
+archive and tracks are her own native tools (`recall_archive`,
+`find_track`), so `send_track` is gone: she pastes the link. Replies go out
+one Discord message per paragraph, under 2000 characters, and the bridge
+posts every node in the turn's `assistants`, not only the last: the line
+she says alongside a tool call is meant for him. His reactions on her lines
+don't start a turn; parlour holds them per channel, in memory, and puts
+them ahead of his next message as "(he reacted 😂 to your message: ...)".
+Pictures he sends reach her as images. Her whispers arrive
 through the long-poll above: parlour's `Follower` keeps one thread per DM
 conversation, posts the nodes with `meta.whisper` (everything else on the
 branch is a turn it asked for and already posted), and keeps how far it has
@@ -231,6 +238,9 @@ tool results; corpus tools return 3 records by default. And at `intimate`
 her recall picked up the presence's authorless evidence about him, so her
 memory runs with `own` (MEMORY.md, "In a turn"). The DM runs at `intimate`
 (`PARLOUR_REALM`): it is his alone, and she remembers the dream-side there.
+Later the same night the bridge posted only `turn.content`, the last node,
+so a browse turn's real answer (said alongside `browse_close`) never reached
+him; hence posting all of `assistants`.
 
 The persona itself is pushed from kat: `rails meluzina:hob_persona`
 (`Meluzina::HobPersona`) writes her surface-neutral core (world frame,

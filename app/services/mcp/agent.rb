@@ -11,6 +11,9 @@ module Mcp
   # granted `hob.board.*` sees the board and nothing else. Plus
   # `sentinel_request`, for a request a person has yet to confirm: an
   # agent may always read its own requests, as on GET /v1/sentinel/requests.
+  # And, for an agent whose charter lets it petition (SENTINEL.md,
+  # "Petitions and the forge"), `sentinel_petition` and
+  # `sentinel_petition_status`: POST and GET /v1/sentinel/petitions.
   module Agent
     # Why the agent is asking, for the reviewer and the ledger. Added to
     # every capability's schema and taken off again before the handler sees
@@ -53,7 +56,65 @@ module Mcp
       "annotations" => { "readOnlyHint" => true, "destructiveHint" => false }
     }.freeze
 
+    PETITION_TOOL = {
+      "name" => "sentinel_petition",
+      "description" => "Ask hob for a capability you do not have, or for a grant you hold to cover more (a wider " \
+                       "constraint, a broader scope). Petition only when no tool you have does what you need; search " \
+                       "with hob_capability_search first when you have it. Say what you want to be able to do and why. " \
+                       "The steward grants, builds, refers it to a person, or denies it. A denial is final: do not " \
+                       "petition again for the same thing in other words. Petitions are limited per day.",
+      "inputSchema" => {
+        "type" => "object",
+        "required" => %w[want reason],
+        "properties" => {
+          "want" => { "type" => "string", "minLength" => 1, "maxLength" => 4000,
+                      "description" => "What you want to be able to do, in plain words." },
+          "capability" => { "type" => "string", "maxLength" => 120,
+                            "description" => "The capability's name (dotted, e.g. note.search) when you know it." },
+          "arguments" => { "type" => "object",
+                           "description" => "Example arguments you would call it with, so the grant can be scoped to them." },
+          "reason" => { "type" => "string", "maxLength" => 1000,
+                        "description" => "Why you need it: what you are doing and for whom." }
+        },
+        "additionalProperties" => false
+      },
+      "annotations" => { "readOnlyHint" => false, "destructiveHint" => false }
+    }.freeze
+
+    PETITION_STATUS_TOOL = {
+      "name" => "sentinel_petition_status",
+      "description" => "Look up one of your own petitions by id: pending (a person will decide), granted, building " \
+                       "(the forge is making it; this takes days), proposed (built, awaiting merge), denied, or failed. " \
+                       "wait holds the call up to that many seconds for it to be granted or denied.",
+      "inputSchema" => {
+        "type" => "object",
+        "required" => %w[id],
+        "properties" => {
+          "id" => { "type" => "string", "description" => "The petition id sentinel_petition answered with." },
+          "wait" => { "type" => "integer", "minimum" => 0, "maximum" => 25, "default" => 0 }
+        },
+        "additionalProperties" => false
+      },
+      "annotations" => { "readOnlyHint" => true, "destructiveHint" => false }
+    }.freeze
+
+    PETITION_NOTES = {
+      "granted" => "granted: you may ask for it now. If it is not among your tools yet, your client has to list " \
+                   "tools again (reconnect) before it appears",
+      "pending" => "a person will decide; check with sentinel_petition_status, or carry on without it for now",
+      "building" => "the forge is building it, which takes hours to days; finish without it and check another day",
+      "proposed" => "built and awaiting a person's merge; finish without it and check another day",
+      "failed" => "the build failed; a person will look. Do without it for now"
+    }.freeze
+
     module_function
+
+    # Whether the agent's charter lets it petition at all: the rule the
+    # steward reads (Sentinel::Steward::CHARTER), resolved the same way.
+    def petitions?(agent)
+      rule = SentinelPolicy.resolve(principal: agent, capability: Sentinel::Steward::CHARTER)
+      rule.present? && rule.effect != "deny"
+    end
 
     # -> { tool name => Capability } the agent may ask for at `clearance`.
     def capabilities(agent, clearance)
@@ -71,7 +132,10 @@ module Mcp
 
     def tools(agent, clearance)
       claimant = Sentinel::Claims::KNOWN_AGENTS.include?(agent.name)
-      capabilities(agent, clearance).map { |name, capability| as_json(name, capability, claimant: claimant) } + [ REQUEST_TOOL ]
+      tools = capabilities(agent, clearance).map { |name, capability| as_json(name, capability, claimant: claimant) }
+      tools << REQUEST_TOOL
+      tools += [ PETITION_TOOL, PETITION_STATUS_TOOL ] if petitions?(agent)
+      tools
     end
 
     def as_json(name, capability, claimant: false)
@@ -93,6 +157,10 @@ module Mcp
     def call(agent, clearance, name, arguments)
       arguments = (arguments || {}).to_h.deep_stringify_keys
       return request_status(agent, arguments) if name.to_s == REQUEST_TOOL["name"]
+      if [ PETITION_TOOL["name"], PETITION_STATUS_TOOL["name"] ].include?(name.to_s)
+        raise UnknownTool, "no tool named #{name.to_s.inspect}" unless petitions?(agent)
+        return name.to_s == PETITION_TOOL["name"] ? petition(agent, arguments) : petition_status(agent, arguments)
+      end
 
       capability = capabilities(agent, clearance)[name.to_s] or raise UnknownTool, "no tool named #{name.to_s.inspect}"
       reason = capability.input_schema&.dig("properties", REASON) ? nil : arguments.delete(REASON)
@@ -130,6 +198,37 @@ module Mcp
         request.reload
       end
       outcome(request)
+    end
+
+    def petition(agent, arguments)
+      petition = Sentinel.petition!(agent: agent, want: arguments["want"], capability: arguments["capability"].presence,
+                                    arguments: arguments["arguments"].is_a?(Hash) ? arguments["arguments"] : {},
+                                    reason: arguments["reason"].presence)
+      petition_outcome(petition)
+    end
+
+    def petition_status(agent, arguments)
+      id = arguments["id"]
+      raise Sentinel::Invalid, "id is required" if id.blank?
+
+      petition = agent.petitions.find(id)
+      wait = arguments["wait"].to_i.clamp(0, 25)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait
+      until petition.settled? || Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+        sleep 1
+        petition.reload
+      end
+      petition_outcome(petition)
+    end
+
+    # A denial is an error the model can read, like a denied request; every
+    # other status is an answer, with what to do next.
+    def petition_outcome(petition)
+      return [ "petition denied (#{petition.decided_by}): #{petition.rationale}", true ] if petition.status == "denied"
+
+      [ { "petition" => petition.id, "status" => petition.status, "capability" => petition.capability_name,
+          "effect" => petition.effect, "rationale" => petition.rationale,
+          "note" => PETITION_NOTES[petition.status] }.compact, false ]
     end
   end
 end

@@ -136,6 +136,15 @@ key, and uses a second endpoint that works the way the sentinel does:
   `sentinel_request`, which returns one of the agent's own requests
   (`wait` up to 25s). That is the same thing
   `GET /v1/sentinel/requests/:id` returns.
+- **Petitions, when the charter allows them.** An agent whose
+  `sentinel.petition` rule resolves to anything but `deny` also gets
+  `sentinel_petition` (`want`, `reason`, optional `capability` and example
+  `arguments`) and `sentinel_petition_status` (`id`, `wait` up to 25s). These
+  are `POST` and `GET /v1/sentinel/petitions`, and the steward decides the same
+  way (SENTINEL.md, *Petitions and the forge*). A denial is `isError`. Every
+  other status is an answer with a note on what to do next. The server says
+  `listChanged: false`, so a granted capability shows up as a tool only when
+  the client lists its tools again.
 - **Every call is a request.** `tools/call` is `Sentinel.submit!`: the gate,
   the reviewer, the executor, and a ledger row under the agent's name, the
   same as `POST /v1/sentinel/requests`. MCP has no `reason`, so every tool's

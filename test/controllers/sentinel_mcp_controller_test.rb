@@ -196,4 +196,53 @@ class SentinelMcpControllerTest < ActionDispatch::IntegrationTest
   ensure
     Consoles::Backends::Fake.reset!
   end
+
+  test "an agent whose charter lets it petition is offered sentinel_petition; others are not" do
+    refute_includes tool_names, "sentinel_petition", "no charter, no petitions"
+    rpc("tools/call", { name: "sentinel_petition", arguments: { want: "todos", reason: "x" } })
+    assert body["error"], "a tool the agent was not offered is a JSON-RPC error"
+    assert_equal 0, Petition.count
+
+    policy!(@claude, "sentinel.petition", "deny")
+    refute_includes tool_names, "sentinel_petition", "a deny charter hides it"
+
+    SentinelPolicy.where(capability: "sentinel.petition").update_all(effect: "confirm")
+    names = tool_names
+    assert_includes names, "sentinel_petition"
+    assert_includes names, "sentinel_petition_status"
+    refute_includes tool_names(token: @codex_token), "sentinel_petition", "another agent's charter is its own"
+  end
+
+  test "sentinel_petition files a petition under the agent's name and says what came of it" do
+    policy!(@claude, "sentinel.petition", "confirm", guidance: "Refer everything.")
+    @fake.reply({ "action" => "grant", "rationale" => "reads are fine", "capability" => "todo.list", "effect" => "allow",
+                  "constraints_json" => "{}", "limits_json" => "{}", "guidance" => "", "spec" => nil }.to_json)
+
+    pending = answered("sentinel_petition", { want: "read the household todo list", capability: "todo.list",
+                                              reason: "to remind Jenner what is due" })
+    assert_equal "pending", pending["status"], "a confirm charter refers every petition to a person"
+    assert_match(/person will decide/, pending["note"])
+    petition = @claude.petitions.sole
+    assert_equal pending["petition"], petition.id
+    assert_equal "to remind Jenner what is due", petition.reason
+    assert_equal "household", petition.realm
+
+    Sentinel.decide_petition!(petition, decision: "grant", decider: @principal, effect: "allow", rationale: "ok")
+    granted = answered("sentinel_petition_status", { id: petition.id })
+    assert_equal "granted", granted["status"]
+    assert_equal "todo.list", granted["capability"]
+    assert_includes tool_names, "todo_list", "the grant is in the tool list the next time it is listed"
+
+    petition.update_columns(status: "denied", decided_by: "human", rationale: "not that")
+    result = call_tool("sentinel_petition_status", { id: petition.id })
+    assert result["isError"]
+    assert_match(/petition denied \(human\): not that/, result["content"].first["text"])
+  end
+
+  test "an agent sees only its own petitions" do
+    policy!(nil, "sentinel.petition", "confirm")
+    codex_petition = as(@codex, realm: "household") { Sentinel.petition!(agent: @codex, want: "something") }
+    result = call_tool("sentinel_petition_status", { id: codex_petition.id })
+    assert result["isError"] || body["error"], "another agent's petition is not found"
+  end
 end

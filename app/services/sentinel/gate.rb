@@ -79,7 +79,7 @@ module Sentinel
     def petition_hint(rule)
       return "" unless rule.principal_id == @agent.id && rule.specificity == 2
 
-      ". To widen this grant's scope, petition (POST /v1/sentinel/petitions) for #{rule.capability}, " \
+      ". To widen this grant's scope, petition (sentinel_petition, or POST /v1/sentinel/petitions) for #{rule.capability}, " \
         "saying what you need it to cover and why"
     end
 

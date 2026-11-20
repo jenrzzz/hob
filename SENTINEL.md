@@ -549,6 +549,10 @@ POST /v1/sentinel/petitions/:id/decide { decision: grant|build|deny, capability?
                                          constraints?, limits?, guidance?, spec?, rationale }   a person
 ```
 
+An agent on hob's MCP endpoint (`/v1/sentinel/mcp`) petitions with the
+`sentinel_petition` and `sentinel_petition_status` tools instead. They are
+offered only when its charter allows petitions ([CLAUDE_CODE.md](CLAUDE_CODE.md), *Agents*).
+
 ### The steward
 
 `Sentinel::Steward` is the reviewer's counterpart for petitions: an LLM

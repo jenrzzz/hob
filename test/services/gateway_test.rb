@@ -46,8 +46,20 @@ class GatewayTest < ActiveSupport::TestCase
     assert_equal "refused", response.status
     assert_equal "refused", UsageEvent.last.status
 
+    @fake.reply("", stop_reason: nil)
+    response = Gateway.complete(role: "chat-default", messages: [ user_message("x") ])
+    assert response.refused?, "empty content with no stop reason is a refusal"
+    refute response.empty?
+  end
+
+  test "nothing said at a normal stop is an empty reply, not a refusal" do
     @fake.reply("", stop_reason: "end_turn")
-    assert Gateway.complete(role: "chat-default", messages: [ user_message("x") ]).refused?, "empty content is a refusal"
+    response = Gateway.complete(role: "chat-default", messages: [ user_message("x") ])
+    assert response.empty?
+    assert response.refused?, "still no usable answer"
+    assert_equal "empty", response.status
+    assert_equal "empty", UsageEvent.last.status
+    assert_equal "end_turn", UsageEvent.last.stop_reason
   end
 
   test "schema replies are parsed with hygiene" do

@@ -13,6 +13,10 @@
       <strong>The model refused.</strong>
       <% if e.stop_reason.present? %>Stop reason <code><%= e.stop_reason %></code>.<% end %>
       <% if e.error.present? %><%= e.error %><% elsif @payload&.response_content.blank? %>It returned nothing.<% end %>
+    <% when "empty" %>
+      <strong>The model said nothing.</strong>
+      It stopped normally (<code><%= e.stop_reason %></code>) with no text and no tool call — not a refusal.
+      <% if e.metadata.to_h["retry"].present? %>This was the retry, asked again with a nudge.<% elsif e.operation == "chat" %>The turn asked once more with a nudge; see the other calls for this ref.<% end %>
     <% when "rate_limited" %>
       <strong>Rate limited by <%= e.provider %>.</strong> <%= e.error %>
     <% else %>

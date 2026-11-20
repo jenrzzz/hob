@@ -1,7 +1,9 @@
-# The ledger. One row per gateway attempt — success, refusal, rate limit, or
-# error — so "what did this cost" and "what failed" are the same table.
+# The ledger. One row per gateway attempt — success, refusal, an empty
+# reply, rate limit, or error — so "what did this cost" and "what failed"
+# are the same table. `empty` is a normal stop with nothing said
+# (Gateway::Response#empty?), kept apart from a refusal.
 class UsageEvent < ApplicationRecord
-  STATUSES = %w[success refused rate_limited error].freeze
+  STATUSES = %w[success refused empty rate_limited error].freeze
 
   belongs_to :principal, optional: true
   # Realm-scoped (RLS): nil when the reader's clearance is below the call's.

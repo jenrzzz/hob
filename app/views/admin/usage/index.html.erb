@@ -110,6 +110,11 @@
     <%= link_to admin_usage_path(report.link_params(status: report.filter_value(:status) == "refused" ? nil : "refused")), class: "stat" do %>
       <b class="<%= 'warn' if stats[:refused].positive? %>"><%= number_with_delimiter(stats[:refused]) %></b><span>refused</span>
     <% end %>
+    <% if stats[:empty].positive? || report.filter_value(:status) == "empty" %>
+      <%= link_to admin_usage_path(report.link_params(status: report.filter_value(:status) == "empty" ? nil : "empty")), class: "stat", title: "The model stopped normally but said nothing" do %>
+        <b><%= number_with_delimiter(stats[:empty]) %></b><span>empty</span>
+      <% end %>
+    <% end %>
     <%= link_to admin_usage_path(report.link_params(status: report.filter_value(:status) == "failed" ? nil : "failed")), class: "stat" do %>
       <b class="<%= 'warn' if stats[:failed].positive? %>"><%= number_with_delimiter(stats[:failed]) %></b><span>failed</span>
     <% end %>

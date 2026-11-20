@@ -18,7 +18,8 @@ class UsageEvent < ApplicationRecord
     METRICS = { "cost" => "Cost", "calls" => "Calls" }.freeze
     DEFAULT_METRIC = "cost"
 
-    STATUSES = { "success" => "Success", "refused" => "Refused", "failed" => "Failed (error or rate limit)",
+    STATUSES = { "success" => "Success", "refused" => "Refused", "empty" => "Empty reply",
+                 "failed" => "Failed (error or rate limit)",
                  "error" => "Error", "rate_limited" => "Rate limited" }.freeze
 
     FILTER_DIMS = %i[role operation model surface provider principal_id status tool ref].freeze
@@ -132,9 +133,10 @@ class UsageEvent < ApplicationRecord
 
     def stats
       @stats ||= begin
-        calls, refused, failed, cost, input, output, cache_read, avg, unpriced = selection_scope.pick(
+        calls, refused, empty, failed, cost, input, output, cache_read, avg, unpriced = selection_scope.pick(
           Arel.sql("COUNT(*)"),
           Arel.sql("COUNT(*) FILTER (WHERE status = 'refused')"),
+          Arel.sql("COUNT(*) FILTER (WHERE status = 'empty')"),
           Arel.sql("COUNT(*) FILTER (WHERE status IN ('error', 'rate_limited'))"),
           Arel.sql("COALESCE(SUM(cost), 0)"),
           Arel.sql("COALESCE(SUM((units->>'input_tokens')::bigint), 0)"),
@@ -143,7 +145,7 @@ class UsageEvent < ApplicationRecord
           Arel.sql("AVG(duration_ms) FILTER (WHERE status = 'success')"),
           Arel.sql("COUNT(*) FILTER (WHERE status = 'success' AND cost IS NULL)")
         )
-        { calls: calls, refused: refused, failed: failed, cost: cost.to_f, input_tokens: input, output_tokens: output,
+        { calls: calls, refused: refused, empty: empty, failed: failed, cost: cost.to_f, input_tokens: input, output_tokens: output,
           cache_read_tokens: cache_read, avg_duration_ms: avg&.round, unpriced: unpriced }
       end
     end

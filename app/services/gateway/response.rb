@@ -28,16 +28,28 @@ module Gateway
       tool_calls.present?
     end
 
-    # A refusal is a distinct outcome: an explicit stop reason, or nothing at
-    # all came back (ruby_llm surfaces refusals as empty content).
+    # No usable answer: an explicit refusal stop reason, or nothing at all
+    # came back (ruby_llm surfaces refusals as empty content). Callers that
+    # only need "did it answer" ask this; #empty? tells the two apart.
     def refused?
       return false if tool_calls?
 
       REFUSAL_STOP_REASONS.include?(stop_reason.to_s) || content.blank?
     end
 
+    # Nothing came back, yet the model stopped normally (end_turn, stop):
+    # it ended its turn without a word, which is not a refusal and usually
+    # goes away when asked again. With no stop reason there's no telling,
+    # so that stays a refusal.
+    def empty?
+      return false if tool_calls? || content.present? || stop_reason.blank?
+
+      !REFUSAL_STOP_REASONS.include?(stop_reason.to_s)
+    end
+
     def status
-      if refused? then "refused"
+      if empty? then "empty"
+      elsif refused? then "refused"
       elsif tool_calls? then "tool_calls"
       else "success"
       end

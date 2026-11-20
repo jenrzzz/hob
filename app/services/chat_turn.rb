@@ -18,6 +18,9 @@
 # back only the client ones.
 class ChatTurn
   DEFAULT_ROLE = "chat-default".freeze
+  # Appended to the retry only (never a node, never in the snapshot) when a
+  # reply came back empty: a normal stop with no text and no tool call.
+  EMPTY_NUDGE = "(hob: your reply came back empty. Answer now, in words, or with a tool call if you meant to act.)".freeze
   UNIT_KEYS = %w[input_tokens output_tokens cache_read_tokens cache_creation_tokens].freeze
 
   Result = Struct.new(:user_node, :assistant_nodes, :tool_call_nodes, :native, :snapshot, :response, :units,
@@ -90,18 +93,19 @@ class ChatTurn
         raise Gateway::Invalid, "nothing for the assistant to answer: give content or an instruction"
       end
 
-      response = Gateway.complete(
-        role: @role, system: assembly.system, messages: assembly.messages,
-        tools: tools, tool_choice: tool_choice_for(anchor, tools),
-        params: @preset&.params || {}, operation: "chat",
-        ref: "conversation/#{@conversation.id}", snapshot: assembly.snapshot.digest,
-        realm: @conversation.taint_realm
-      ) { |type, text| stream&.call(text) if type == :delta }
+      # An empty reply (a normal stop, nothing said) is asked once more.
+      responses = [ ask(assembly, tools, anchor, stream) ]
+      responses << ask(assembly, tools, anchor, stream, nudge: true) if responses.last.empty?
+      response = responses.last
 
-      raise Gateway::Refused, "the model declined to reply" if response.refused?
+      if response.refused?
+        raise Gateway::Refused, response.empty? ? "the model replied with nothing, twice" : "the model declined to reply"
+      end
 
-      response.units.each { |k, v| units[k] += v.to_i }
-      cost = response.cost && (cost || 0) + response.cost
+      responses.each do |r|
+        r.units.each { |k, v| units[k] += v.to_i }
+        cost = r.cost && (cost || 0) + r.cost
+      end
 
       parent_hash = anchor&.content_hash || MessageNode::ROOT
       new_text = response.content.strip.empty? ? [] : append_reply(response, parent_hash: parent_hash, snapshot: assembly.snapshot)
@@ -138,6 +142,20 @@ class ChatTurn
   end
 
   private
+
+  # One model call for this round. nudge: the retry after an empty reply,
+  # with EMPTY_NUDGE after the assembled messages and a ledger mark.
+  def ask(assembly, tools, anchor, stream, nudge: false)
+    messages = assembly.messages
+    messages += [ { "role" => "user", "content" => EMPTY_NUDGE } ] if nudge
+    Gateway.complete(
+      role: @role, system: assembly.system, messages: messages,
+      tools: tools, tool_choice: tool_choice_for(anchor, tools),
+      params: @preset&.params || {}, operation: "chat",
+      ref: "conversation/#{@conversation.id}", snapshot: assembly.snapshot.digest,
+      realm: @conversation.taint_realm, metadata: nudge ? { "retry" => "empty reply" } : {}
+    ) { |type, text| stream&.call(text) if type == :delta }
+  end
 
   def result(user_node, assistant_nodes, client_nodes, outcomes, assembly, response, units, cost, rounds)
     Result.new(user_node: user_node, assistant_nodes: assistant_nodes, tool_call_nodes: client_nodes,

@@ -177,7 +177,10 @@ module Gateway
     end
 
     def meter(request, resolution, response: nil, status: nil, error: nil, started: nil)
-      status ||= response&.refused? ? "refused" : "success"
+      status ||= if response&.empty? then "empty"
+      elsif response&.refused? then "refused"
+      else "success"
+      end
       duration = response&.duration_ms ||
                  (started && ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round)
       UsageEvent.record(

@@ -95,6 +95,30 @@ class ChatTurnTest < ActiveSupport::TestCase
     assert_equal [ "user" ], convo.message_nodes.pluck(:role)
     assert_equal "refused", UsageEvent.last.status
   end
+
+  test "an empty reply is asked once more, with a nudge" do
+    convo = conversation
+    @fake.reply("", stop_reason: "end_turn", output_tokens: 9).reply("there you are")
+    result = ChatTurn.new(conversation: convo, branch: convo.branch, content: "hmm").call
+
+    assert_equal "there you are", result.assistant_node.content
+    assert_equal 14, result.units["output_tokens"], "both attempts are counted"
+    assert_equal 2, @fake.calls.size
+    refute_includes @fake.calls.first.messages.map { |m| m["content"] }, ChatTurn::EMPTY_NUDGE
+    assert_equal ChatTurn::EMPTY_NUDGE, @fake.calls.last.messages.last["content"]
+    assert_equal %w[empty success], UsageEvent.order(:id).last(2).map(&:status)
+    assert_equal({ "retry" => "empty reply" }, UsageEvent.last.metadata)
+    assert_equal %w[user assistant], convo.message_nodes.order(:created_at).pluck(:role)
+  end
+
+  test "an empty reply twice raises, leaving the user node" do
+    convo = conversation
+    @fake.reply("", stop_reason: "end_turn").reply("  ", stop_reason: "end_turn")
+    error = assert_raises(Gateway::Refused) { ChatTurn.new(conversation: convo, branch: convo.branch, content: "hmm").call }
+    assert_match "nothing, twice", error.message
+    assert_equal [ "user" ], convo.message_nodes.pluck(:role)
+    assert_equal %w[empty empty], UsageEvent.order(:id).last(2).map(&:status)
+  end
 end
 
 class ChatTurnToolsTest < ActiveSupport::TestCase

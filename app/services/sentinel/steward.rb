@@ -26,6 +26,20 @@ module Sentinel
     EFFECT_CAP = { "read" => "allow", "act" => "review" }.freeze
     EFFECT_ORDER = %w[confirm review allow].freeze # loosest last
 
+    # One tool in several parts: a session's steps, snapshot, list and close
+    # work only on a session the agent opened itself, so the opener is the
+    # gate and a grant of it carries the rest, allowed under these limits.
+    # Without them an agent holding only browse.open can neither use nor
+    # close what it opens. { opener => { companion => limits } }
+    COMPANIONS = {
+      "browse.open" => {
+        "browse.act" => { "per_hour" => 400, "per_day" => 2000 },
+        "browse.snapshot" => { "per_hour" => 120 },
+        "browse.sessions" => { "per_hour" => 60 },
+        "browse.close" => {}
+      }
+    }.freeze
+
     SCHEMA = {
       "type" => "object",
       "properties" => {
@@ -194,6 +208,7 @@ module Sentinel
       case verdict.action
       when "grant"
         rule = write_rule!(verdict, decided_by: decided_by, decider: decider)
+        write_companions!(rule)
         record(verdict, decided_by: decided_by, decider: decider)
         @petition.grant!(rule)
       when "build"
@@ -419,6 +434,24 @@ module Sentinel
                            petition: @petition, rationale: verdict.rationale)
       end
       rule
+    end
+
+    # The rules a granted opener carries (COMPANIONS). A companion the agent
+    # cannot reach, already holds a rule of its own for, or is denied by any
+    # rule is left as it is: a person's word stands.
+    def write_companions!(rule)
+      companions = COMPANIONS.fetch(rule.capability, {})
+      return [] if companions.empty?
+
+      reachable = grantable.to_h { |cap, covering| [ cap.name, covering ] }
+      companions.filter_map do |name, limits|
+        next unless reachable.key?(name)
+
+        covering = reachable[name]
+        next if covering && covering.principal_id == @agent.id && covering.specificity == 2
+
+        SentinelPolicy.create!(principal: @agent, capability: name, effect: "allow", limits: limits)
+      end
     end
 
     def dispatch_build!(verdict)

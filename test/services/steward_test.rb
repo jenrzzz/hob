@@ -439,6 +439,27 @@ class StewardTest < ActiveSupport::TestCase
     assert_raises(Sentinel::Invalid) { Sentinel.decide_petition!(other, decision: "grant", decider: @principal, capability: "hob.conversation.read", effect: "sometimes") }
   end
 
+  test "a grant of browse.open carries the session's other tools, leaving a person's rules alone" do
+    charter!(@muse, "confirm")
+    steward_says("refer", rationale: "a person decides")
+    row = petition("the browser suite, to look something up", capability: "browse.open")
+    policy!(@muse, "browse.snapshot", "review")
+    policy!(@muse, "browse.close", "deny")
+
+    Sentinel.decide_petition!(row, decision: "grant", decider: @principal, capability: "browse.open", effect: "allow")
+    rules = SentinelPolicy.where(principal: @muse).where("capability LIKE 'browse.%'").index_by(&:capability)
+    assert_equal "allow", rules["browse.open"].effect
+    assert_equal "allow", rules["browse.act"].effect
+    assert_equal({ "per_hour" => 400, "per_day" => 2000 }, rules["browse.act"].limits)
+    assert_equal "allow", rules["browse.sessions"].effect
+    assert_equal "review", rules["browse.snapshot"].effect, "a rule the agent already holds is kept"
+    assert_equal "deny", rules["browse.close"].effect, "a deny is a person's word"
+
+    names = Mcp::Agent.tools(@muse, "household").map { |t| t["name"] }
+    assert_includes names, "browse_act"
+    assert_includes names, "browse_sessions"
+  end
+
   test "deny by the steward, limits per day, and an unavailable steward refers" do
     charter!(@muse, "allow", limits: { "per_day" => 2 })
     steward_says("deny", rationale: "other people's mail is not yours")

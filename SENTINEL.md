@@ -549,6 +549,13 @@ POST /v1/sentinel/petitions/:id/decide { decision: grant|build|deny, capability?
                                          constraints?, limits?, guidance?, spec?, rationale }   a person
 ```
 
+A petition names one capability, but some are one tool in several parts. A
+grant of `browse.open` carries `browse.act`, `browse.snapshot`,
+`browse.sessions` and `browse.close` (`Steward::COMPANIONS`): each works only
+on a session the agent opened itself, so the opener is the gate, and the rest
+are written as `allow` rules with their own limits. A companion the agent
+already holds a rule for, or that any rule denies, is left as it is.
+
 An agent on hob's MCP endpoint (`/v1/sentinel/mcp`) petitions with the
 `sentinel_petition` and `sentinel_petition_status` tools instead. They are
 offered only when its charter allows petitions ([CLAUDE_CODE.md](CLAUDE_CODE.md), *Agents*).

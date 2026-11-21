@@ -40,9 +40,34 @@ module Forge
 
   # Runs a command; the default shells out. Tests inject a lambda with the
   # same signature: (argv, chdir:, stdin:) -> [status(Integer), stdout, stderr].
-  def self.run(argv, chdir:, stdin: nil)
-    out, err, status = Open3.capture3(*argv, chdir: chdir, stdin_data: stdin)
-    [ status.exitstatus, out, err ]
+  #
+  # With `timeout` (seconds) a command still running then is killed, with
+  # its children, and answers 124 as timeout(1) does. `coder ssh` waits for
+  # a workspace's agent for as long as it takes, which for a workspace whose
+  # agent is gone is forever.
+  def self.run(argv, chdir:, stdin: nil, timeout: nil)
+    Open3.popen3(*argv, chdir: chdir, pgroup: true) do |input, output, error, thread|
+      readers = [ output, error ].map { |io| Thread.new { io.read } }
+      begin
+        input.write(stdin) if stdin
+      rescue Errno::EPIPE
+        nil # it did not want its stdin
+      end
+      input.close
+      unless thread.join(timeout)
+        [ "TERM", "KILL" ].each do |signal|
+          Process.kill(signal, -thread.pid)
+          break if thread.join(5)
+        rescue Errno::ESRCH, Errno::EPERM
+          break
+        end
+        readers.each { |reader| reader.join(5) || reader.kill }
+        out, err = readers.map { |reader| reader.value.to_s }
+        next [ 124, out, "#{err}\n#{argv.first} did not finish within #{timeout}s and was stopped".strip ]
+      end
+      out, err = readers.map(&:value)
+      [ thread.value.exitstatus, out, err ]
+    end
   end
 
   # The build a mission's payload asks for: a capability (Build) or an app's
@@ -487,6 +512,8 @@ module Forge
   class Workspace
     DIR = "/home/node/forge".freeze # payload, result, log, and worktrees inside the workspace
     LOST = 10                       # consecutive failed polls before the workspace is given up on
+    PATIENCE = 900                  # seconds any one coder command gets: a create pulls an image, a first ssh waits for the clone
+    GONE = %w[disconnected timeout].freeze # a workspace agent's status when nothing will answer an ssh
     DEAD = 2                        # polls in a row with no report and no build process before it is called dead
     # The report if there is one; PENDING while the build's process lives; the
     # report again, in case it landed between those two; otherwise DEAD.
@@ -503,7 +530,7 @@ module Forge
       @image = image
       @repo = repo
       @base = base
-      @runner = runner || Forge.method(:run)
+      @runner = runner || ->(argv, chdir:, stdin: nil) { Forge.run(argv, chdir: chdir, stdin: stdin, timeout: PATIENCE) }
       @log = log
       @poll = poll
       @timeout = timeout
@@ -520,7 +547,14 @@ module Forge
     def call
       ours = false
       failed = true
-      if exists?
+      left = existing
+      if left && gone?(left)
+        say "workspace #{name}, left by an earlier run, no longer answers: deleting it and building afresh"
+        ours = true
+        destroy!
+        left = nil
+      end
+      if left
         say "adopting workspace #{name}, left by an earlier run"
         ours = true
         unless started?
@@ -551,15 +585,24 @@ module Forge
 
     # --- steps -----------------------------------------------------------
 
-    # Whether an earlier run left this mission's workspace behind. A listing
-    # that fails is an error, not "no": creating over a live workspace would
-    # fail and then delete it.
-    def exists?
+    # The workspace an earlier run left behind for this mission, as coder
+    # lists it, or nil. A listing that fails is an error, not "none":
+    # creating over a live workspace would fail and then delete it.
+    def existing
       out = coder! "list", "--output", "json", "--search", "name:#{name}"
       rows = JSON.parse(out)
-      rows.is_a?(Array) && rows.any? { |row| row.is_a?(Hash) && row["name"] == name }
+      rows.is_a?(Array) ? rows.find { |row| row.is_a?(Hash) && row["name"] == name } : nil
     rescue JSON::ParserError
       raise Error, "coder list did not print JSON: #{tail(out, 300)}"
+    end
+
+    # Whether a workspace's agent has gone away (its container died, or the
+    # box restarted under it). Nothing in there can be asked how its build
+    # went, and `coder ssh` would wait on it for good. A workspace still
+    # starting ("connecting") is not gone.
+    def gone?(row)
+      agents = Array(row.dig("latest_build", "resources")).flat_map { |r| r.is_a?(Hash) ? Array(r["agents"]) : [] }
+      agents.any? && agents.all? { |agent| agent.is_a?(Hash) && GONE.include?(agent["status"]) }
     end
 
     # Whether the build in an adopted workspace was ever started (it writes
@@ -633,6 +676,11 @@ module Forge
 
         sleep @poll
       end
+    end
+
+    # A dead workspace has to be gone before one of the same name is made.
+    def destroy!
+      coder! "delete", name, "--yes"
     end
 
     def destroy

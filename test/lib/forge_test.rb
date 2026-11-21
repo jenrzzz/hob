@@ -327,6 +327,37 @@ class ForgeTest < ActiveSupport::TestCase
     assert @commands.all? { |argv, _, _| argv.first == "coder" }, "the loop's box only ever runs coder"
   end
 
+  test "a workspace left behind whose agent is gone is deleted and built afresh, not waited on" do
+    built = { "ok" => true, "pull_request" => "https://github.com/jenrzzz/hob/pull/9" }
+    row = lambda do |status|
+      [ 0, [ { "name" => "forge-8rhp3akk", "latest_build" => { "resources" => [ { "agents" => [ { "status" => status } ] }, { "agents" => nil } ] } } ].to_json, "" ]
+    end
+    ws = workspace(built, mission: "01M31CZEXF4GWZWA0F8RHP3AKK", runner: coder_runner(built, pending: 0, list: row.call("disconnected")))
+    assert_equal built.except("ok"), ws.call
+    names = @commands.map { |argv, _, _| argv.take(2).join(" ") }
+    assert_equal [ "coder list", "coder delete", "coder create" ], names.take(3)
+    assert_nil @commands.find { |argv, _, _| argv.last.to_s.include?("build.pid -o -e") }, "nothing in there was asked anything"
+    assert @commands.find { |argv, _, _| argv.last.to_s.include?("setsid nohup") }, "the build starts again"
+
+    # Still starting is not gone: it is adopted, and the first ssh waits for it.
+    @commands.clear
+    starting = workspace(built, mission: "01M31CZEXF4GWZWA0F8RHP3AKK", runner: coder_runner(built, pending: 0, list: row.call("connecting")))
+    assert_equal built.except("ok"), starting.call
+    assert_nil @commands.map { |argv, _, _| argv.take(2).join(" ") }.index("coder create")
+  end
+
+  test "a command that outlives its timeout is stopped and answers 124" do
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    status, out, err = Forge.run([ "sh", "-c", "echo before; sleep 30; echo after" ], chdir: Dir.pwd, timeout: 0.5)
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 10
+    assert_equal 124, status
+    assert_equal "before\n", out
+    assert_match(/sh did not finish within 0.5s/, err)
+
+    assert_equal [ 0, "hello", "" ], Forge.run([ "cat" ], chdir: Dir.pwd, stdin: "hello", timeout: 5)
+    assert_equal [ 3, "", "oops\n" ], Forge.run([ "sh", "-c", "echo oops >&2; exit 3" ], chdir: Dir.pwd)
+  end
+
   test "a workspace an earlier run left behind is adopted: no second build, just the polling and the delete" do
     built = { "ok" => true, "pull_request" => "https://github.com/jenrzzz/hob/pull/9" }
     ws = workspace(built, mission: "01M31CZEXF4GWZWA0F8RHP3AKK", runner: coder_runner(built, pending: 1, list: %w[forge-other forge-8rhp3akk]))

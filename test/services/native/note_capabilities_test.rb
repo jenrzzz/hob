@@ -92,6 +92,51 @@ class NoteCapabilitiesTest < ActiveSupport::TestCase
     assert_equal 4, @quire.writes.size, "the denied rewrite never reached quire"
   end
 
+  test "an agent's own library: hers alone, and the only one she reaches" do
+    meluzina, = agent("meluzina", clearance: "personal")
+    policy!(meluzina, "note.*", "allow")
+    mine = @quire.folder("Meluzina")
+    diary = @quire.note(mine, "Thursday", text: "the cats", modified: "2026-11-20T09:00:00Z")
+    note_backend("meluzina-notes", agent: meluzina)
+    as_her = ->(capability, arguments = {}, realm: "personal") { submit(capability, arguments, agent: meluzina, realm: realm) }
+
+    # FakeQuire serves every folder to every key; what is checked here is
+    # which hob rows she may name (quire's key scope is the second lock).
+    found = as_her.("note.search")
+    assert_equal "completed", found.status, found.error.to_s
+    assert_equal [ "meluzina-notes" ], found.result["notes"].map { |n| n["backend"] }.uniq
+    assert_equal [ "meluzina-notes" ], as_her.("note.folders").result["folders"].map { |f| f["backend"] }.uniq
+    assert_equal "completed", as_her.("note.append", { "id" => "meluzina-notes:#{diary}", "text" => "and rain" }).status
+    created = as_her.("note.create", { "title" => "Friday", "text" => "a poke" })
+    assert_equal "completed", created.status, "with one library in sight, a note with no folder needs no backend named"
+
+    %w[jenner-notes house-notes].each do |other|
+      assert_match(/NotFound: no note backend named "#{other}"/, as_her.("note.get", { "id" => "#{other}:#{@groceries}" }).error)
+      assert_match(/NotFound/, as_her.("note.append", { "id" => "#{other}:#{@groceries}", "text" => "x" }).error)
+    end
+    assert_match(/NotFound/, as_her.("note.search", { "backend" => "jenner-notes" }).error)
+
+    skipsy, = agent("skipsy", clearance: "personal")
+    policy!(skipsy, "note.*", "allow")
+    assert_match(/NotFound/, submit("note.get", { "id" => "meluzina-notes:#{diary}" }, agent: skipsy, realm: "personal").error)
+    refute_includes submit("note.search", {}, agent: skipsy, realm: "personal").result["notes"].map { |n| n["backend"] }, "meluzina-notes"
+
+    as(@principal, realm: "personal") { assert_includes Notes.backends.map(&:name), "meluzina-notes", "people see every library" }
+  end
+
+  test "an agent whose library is off, or out of sight, finds nothing rather than everyone else's" do
+    meluzina, = agent("meluzina", clearance: "personal")
+    policy!(meluzina, "note.*", "allow")
+    row = note_backend("meluzina-notes", agent: meluzina)
+
+    household = submit("note.search", {}, agent: meluzina, realm: "household")
+    assert_equal [ [], [] ], [ household.result["notes"], household.result["unavailable"] ], "not house-notes, in a household turn"
+
+    row.update!(enabled: false)
+    assert_empty submit("note.search", {}, agent: meluzina, realm: "personal").result["notes"]
+    assert_match(/NotFound/, submit("note.get", { "id" => "jenner-notes:#{@groceries}" }, agent: meluzina, realm: "personal").error)
+  end
+
   test "a person's assistant gets the same capabilities as MCP tools" do
     names = Mcp.tools("household").keys
     (READS + ACTS).each { |name| assert_includes names, name.tr(".", "_") }

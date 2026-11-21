@@ -698,7 +698,8 @@ CREATE TABLE public.note_backends (
     config jsonb DEFAULT '{}'::jsonb NOT NULL,
     enabled boolean DEFAULT true NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    agent_id bigint
 );
 
 ALTER TABLE ONLY public.note_backends FORCE ROW LEVEL SECURITY;
@@ -2917,6 +2918,13 @@ CREATE UNIQUE INDEX index_model_roles_on_role ON public.model_roles USING btree 
 
 
 --
+-- Name: index_note_backends_on_agent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_note_backends_on_agent_id ON public.note_backends USING btree (agent_id);
+
+
+--
 -- Name: index_note_backends_on_name; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3712,6 +3720,14 @@ ALTER TABLE ONLY public.record_collections
 
 ALTER TABLE ONLY public.browsers
     ADD CONSTRAINT fk_rails_133c4d17e4 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: note_backends fk_rails_165e6280d2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.note_backends
+    ADD CONSTRAINT fk_rails_165e6280d2 FOREIGN KEY (agent_id) REFERENCES public.principals(id);
 
 
 --
@@ -4950,6 +4966,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261121000001'),
 ('20261120000003'),
 ('20261120000002'),
 ('20261120000001'),

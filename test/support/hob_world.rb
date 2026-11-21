@@ -105,8 +105,8 @@ module HobWorld
 
   # A note backend row (NOTES.md). There is no fake kind: the quire adapter
   # is pointed at FakeQuire (test/support/fake_quire.rb) through its transport.
-  def note_backend(name = "jenner-notes", realm: "personal", owner: @principal, **config)
-    NoteBackend.create!(name: name, kind: "quire", realm: realm, principal: owner,
+  def note_backend(name = "jenner-notes", realm: "personal", owner: @principal, agent: nil, enabled: true, **config)
+    NoteBackend.create!(name: name, kind: "quire", realm: realm, principal: owner, agent: agent, enabled: enabled,
                         config: { "url" => "http://mini.test:8380", "key_env" => "HOB_TEST_QUIRE_KEY" }.merge(config.stringify_keys))
   end
 

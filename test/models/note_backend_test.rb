@@ -29,6 +29,15 @@ class NoteBackendTest < ActiveSupport::TestCase
     refute build(name: "Jenner Notes").valid?
   end
 
+  test "a library kept for one agent names an agent, and says so" do
+    meluzina, = agent("meluzina", clearance: "personal")
+    row = build(name: "meluzina-notes", agent: meluzina)
+    assert row.save, row.errors.full_messages.to_sentence
+    assert_equal "meluzina", row.as_json["agent"]
+    assert_match(/must be an agent: #{@principal.name} is a human/, build(agent: @principal).tap(&:valid?).errors[:agent].to_sentence)
+    assert_nil build.as_json["agent"]
+  end
+
   test "config: a url and a key, and nothing it does not know" do
     assert_match(/needs a url/, config_errors(QUIRE.except("url")))
     assert_match(/needs a key or a key_env/, config_errors(QUIRE.except("key_env")))

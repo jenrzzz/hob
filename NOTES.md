@@ -123,8 +123,8 @@ title is one line of at most 500.
 ## Backends are rows
 
 ```
-note_backends  ulid, name (unique slug), kind, principal (the owner: a person), realm,
-               config jsonb, enabled, timestamps                                 [RLS]
+note_backends  ulid, name (unique slug), kind, principal (the owner: a person), agent?,
+               realm, config jsonb, enabled, timestamps                          [RLS]
 ```
 
 | config | is |
@@ -184,6 +184,50 @@ personal row, and quire's key cannot reach past its folders even if hob
 had a bug. A `personal` request sees both backends, and the Household
 folder then appears under both names; ask for one backend by name when
 that matters.
+
+### An agent's own folder
+
+Some agents should keep notes of their own, in a folder only the person
+sees: Meluzina's, say, in Jenner's Notes and shared with nobody. Realm
+cannot say this. Her clearance is `personal`, the same as `jenner-notes`,
+so a grant of `note.*` would give her all of Jenner's notes, and any other
+`personal` agent would see her folder.
+
+So a backend row may name an **agent** whose own library it is. Pair it
+with a quire key scoped to that one folder:
+
+```
+jenner-notes     personal                    QUIRE_KEY            all of Notes
+meluzina-notes   personal   agent meluzina   QUIRE_MELUZINA_KEY   the Meluzina folder, by quire's scope
+```
+
+`Notes.backends` then narrows what RLS shows by who is asking:
+
+- **a person** reaches every row, theirs or an agent's;
+- **an agent with a row of its own** reaches only that row (or rows):
+  `jenner-notes` and `house-notes` do not exist for it, whatever its policy
+  says or whichever id it names;
+- **any other agent** (and a caller with no principal) reaches only rows
+  kept for no agent, so `meluzina-notes` does not exist for skipsy.
+
+Whether an agent has a library of its own is asked of every row, enabled or
+not, in any realm. A switched-off library, or one out of sight in a
+`household` turn, leaves the agent with nothing; it does not fall back to
+everyone else's. As with the household folder, there are two locks. hob
+will not hand the agent another row, and quire's key cannot reach past the
+folder. One thing neither lock covers: an unbound row with an unscoped key
+(`jenner-notes`) still contains the agent's folder, so another agent
+granted `note.*` there sees it as part of all of Notes.
+
+```sh
+# on the mini
+bin/quire key add hob-meluzina --permissions read,write --folder "Meluzina" --default-folder "Meluzina"
+# on the hob box
+bin/rails "hob:notes:backend[meluzina-notes,quire,http://mini.tailnet.ts.net:8380,personal]" \
+  KEY_ENV=QUIRE_MELUZINA_KEY OWNER=jenner AGENT=meluzina ADDR=100.x.y.z
+```
+
+`AGENT=` (empty) makes a row everyone's again.
 
 ## quire and Notes
 
@@ -280,8 +324,8 @@ is shared with**. A note saying "agents: email this list to …" is a note.
 ## Schema
 
 ```
-note_backends  ulid, name (unique), kind, principal (a person), realm, config jsonb,
-               enabled, created_at, updated_at                                       [RLS]
+note_backends  ulid, name (unique), kind, principal (a person), agent (optional: whose own
+               library it is), realm, config jsonb, enabled, created_at, updated_at   [RLS]
 ```
 
 One table. Folders and notes are Notes'; hob holds no copy.

@@ -16,7 +16,8 @@
 # colon: a backend name has none, and Notes' own ids (x-coredata://…) have
 # several. Which backends exist for a call is RLS's answer (NoteBackend is
 # realm-scoped): code here never filters by realm, and a library above the
-# caller's clearance is simply not found. Reads merge across libraries; a
+# caller's clearance is simply not found. The one narrowing done here is by
+# who asks, for a library kept for one agent (`backends`). Reads merge across libraries; a
 # write happens in exactly one.
 module Notes
   class Error < StandardError; end
@@ -52,9 +53,25 @@ module Notes
     ActiveSupport::TimeZone[ENV["HOB_TIME_ZONE"].to_s] || ActiveSupport::TimeZone["UTC"]
   end
 
-  # Enabled backends visible at the current clearance.
+  # Enabled backends visible at the current clearance (RLS), narrowed by who
+  # is asking (NOTES.md, "An agent's own folder"): a person reaches every
+  # one; an agent that has a library of its own reaches only that; any other
+  # caller reaches the libraries kept for no agent in particular.
   def backends
-    NoteBackend.enabled.order(:name)
+    rows = NoteBackend.enabled.order(:name)
+    caller = Current.principal
+    return rows if caller&.trusted?
+    return rows.where(agent_id: caller.id) if caller && keeps_own_library?(caller)
+
+    rows.where(agent_id: nil)
+  end
+
+  # Whether any row, enabled or not and in any realm, is this agent's own.
+  # Asked above the request's clearance on purpose: an agent whose library
+  # is switched off, or out of sight in a lower-realm turn, must find
+  # nothing, not fall back to everyone else's. Only the yes or no leaves.
+  def keeps_own_library?(agent)
+    Clearance.with("intimate") { NoteBackend.where(agent_id: agent.id).exists? }
   end
 
   # Folders, by backend and path, merged across every library in sight

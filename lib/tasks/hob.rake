@@ -327,7 +327,7 @@ namespace :hob do
 
   namespace :notes do
     desc "Register (or update) a note backend (NOTES.md): bin/rails \"hob:notes:backend[jenner-notes,quire,http://mini.tailnet.ts.net:8380,personal]\" " \
-         "KEY_ENV=QUIRE_KEY (or KEY=<the key>). OWNER=jenner ADDR=<tailnet IP> READ_ONLY=1 ENABLED=0"
+         "KEY_ENV=QUIRE_KEY (or KEY=<the key>). OWNER=jenner AGENT=<an agent whose own library it is; empty clears> ADDR=<tailnet IP> READ_ONLY=1 ENABLED=0"
     task :backend, [ :name, :kind, :url, :realm ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:notes:backend[name,kind=quire,url,realm=personal]\" KEY_ENV= | KEY=" if args[:name].blank?
 
@@ -337,6 +337,7 @@ namespace :hob do
         row.realm = args[:realm].presence || row.realm || "personal"
         row.principal = Principal.find_by!(name: ENV["OWNER"]) if ENV["OWNER"].present?
         row.principal ||= Principal.find_by!(name: "jenner")
+        row.agent = (Principal.find_by!(name: ENV["AGENT"]) if ENV["AGENT"].present?) if ENV.key?("AGENT")
         config = row.config.dup
         config["url"] = args[:url] if args[:url].present?
         config = config.except("key", "key_env").merge("key" => ENV["KEY"]) if ENV["KEY"].present?
@@ -348,7 +349,7 @@ namespace :hob do
         created = row.new_record?
         row.save!
         puts "#{row.name}: #{created ? 'registered' : 'updated'}; #{row.kind} at #{row.url}, realm #{row.realm}, owner #{row.principal.name}" \
-             "#{row.read_only? ? ', read-only' : ''}#{row.enabled? ? '' : ', disabled'}"
+             "#{row.agent ? ", #{row.agent.name}'s own" : ''}#{row.read_only? ? ', read-only' : ''}#{row.enabled? ? '' : ', disabled'}"
         puts "  #{row.config['key_env']} is not set in this environment" if row.config["key_env"].present? && ENV[row.config["key_env"]].blank?
         puts "check it: bin/rails \"hob:notes:check[#{row.name}]\""
       end
@@ -357,7 +358,7 @@ namespace :hob do
     desc "List note backends and whether each answers"
     task backends: :environment do
       Clearance.with("intimate") do
-        rows = NoteBackend.includes(:principal).order(:name)
+        rows = NoteBackend.includes(:principal, :agent).order(:name)
         puts "no note backends; bin/rails \"hob:notes:backend[name,quire,url,realm]\" KEY_ENV=" if rows.empty?
         rows.each do |row|
           state = "disabled" unless row.enabled?
@@ -367,6 +368,7 @@ namespace :hob do
             "unreachable: #{e.message}"
           end
           puts "#{row.name.ljust(24)} #{row.kind.ljust(8)} #{row.realm.ljust(10)} #{row.principal.name.ljust(10)} " \
+               "#{(row.agent ? "for #{row.agent.name}" : '').ljust(14)} " \
                "#{(row.read_only? ? 'read-only' : 'read-write').ljust(10)} #{state}"
         end
       end

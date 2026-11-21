@@ -17,6 +17,10 @@
 #              keeps the hostname, as TodoBackend's does
 #   read_only  optional: true refuses every write, whatever quire's key could do
 #
+# `agent`, optional, makes the row one agent's own library (NOTES.md, "An
+# agent's own folder"): only that agent, and people, reach it, and that agent
+# reaches no other library. Notes.backends enforces it, beside RLS.
+#
 # The key never leaves: `as_json` says whether one is set and which env var
 # names it, and `inspect` masks the whole config.
 class NoteBackend < ApplicationRecord
@@ -25,12 +29,14 @@ class NoteBackend < ApplicationRecord
   self.filter_attributes = [ :config ]
 
   belongs_to :principal
+  belongs_to :agent, class_name: "Principal", optional: true
 
   validates :name, presence: true, uniqueness: true, format: { with: NAME_FORMAT }
   validates :realm, presence: true
   validate :kind_known
   validate :realm_known
   validate :owned_by_a_person
+  validate :kept_for_an_agent
   validate :config_shape
 
   before_validation { self.config = config.deep_stringify_keys if config.is_a?(Hash) }
@@ -61,7 +67,7 @@ class NoteBackend < ApplicationRecord
   end
 
   def as_json(*)
-    { "id" => id, "name" => name, "kind" => kind, "owner" => principal&.name, "realm" => realm,
+    { "id" => id, "name" => name, "kind" => kind, "owner" => principal&.name, "agent" => agent&.name, "realm" => realm,
       "enabled" => enabled, "config" => safe_config, "created_at" => created_at, "updated_at" => updated_at }
   end
 
@@ -88,6 +94,10 @@ class NoteBackend < ApplicationRecord
 
   def owned_by_a_person
     errors.add(:principal, "must be a person: a note backend holds somebody's notes") if principal && !principal.trusted?
+  end
+
+  def kept_for_an_agent
+    errors.add(:agent, "must be an agent: #{agent.name} is a #{agent.kind}") if agent && !agent.agent?
   end
 
   def config_shape

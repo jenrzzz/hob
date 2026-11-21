@@ -143,7 +143,7 @@ Her life turns (below) get the same tools.
 
 `personas.life` (`PersonaLife`) holds the instruction her life turns run
 under, the realm her life is kept at (`personal`), her zone and the odds of
-a beat by her local hour, the minimum gap, the beats (lanes of directions a
+a beat by her local hour, the minimum gap, the tool rounds a beat may take, the beats (lanes of directions a
 beat may be sent to, drawn avoiding the last few), an optional paper (a JSON
 Feed read on one beat in `odds`, past `skip` items), the whisper dial
 (`off`/`rare`/`daily`), and `home`, the conversation her whispers land in.
@@ -167,6 +167,16 @@ whether he is around, and whether a whisper may go. Her tools:
 
 Beside them are her corpora (`recall_archive`, `find_track`: a song whisper
 pastes a real link) and her agent's tools ("Her agent").
+
+**Her machine.** When her agent has a shell host of its own and may run
+commands on it (SHELL.md), a beat's prompt says so: the host, what a
+person wrote about it, that it is real and not imagined, and the last few
+things she did there (`Shells.trail`, from her sentinel requests), since
+nothing else in a beat remembers. It is there every beat and asks for
+nothing; a lane sends her there, or she goes. `life.max_iterations` is the
+tool rounds a beat may take (default 10, which a diary needs and tinkering
+outgrows); the prompt tells her the number and to keep one for the diary.
+kat pushes it with the rest of her life.
 
 **The whisper gate** is kat's: the dial's cooldown (60 hours rare, 18
 daily), cleared when he has written in the home conversation since her last

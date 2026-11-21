@@ -126,6 +126,14 @@ it again. Changing a row's login to another address clears the pin.
 hob offers only the row's key. It reads no `~/.ssh/config`, agent, or
 `known_hosts` on the box it runs on.
 
+## In a persona's beat
+
+A persona whose agent has a host of its own is told about it in every beat
+of her life (MELUZINA.md, "A persona's life"): the host and its `about`,
+that what she does there is real, and `Shells.trail`: her last few
+`shell.exec` and `shell.write` requests as one line each, with how each
+ended. Reads are left out. The trail is read at the beat's realm.
+
 ## The machine
 
 Nothing in hob limits what a command does. A login with sudo on its own

@@ -7,6 +7,8 @@
 #     "odds" => { "0-5" => 0.2, ... },   chance per 15-minute check, by local hour (default 0.1)
 #     "min_gap_minutes" => 180,          never two beats closer than this
 #     "role" => "...",                   model role (default the persona's)
+#     "max_iterations" => 24,            tool rounds a beat may take (default ToolExchange's); a life
+#                                        with a machine to tinker on wants more than a diary needs
 #     "beats" => { lane => [direction, ...] },   where a beat may go, drawn avoiding recent lanes
 #     "paper" => { "url" => <JSON Feed>, "odds" => 3, "skip" => 1 },  read on one beat in `odds`,
 #                                        past the first `skip` items (a briefing)
@@ -24,7 +26,8 @@
 class PersonaLife
   class Invalid < StandardError; end
 
-  OPTIONS = %w[instruction realm zone odds min_gap_minutes role beats paper dial home].freeze
+  OPTIONS = %w[instruction realm zone odds min_gap_minutes role max_iterations beats paper dial home].freeze
+  MAX_ITERATIONS = 60
   DIALS = %w[off rare daily].freeze
   COOLDOWNS = { "rare" => 60.hours, "daily" => 18.hours }.freeze
   DEFAULT_ODDS = 0.1
@@ -69,6 +72,10 @@ class PersonaLife
     problems << "life.dial is off, rare or daily" if config["dial"].present? && !DIALS.include?(config["dial"])
     problems << "life.odds maps hour ranges (\"0-5\") to chances" unless odds_read?(config["odds"])
     problems << "life.beats maps lanes to lists of directions" unless beats_read?(config["beats"])
+    rounds = config["max_iterations"]
+    unless rounds.nil? || (rounds.is_a?(Integer) && rounds.between?(2, MAX_ITERATIONS))
+      problems << "life.max_iterations is a whole number from 2 to #{MAX_ITERATIONS}"
+    end
     paper = config["paper"]
     problems << "life.paper needs a url" if paper.present? && (!paper.is_a?(Hash) || paper["url"].blank?)
     problems
@@ -108,6 +115,19 @@ class PersonaLife
 
   def dial
     DIALS.include?(config["dial"]) ? config["dial"] : "off"
+  end
+
+  # Tool rounds one beat may take.
+  def max_iterations
+    config["max_iterations"].presence&.to_i || ToolExchange::DEFAULT_MAX_ITERATIONS
+  end
+
+  # The agent this persona acts as (AgentTools), or nil.
+  def agent
+    return @agent if defined?(@agent)
+
+    name = persona.tools.to_h.stringify_keys["agent"].presence
+    @agent = name && Principal.find_by(name: name, kind: "agent")
   end
 
   # Her home conversation is usually above her life's realm (the Discord DM

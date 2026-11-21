@@ -46,9 +46,8 @@ module Shells
   # is asking: a person reaches every one; an agent that has a host of its
   # own reaches only that; any other caller reaches the hosts kept for no
   # agent in particular.
-  def hosts
+  def hosts(caller = Current.principal)
     rows = ShellHost.enabled.order(:name)
-    caller = Current.principal
     return rows if caller&.trusted?
     return rows.where(agent_id: caller.id) if caller && keeps_own_host?(caller)
 
@@ -61,6 +60,34 @@ module Shells
   # nothing, and does not fall back to everyone else's.
   def keeps_own_host?(agent)
     Clearance.with("intimate") { ShellHost.where(agent_id: agent.id).exists? }
+  end
+
+  # What an agent last did on its machines, oldest first, for telling it
+  # (a persona's beat, PersonaLife::Beat): the commands it ran and the files
+  # it wrote, each as { "at" => Time, "did" => one line }. Looking is left
+  # out. Read at the current clearance, so a lower-realm turn does not see
+  # what was done from a higher one.
+  def trail(agent, limit: 6)
+    names = %w[shell.exec shell.write]
+    SentinelRequest.joins(:capability).where(principal: agent, capabilities: { name: names }, status: %w[completed failed])
+                   .order(created_at: :desc, id: :desc).limit(limit).includes(:capability).to_a.reverse.map do |request|
+      { "at" => request.created_at, "did" => did(request) }
+    end
+  end
+
+  def did(request)
+    arguments = request.arguments.to_h
+    if request.capability.name == "shell.write"
+      line = "#{arguments['append'] ? 'added to' : 'wrote'} #{arguments['path']}"
+      return request.status == "failed" ? "#{line} (it failed: #{request.error.to_s.truncate(120)})" : line
+    end
+
+    line = "ran `#{arguments['command'].to_s.squish.truncate(140)}`"
+    line += " in #{arguments['cwd']}" if arguments["cwd"].present?
+    return "#{line} (it failed: #{request.error.to_s.truncate(120)})" if request.status == "failed"
+
+    result = request.result.to_h
+    result["timed_out"] ? "#{line} (still running when hob stopped waiting)" : "#{line} (exit #{result['exit']})"
   end
 
   # One command, through the login's shell, starting in its home (or `cwd`).

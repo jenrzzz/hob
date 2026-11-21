@@ -38,6 +38,10 @@ class PersonaLifeTest < ActiveSupport::TestCase
     assert_not @mel.update(life: LIFE.merge("odds" => { "night" => 0.5 }))
     assert_not @mel.update(life: LIFE.merge("beats" => { "kitchen" => "cook" }))
     assert_not @mel.update(life: LIFE.merge("surprise" => true))
+    assert_not @mel.update(life: LIFE.merge("max_iterations" => 1))
+    assert_not @mel.update(life: LIFE.merge("max_iterations" => "lots"))
+    assert @mel.update(life: LIFE.merge("max_iterations" => 24))
+    assert_equal 24, PersonaLife.new(@mel).max_iterations
     assert @mel.update(life: LIFE)
     assert @mel.update(life: {}), "empty turns it off"
   end
@@ -190,5 +194,45 @@ class PersonaLifeTest < ActiveSupport::TestCase
     @fake.reply("ok")
     PersonaLife.new(@mel).beat!(now: 4.hours.from_now)
     assert_match(/him: soup sounds good/, @fake.calls[-2].messages.last["content"].to_s)
+  end
+
+  test "a beat tells her of a machine of her own: that it is real, and what she last did there" do
+    native_capabilities!
+    agent, = agent("meluzina", clearance: "personal")
+    @mel.update!(tools: { "agent" => "meluzina" }, life: @mel.life.merge("max_iterations" => 24))
+    life = PersonaLife.new(@mel)
+    prompt = -> { PersonaLife::Beat.new(life, now: Time.utc(2026, 11, 21, 9, 0), rng: Random.new(1)).prompt }
+    refute_match(/YOUR MACHINE/, Clearance.with("personal") { prompt.call }, "she has no machine")
+
+    shell_host("house-box")
+    shell_host("meluzina-box", agent: agent, about: "Your own server. It serves meluzina.example.")
+    refute_match(/YOUR MACHINE/, Clearance.with("personal") { prompt.call }, "a machine she may not run commands on")
+
+    policy!(agent, "shell.*", "allow")
+    text = Clearance.with("personal") { prompt.call }
+    assert_match(/YOUR MACHINE - meluzina-box \(you are hob@meluzina-box\.test there\): Your own server\. It serves meluzina\.example\./, text)
+    assert_match(/this is not imagined/, text)
+    assert_match(/You have not touched it yet\./, text)
+    assert_match(/This beat has 24 tool rounds in all/, text)
+    refute_match(/house-box/, text)
+
+    Shells::Backends::Fake.machine("meluzina-box").on(/sleep/) { { "timed_out" => true } }
+    steps = [
+      [ "shell.exec", { "command" => "apt-get install -y caddy", "cwd" => "/tmp" } ],
+      [ "shell.hosts", {} ],
+      [ "shell.write", { "path" => "site/index.html", "content" => "<h1>rar</h1>" } ],
+      [ "shell.exec", { "command" => "sleep 900" } ],
+      [ "shell.exec", { "command" => "ls", "timeout" => 9999 } ]
+    ]
+    steps.each_with_index do |(capability, arguments), minute|
+      travel_to Time.utc(2026, 11, 21, 7, 30 + minute) do
+        as(agent, realm: "personal") { Sentinel.submit!(agent: agent, capability: capability, arguments: arguments) }
+      end
+    end
+    text = Clearance.with("personal") { prompt.call }
+    assert_match(/The last things you did there \(oldest first\):\n- Nov 21, 1:30am: ran `apt-get install -y caddy` in \/tmp \(exit 0\)\n- Nov 21, 1:32am: wrote site\/index\.html\n- Nov 21, 1:33am: ran `sleep 900` \(still running when hob stopped waiting\)\n- Nov 21, 1:34am: ran `ls` \(it failed: Invalid: timeout must be/, text)
+    refute_match(/You have not touched it yet/, text)
+  ensure
+    Shells::Backends::Fake.reset!
   end
 end

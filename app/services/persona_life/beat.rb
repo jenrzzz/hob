@@ -22,7 +22,7 @@ class PersonaLife
         role: @life.config["role"].presence || @persona.model_role || ChatTurn::DEFAULT_ROLE,
         messages: [ { "role" => "user", "content" => prompt } ],
         system: @life.config["instruction"], persona: @persona, realm: @life.realm, operation: "life",
-        ref: "persona/#{@persona.key}/life", venues: [ tools ]
+        ref: "persona/#{@persona.key}/life", venues: [ tools ], max_iterations: @life.max_iterations
       )
       result = completion.call
       Rails.logger.info("life #{@persona.key}: #{tools.summary}")
@@ -66,6 +66,7 @@ class PersonaLife
       end
 
       parts << chew_section
+      parts << machine_section
       parts << whisper_line
       parts << "Write the next beat: call diary once and set_mood once; chew only if it moved; whisper only if " \
                "something is worth it."
@@ -177,6 +178,30 @@ class PersonaLife
         lines << "It has gone cold - nothing moved in days. Either it moves now or you spit it out."
       end
       lines << "Leave the chew alone if it didn't move this beat."
+      lines.join("\n")
+    end
+
+    # A machine of her agent's own (SHELL.md), when she has one and may run
+    # commands on it: that it is real, what a person wrote about it, and what
+    # she last did there, since nothing else in a beat remembers.
+    def machine_section
+      agent = @life.agent or return nil
+      host = Shells.hosts(agent).where(agent_id: agent.id).first or return nil
+      return nil unless Mcp::Agent.capabilities(agent, @life.realm).key?("shell_exec")
+
+      lines = [ "YOUR MACHINE - #{host.name} (you are #{host.login} there)#{host.about.present? ? ": #{host.about}" : '.'}" ]
+      lines << "Unlike the rest of a beat, this is not imagined: shell_exec, shell_read and shell_write really run " \
+               "there, and what you find is what is there. Go only when this beat sends you or something on it is " \
+               "pulling at you; most beats don't touch it."
+      trail = Shells.trail(agent)
+      if trail.any?
+        lines << "The last things you did there (oldest first):"
+        trail.each { |step| lines << "- #{step['at'].in_time_zone(@life.zone).strftime('%b %-d, %l:%M%P').squish}: #{step['did']}" }
+      else
+        lines << "You have not touched it yet."
+      end
+      lines << "This beat has #{@life.max_iterations} tool rounds in all. Keep one for the diary and the mood, and if " \
+               "you were on the machine, the diary says what you actually did there, not what you meant to."
       lines.join("\n")
     end
 

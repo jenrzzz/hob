@@ -1410,6 +1410,27 @@ ALTER TABLE ONLY public.sentinel_requests FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: shell_hosts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.shell_hosts (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    kind character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    agent_id bigint,
+    realm character varying NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    about character varying,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.shell_hosts FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: sign_in_grants; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2313,6 +2334,14 @@ ALTER TABLE ONLY public.sentinel_policies
 
 ALTER TABLE ONLY public.sentinel_requests
     ADD CONSTRAINT sentinel_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: shell_hosts shell_hosts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shell_hosts
+    ADD CONSTRAINT shell_hosts_pkey PRIMARY KEY (id);
 
 
 --
@@ -3436,6 +3465,27 @@ CREATE INDEX index_sentinel_requests_on_status_and_created_at ON public.sentinel
 
 
 --
+-- Name: index_shell_hosts_on_agent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_shell_hosts_on_agent_id ON public.shell_hosts USING btree (agent_id);
+
+
+--
+-- Name: index_shell_hosts_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_shell_hosts_on_name ON public.shell_hosts USING btree (name);
+
+
+--
+-- Name: index_shell_hosts_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_shell_hosts_on_principal_id ON public.shell_hosts USING btree (principal_id);
+
+
+--
 -- Name: index_sign_in_grants_on_code_digest; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3760,6 +3810,14 @@ ALTER TABLE ONLY public.schedules
 
 ALTER TABLE ONLY public.gofer_key_changes
     ADD CONSTRAINT fk_rails_28ce00eb44 FOREIGN KEY (decider_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: shell_hosts fk_rails_28e16f3dfe; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shell_hosts
+    ADD CONSTRAINT fk_rails_28e16f3dfe FOREIGN KEY (principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -4256,6 +4314,14 @@ ALTER TABLE ONLY public.people_loops
 
 ALTER TABLE ONLY public.authorization_claims
     ADD CONSTRAINT fk_rails_cc0ae52300 FOREIGN KEY (sentinel_request_id) REFERENCES public.sentinel_requests(id);
+
+
+--
+-- Name: shell_hosts fk_rails_d0003b8138; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shell_hosts
+    ADD CONSTRAINT fk_rails_d0003b8138 FOREIGN KEY (agent_id) REFERENCES public.principals(id);
 
 
 --
@@ -4870,6 +4936,15 @@ CREATE POLICY realm_visibility ON public.sentinel_requests USING ((( SELECT real
 
 
 --
+-- Name: shell_hosts realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.shell_hosts USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (shell_hosts.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
 -- Name: situation_observations realm_visibility; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -4936,6 +5011,12 @@ ALTER TABLE public.schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sentinel_requests ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: shell_hosts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.shell_hosts ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: situation_observations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4966,6 +5047,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261121000002'),
 ('20261121000001'),
 ('20261120000003'),
 ('20261120000002'),

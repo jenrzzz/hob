@@ -17,6 +17,7 @@ its agents keep, [PEOPLE.md](PEOPLE.md) for who it knows,
 [SCHEDULES.md](SCHEDULES.md) for its clock,
 [BROWSE.md](BROWSE.md) for the household's browser,
 [HTTP.md](HTTP.md) for the requests hob makes to the web for an agent,
+[SHELL.md](SHELL.md) for the machines an agent may run commands on,
 [EGRESS.md](EGRESS.md) for the household's other address (a proposal), and
 [CLAUDE_CODE.md](CLAUDE_CODE.md) for how a person's own assistant gets in.
 

@@ -101,7 +101,11 @@ module Sentinel
       "console_act" => "Sentinel::Native::ConsoleAct",
       "console_screen" => "Sentinel::Native::ConsoleScreen",
       "console_close" => "Sentinel::Native::ConsoleClose",
-      "console_sessions" => "Sentinel::Native::ConsoleSessions"
+      "console_sessions" => "Sentinel::Native::ConsoleSessions",
+      "shell_hosts" => "Sentinel::Native::ShellHosts",
+      "shell_exec" => "Sentinel::Native::ShellExec",
+      "shell_read" => "Sentinel::Native::ShellRead",
+      "shell_write" => "Sentinel::Native::ShellWrite"
     }.freeze
 
     # Images a handler hands back (KVM.md: a console's screen) ride under

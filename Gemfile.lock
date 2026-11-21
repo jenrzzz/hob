@@ -444,14 +444,17 @@ PLATFORMS
 
 DEPENDENCIES
   apnotic (~> 1.8)
+  bcrypt_pbkdf
   bootsnap
   brakeman
   bundler-audit
   debug
+  ed25519
   fugit (~> 1.11)
   icalendar (~> 2.12)
   json_schemer (~> 2.5)
   kamal
+  net-ssh
   omniauth (~> 2.1)
   omniauth-rails_csrf_protection (~> 2.0)
   omniauth_openid_connect (~> 0.8.0)

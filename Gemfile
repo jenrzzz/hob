@@ -21,6 +21,12 @@ gem "fugit", "~> 1.11" # cron lines for schedules (SCHEDULES.md); solid_queue al
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 
+# shell.* (SHELL.md): commands on a machine over ssh. ed25519 and bcrypt_pbkdf
+# are what net-ssh needs to read an ed25519 key.
+gem "net-ssh"
+gem "ed25519"
+gem "bcrypt_pbkdf"
+
 # Deploy this application anywhere as a Docker container [https://kamal-deploy.org]
 gem "kamal", require: false
 

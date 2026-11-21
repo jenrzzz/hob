@@ -141,6 +141,10 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `browse.sessions` | read | the agent's open sessions, and the browsers visible to it |
 | `http.get` | act | fetch one public URL from hob, following its redirects ([HTTP.md](HTTP.md)); never an address inside the household |
 | `http.post` | act | send one form, JSON, or plain body to a public URL (a one-click unsubscribe, say); its redirect is not followed |
+| `shell.hosts` | read | the machines the agent may run commands on ([SHELL.md](SHELL.md)), and which is its own |
+| `shell.exec` | act | one command over ssh on such a machine, with its exit, stdout, and stderr; no session carries between calls |
+| `shell.read` | read | a text file on the machine, or a slice of it |
+| `shell.write` | act | a whole text file on the machine, replaced or appended to |
 
 Surfaces register their own, as `webhook` rows (or `poll`, with a worker
 as assignee), and each carries the realm annotation the design's IFC gate
@@ -785,6 +789,7 @@ calendar_events    ulid, source_agent, owner, calendar, uid (unique together), s
 calendar_backends  where calendars are read from, realm-scoped: what calendar.* reaches (CALENDARS.md)   [RLS]
 mail_backends      the household's mail accounts, realm-scoped: what mail.* reaches (MAIL.md)            [RLS]
 browsers           the household's real browsers, realm-scoped: what browse.open reaches (BROWSE.md)   [RLS]
+shell_hosts        machines an agent may run commands on, realm-scoped: what shell.* reaches (SHELL.md)  [RLS]
 browse_sessions    a tab an agent opened, for a goal: what binds each browse.act to a judged open     [RLS]
 ```
 

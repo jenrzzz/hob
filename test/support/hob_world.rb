@@ -116,6 +116,13 @@ module HobWorld
     Browser.create!(name: name, kind: kind, realm: realm, principal: owner, **attrs)
   end
 
+  # A shell host row (SHELL.md). The default kind is the in-memory Fake,
+  # whose machine lives in Shells::Backends::Fake.machine(name) until Fake.reset!.
+  def shell_host(name = "box", realm: "household", kind: "fake", owner: @principal, agent: nil, **attrs)
+    ShellHost.create!(name: name, kind: kind, realm: realm, principal: owner, agent: agent,
+                      config: { "host" => "#{name}.test", "user" => "hob" }, **attrs)
+  end
+
   # Runs a block the way a request from `principal` at `realm` would.
   # A console row (KVM.md). The default kind is the in-memory Fake, whose
   # device lives in Consoles::Backends::Fake.device(name) until Fake.reset!.

@@ -1297,6 +1297,106 @@ end
 
 # Consoles (KVM.md): KVMs on the household's computers.
 namespace :hob do
+  namespace :shell do
+    desc "Register (or update) a machine an agent may run commands on (SHELL.md), over ssh. " \
+         "bin/rails \"hob:shell:host[meluzina-box,meluzina@100.64.0.9,household]\" KEY_ENV=MELUZINA_BOX_KEY " \
+         "(or KEY=<the private key>) OWNER=jenner AGENT=meluzina ABOUT=\"Her own server; serves meluzina.example\" PORT=22 ENABLED=0. " \
+         "AGENT= (empty) gives a host back to every agent."
+    task :host, [ :name, :login, :realm ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:shell:host[name,user@host,realm=household]\" KEY_ENV= | KEY= OWNER= AGENT= ABOUT= PORT=" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = ShellHost.find_or_initialize_by(name: args[:name])
+        row.kind ||= "ssh"
+        row.realm = args[:realm].presence || row.realm || "household"
+        row.principal = Principal.find_by!(name: ENV["OWNER"]) if ENV["OWNER"].present?
+        row.principal ||= Principal.find_by!(name: "jenner")
+        row.agent = ENV["AGENT"].present? ? Principal.find_by!(name: ENV["AGENT"]) : nil if ENV.key?("AGENT")
+        row.about = ENV["ABOUT"].presence if ENV.key?("ABOUT")
+        config = row.config.dup
+        if args[:login].present?
+          user, _, address = args[:login].rpartition("@")
+          abort "login is user@host" if user.blank? || address.blank?
+          moved = config["host"].present? && (config["host"] != address || config["user"] != user)
+          config = config.except("host_key") if moved
+          config.merge!("user" => user, "host" => address)
+        end
+        config["port"] = ENV["PORT"].presence&.to_i if ENV.key?("PORT")
+        config = config.except("key", "key_env").merge("key_env" => ENV["KEY_ENV"]) if ENV["KEY_ENV"].present?
+        config = config.except("key", "key_env").merge("key" => ENV["KEY"]) if ENV["KEY"].present?
+        row.config = config.compact
+        row.enabled = ENV["ENABLED"] != "0" if ENV.key?("ENABLED")
+        created = row.new_record?
+        row.save!
+        puts "#{row.name}: #{created ? 'registered' : 'updated'}; #{row.login}, realm #{row.realm}, owner #{row.principal.name}" \
+             "#{row.agent ? ", #{row.agent.name}'s own" : ''}#{row.enabled? ? '' : ', disabled'}; " \
+             "key #{row.config['key_env'].present? ? "from #{row.config['key_env']}#{row.key.blank? ? ' (not set in this environment)' : ''}" : 'stored in the row'}"
+        if row.host_key.blank?
+          puts "not trusted yet: bin/rails \"hob:shell:trust[#{row.name}]\""
+        else
+          puts "check it: bin/rails \"hob:shell:check[#{row.name}]\""
+        end
+      end
+    end
+
+    desc "Trust a machine: log in with hob's key, show the machine's own key, and pin it, so hob connects only to " \
+         "that machine from then on. Compare what it prints with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` " \
+         "on the machine. Run it again after the machine is rebuilt. bin/rails \"hob:shell:trust[meluzina-box]\""
+    task :trust, [ :name ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:shell:trust[name]\"" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = ShellHost.find_by!(name: args[:name])
+        abort "#{row.name} is a #{row.kind} host; only ssh hosts have a key to trust" unless row.adapter.respond_to?(:scan)
+        begin
+          seen = row.adapter.scan
+        rescue Shells::Error => e
+          abort "#{row.name}: #{e.class.name.demodulize.downcase}: #{e.message}"
+        end
+        was = row.host_key
+        row.update!(config: row.config.merge("host_key" => seen))
+        puts "#{row.name}: #{row.login} shows #{seen}"
+        puts(was.present? && was != seen ? "  replaced #{was}" : "  pinned")
+        puts "check it: bin/rails \"hob:shell:check[#{row.name}]\""
+      end
+    end
+
+    desc "List shell hosts and whether each answers"
+    task hosts: :environment do
+      Clearance.with("intimate") do
+        rows = ShellHost.includes(:principal, :agent).order(:name)
+        puts "no shell hosts; bin/rails \"hob:shell:host[name,user@host,realm]\" KEY_ENV=" if rows.empty?
+        rows.each do |row|
+          state = "disabled" unless row.enabled?
+          state ||= begin
+            row.adapter.check && "reachable"
+          rescue Shells::Error => e
+            "unreachable: #{e.message}"
+          end
+          puts "#{row.name.ljust(20)} #{row.login.ljust(32)} #{row.realm.ljust(10)} #{row.principal.name.ljust(10)} " \
+               "#{(row.agent ? "for #{row.agent.name}" : '').ljust(14)} #{state}"
+        end
+      end
+    end
+
+    desc "Ask one shell host how it is: hob's key is taken, the machine is the one trusted, a command runs. " \
+         "bin/rails \"hob:shell:check[meluzina-box]\""
+    task :check, [ :name ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:shell:check[name]\"" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = ShellHost.find_by!(name: args[:name])
+        begin
+          status = row.adapter.check
+          puts "#{row.name}: reachable"
+          status.except("reachable").each { |name, value| puts "  #{name}: #{value.is_a?(String) ? value : value.to_json}" }
+        rescue Shells::Error => e
+          abort "#{row.name}: #{e.class.name.demodulize.downcase}: #{e.message}"
+        end
+      end
+    end
+  end
+
   namespace :console do
     desc "Register (or update) a console (KVM.md): a JetKVM, through its bridge. " \
          "bin/rails \"hob:console:console[jenner-mac,jetkvm,http://bridgehost.tailnet.ts.net:8379,personal]\" KEY_ENV=KVM_BRIDGE_KEY " \

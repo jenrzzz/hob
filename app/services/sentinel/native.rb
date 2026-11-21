@@ -105,7 +105,9 @@ module Sentinel
       "shell_hosts" => "Sentinel::Native::ShellHosts",
       "shell_exec" => "Sentinel::Native::ShellExec",
       "shell_read" => "Sentinel::Native::ShellRead",
-      "shell_write" => "Sentinel::Native::ShellWrite"
+      "shell_write" => "Sentinel::Native::ShellWrite",
+      "code_start" => "Sentinel::Native::CodeStart",
+      "code_status" => "Sentinel::Native::CodeStatus"
     }.freeze
 
     # Images a handler hands back (KVM.md: a console's screen) ride under

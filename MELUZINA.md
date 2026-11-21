@@ -178,6 +178,10 @@ tool rounds a beat may take (default 10, which a diary needs and tinkering
 outgrows); the prompt tells her the number and to keep one for the diary.
 kat pushes it with the rest of her life.
 
+**Claude Code.** When her agent has a code repo and may start commissions
+(CODE.md), a beat also says that anything bigger than a few lines goes to
+Claude Code with `code_start`, and how her last three commissions went.
+
 **The whisper gate** is kat's: the dial's cooldown (60 hours rare, 18
 daily), cleared when he has written in the home conversation since her last
 whisper, and nothing while he is talking with her (a line from him in the

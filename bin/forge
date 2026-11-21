@@ -100,6 +100,6 @@ build = if options[:coder]
 end
 worker = Forge::Worker.new(hob: hob, repo: root, workdir: options[:workdir], base: options[:base], build: build)
 where = options[:coder] ? "fresh #{options[:template]} workspaces at #{ENV['CODER_URL']} (#{options[:image]}, repo #{options[:repo]})" : "repo #{root}, worktrees in #{options[:workdir]}"
-$stderr.puts "[forge] listening for #{Forge::KIND} and #{Forge::Upkeep::KIND} missions at #{ENV['HOB_URL']}; building in #{where}"
+$stderr.puts "[forge] listening for #{Forge::KIND}, #{Forge::Upkeep::KIND} and #{Forge::Commission::KIND} missions at #{ENV['HOB_URL']}; building in #{where}"
 handled = worker.work(wait: options[:wait], once: options[:once], drain: options[:drain])
 $stderr.puts "[forge] handled #{handled} mission(s)"

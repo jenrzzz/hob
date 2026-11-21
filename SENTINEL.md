@@ -145,6 +145,8 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `shell.exec` | act | one command over ssh on such a machine, with its exit, stdout, and stderr; no session carries between calls |
 | `shell.read` | read | a text file on the machine, or a slice of it |
 | `shell.write` | act | a whole text file on the machine, replaced or appended to |
+| `code.start` | act | hand a piece of building to Claude Code on the forge ([CODE.md](CODE.md)): a brief, done in the agent's own repo and pushed there |
+| `code.status` | read | how the agent's commissions went, and its repos |
 
 Surfaces register their own, as `webhook` rows (or `poll`, with a worker
 as assignee), and each carries the realm annotation the design's IFC gate
@@ -790,6 +792,7 @@ calendar_backends  where calendars are read from, realm-scoped: what calendar.* 
 mail_backends      the household's mail accounts, realm-scoped: what mail.* reaches (MAIL.md)            [RLS]
 browsers           the household's real browsers, realm-scoped: what browse.open reaches (BROWSE.md)   [RLS]
 shell_hosts        machines an agent may run commands on, realm-scoped: what shell.* reaches (SHELL.md)  [RLS]
+code_repos         a GitHub repo that is one agent's workshop, realm-scoped: where code.start's work lands (CODE.md)  [RLS]
 browse_sessions    a tab an agent opened, for a goal: what binds each browse.act to a judged open     [RLS]
 ```
 

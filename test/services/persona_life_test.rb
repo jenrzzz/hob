@@ -235,4 +235,32 @@ class PersonaLifeTest < ActiveSupport::TestCase
   ensure
     Shells::Backends::Fake.reset!
   end
+
+  test "a beat tells her she can hand work to Claude Code, and how the last of it went" do
+    native_capabilities!
+    forge!
+    agent, = agent("meluzina", clearance: "personal")
+    @mel.update!(tools: { "agent" => "meluzina" })
+    life = PersonaLife.new(@mel)
+    prompt = -> { Clearance.with("personal") { PersonaLife::Beat.new(life, now: Time.utc(2026, 11, 21, 9, 0), rng: Random.new(1)).prompt } }
+    code_repo("meluzina-box", agent: agent, about: "cloned at ~/workshop")
+    refute_match(/CLAUDE CODE/, prompt.call, "a repo she may not commission in")
+
+    policy!(agent, "code.*", "allow")
+    text = prompt.call
+    assert_match(/CLAUDE CODE - anything bigger than a few lines, hand to Claude Code with code_start: it builds in your repo meluzina-box \(cloned at ~\/workshop\)/, text)
+    refute_match(/What you handed over lately/, text)
+
+    brief = "A guestbook page with a form, stored in sqlite, newest entries first, on port 8080."
+    ids = [ "A guestbook", "A front page" ].each_with_index.map do |title, minute|
+      travel_to Time.utc(2026, 11, 21, 7, 30 + minute) do
+        as(agent, realm: "personal") { Commissions.start(title: title, brief: brief)["id"] }
+      end
+    end
+    Clearance.with("intimate") do
+      Mission.find(ids.first).complete!({ "branch" => "main", "status" => "pushed", "commit_count" => 2, "summary" => "Made app.rb.\nRun it." })
+    end
+    text = prompt.call
+    assert_match(/What you handed over lately \(newest first\):\n- Nov 21, 1:31am, "A front page" \(#{ids.last}\): waiting\n- Nov 21, 1:30am, "A guestbook" \(#{ids.first}\): done, 2 commits on main\. It said: Made app\.rb\./, text)
+  end
 end

@@ -49,17 +49,33 @@ module Forge
   # upkeep (Upkeep, lib/forge/upkeep.rb). `base` is hob's branch, which an
   # upkeep build has no use for: it works on its own repo's.
   def self.build(payload:, repo:, workdir:, base: "main", log: $stderr)
-    if (payload || {}).to_h["kind"] == Upkeep::KIND
+    kind = (payload || {}).to_h["kind"]
+    if kind == Upkeep::KIND
       Upkeep.new(payload: payload, workdir: workdir, log: log)
+    elsif kind == Commission::KIND
+      Commission.new(payload: payload, workdir: workdir, guard: origin_of(repo), log: log)
     else
       Build.new(payload: payload, repo: repo, workdir: workdir, base: base, log: log)
     end
   end
 
+  # "owner/name" of the GitHub repo a checkout came from, or nil: the repo a
+  # commission must not be able to push to (Commission#guard!).
+  def self.origin_of(path)
+    status, out, = run(%w[git remote get-url origin], chdir: path)
+    status.zero? ? out.strip[%r{github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?\z}, 1] : nil
+  rescue SystemCallError
+    nil
+  end
+
   # What a mission is about, for names and logs, after the checks its kind
-  # makes: a capability's name, or an upkeep's repo.
+  # makes: a capability's name, or an upkeep's or a commission's repo.
   def self.label!(payload)
-    (payload || {}).to_h["kind"] == Upkeep::KIND ? Upkeep.check!(payload) : check!(payload)
+    case (payload || {}).to_h["kind"]
+    when Upkeep::KIND then Upkeep.check!(payload)
+    when Commission::KIND then Commission.check!(payload)
+    else check!(payload)
+    end
   end
 
   # The checks every build makes before it runs anything. -> the spec's name
@@ -558,7 +574,19 @@ module Forge
     def create
       say "creating workspace #{name} from template #{template} with #{image}"
       coder! "create", name, "--template", template, "--yes", "--use-parameter-defaults",
-             "--parameter", "repo=#{repo}", "--parameter", "branch=#{base}", "--parameter", "image=#{image}"
+             "--parameter", "repo=#{repo}", "--parameter", "branch=#{base}", "--parameter", "image=#{image}",
+             *secrets_parameter
+    end
+
+    # A commission is an agent's brief, so its workspace mounts its own
+    # secrets directory (a GitHub token scoped to the agent's repo, and the
+    # Claude token) instead of the forge's (CODE.md, "The sandbox"). A
+    # template without the parameter fails the create, which is the point:
+    # a commission never runs beside the forge's token.
+    def secrets_parameter
+      return [] unless payload["kind"] == Commission::KIND
+
+      [ "--parameter", "secrets=#{ENV.fetch('FORGE_COMMISSION_SECRETS', 'secrets-commission')}" ]
     end
 
     # The first command waits for the startup script, which clones the repo.
@@ -751,3 +779,4 @@ module Forge
 end
 
 require_relative "forge/upkeep"
+require_relative "forge/commission"

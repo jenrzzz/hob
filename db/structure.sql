@@ -377,6 +377,26 @@ ALTER SEQUENCE public.capabilities_id_seq OWNED BY public.capabilities.id;
 
 
 --
+-- Name: code_repos; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.code_repos (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    repo character varying NOT NULL,
+    principal_id bigint NOT NULL,
+    agent_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    about character varying,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.code_repos FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: console_sessions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2025,6 +2045,14 @@ ALTER TABLE ONLY public.capabilities
 
 
 --
+-- Name: code_repos code_repos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.code_repos
+    ADD CONSTRAINT code_repos_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: console_sessions console_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2720,6 +2748,27 @@ CREATE INDEX index_capabilities_on_plugin_id ON public.capabilities USING btree 
 --
 
 CREATE UNIQUE INDEX index_capabilities_on_plugin_id_and_remote_name ON public.capabilities USING btree (plugin_id, remote_name) WHERE (plugin_id IS NOT NULL);
+
+
+--
+-- Name: index_code_repos_on_agent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_code_repos_on_agent_id ON public.code_repos USING btree (agent_id);
+
+
+--
+-- Name: index_code_repos_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_code_repos_on_name ON public.code_repos USING btree (name);
+
+
+--
+-- Name: index_code_repos_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_code_repos_on_principal_id ON public.code_repos USING btree (principal_id);
 
 
 --
@@ -3821,6 +3870,14 @@ ALTER TABLE ONLY public.shell_hosts
 
 
 --
+-- Name: code_repos fk_rails_297bb386ec; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.code_repos
+    ADD CONSTRAINT fk_rails_297bb386ec FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: ward_findings fk_rails_2b2f7cfe82; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3834,6 +3891,14 @@ ALTER TABLE ONLY public.ward_findings
 
 ALTER TABLE ONLY public.calendar_contributors
     ADD CONSTRAINT fk_rails_2dc963feae FOREIGN KEY (owner_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: code_repos fk_rails_2ef5bcebb6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.code_repos
+    ADD CONSTRAINT fk_rails_2ef5bcebb6 FOREIGN KEY (agent_id) REFERENCES public.principals(id);
 
 
 --
@@ -4543,6 +4608,12 @@ ALTER TABLE public.budget_backends ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.calendar_backends ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: code_repos; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.code_repos ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: console_sessions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4717,6 +4788,15 @@ CREATE POLICY realm_visibility ON public.budget_backends USING ((( SELECT realms
 CREATE POLICY realm_visibility ON public.calendar_backends USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (calendar_backends.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: code_repos realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.code_repos USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (code_repos.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -5047,6 +5127,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261121000003'),
 ('20261121000002'),
 ('20261121000001'),
 ('20261120000003'),

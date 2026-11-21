@@ -1297,6 +1297,48 @@ end
 
 # Consoles (KVM.md): KVMs on the household's computers.
 namespace :hob do
+  namespace :code do
+    desc "Register (or update) a GitHub repo an agent may commission work in (CODE.md). " \
+         "bin/rails \"hob:code:repo[meluzina-box,jenrzzz/meluzina-box,personal]\" AGENT=meluzina OWNER=jenner " \
+         "ABOUT=\"Cloned at ~/workshop on meluzina-box\" ENABLED=0"
+    task :repo, [ :name, :repo, :realm ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:code:repo[name,owner/repo,realm=personal]\" AGENT= OWNER= ABOUT=" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        row = CodeRepo.find_or_initialize_by(name: args[:name])
+        row.repo = args[:repo] if args[:repo].present?
+        row.realm = args[:realm].presence || row.realm || "personal"
+        row.principal = Principal.find_by!(name: ENV["OWNER"]) if ENV["OWNER"].present?
+        row.principal ||= Principal.find_by!(name: "jenner")
+        row.agent = Principal.find_by!(name: ENV["AGENT"]) if ENV["AGENT"].present?
+        row.about = ENV["ABOUT"].presence if ENV.key?("ABOUT")
+        row.enabled = ENV["ENABLED"] != "0" if ENV.key?("ENABLED")
+        created = row.new_record?
+        row.save!
+        puts "#{row.name}: #{created ? 'registered' : 'updated'}; #{row.repo}, realm #{row.realm}, owner #{row.principal.name}, " \
+             "#{row.agent.name}'s own#{row.enabled? ? '' : ', disabled'}"
+        puts "  there is no forge worker to hand commissions to (hob:forge:setup)" if Commissions.forge.nil?
+        puts "grant it: bin/rails \"hob:sentinel:policy[#{row.agent.name},code.*,allow]\" LIMITS='{\"per_day\":6}'"
+      end
+    end
+
+    desc "List code repos, and the commissions under way"
+    task repos: :environment do
+      Clearance.with("intimate") do
+        rows = CodeRepo.includes(:principal, :agent).order(:name)
+        puts "no code repos; bin/rails \"hob:code:repo[name,owner/repo,realm]\" AGENT=" if rows.empty?
+        rows.each do |row|
+          puts "#{row.name.ljust(20)} #{row.repo.ljust(32)} #{row.realm.ljust(10)} #{row.principal.name.ljust(10)} " \
+               "for #{row.agent.name}#{row.enabled? ? '' : '  disabled'}"
+        end
+        Mission.where("payload->>'kind' = ?", Commissions::KIND).order(created_at: :desc).limit(10).each do |mission|
+          puts "  #{mission.id}  #{mission.status.ljust(9)} #{mission.created_at.utc.iso8601}  #{mission.title}" \
+               "#{mission.error.present? ? "  (#{mission.error.truncate(80)})" : ''}"
+        end
+      end
+    end
+  end
+
   namespace :shell do
     desc "Register (or update) a machine an agent may run commands on (SHELL.md), over ssh. " \
          "bin/rails \"hob:shell:host[meluzina-box,meluzina@100.64.0.9,household]\" KEY_ENV=MELUZINA_BOX_KEY " \

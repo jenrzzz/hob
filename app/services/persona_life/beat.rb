@@ -67,6 +67,7 @@ class PersonaLife
 
       parts << chew_section
       parts << machine_section
+      parts << commissions_section
       parts << whisper_line
       parts << "Write the next beat: call diary once and set_mood once; chew only if it moved; whisper only if " \
                "something is worth it."
@@ -203,6 +204,41 @@ class PersonaLife
       lines << "This beat has #{@life.max_iterations} tool rounds in all. Keep one for the diary and the mood, and if " \
                "you were on the machine, the diary says what you actually did there, not what you meant to."
       lines.join("\n")
+    end
+
+    # Work her agent handed to Claude Code (CODE.md), when she has a repo
+    # and may start some: that she can, and how the last few went, since a
+    # commission finishes long after the turn that started it.
+    def commissions_section
+      agent = @life.agent or return nil
+      repo = Commissions.repos(agent).first or return nil
+      return nil unless Mcp::Agent.capabilities(agent, @life.realm).key?("code_start")
+
+      lines = [ "CLAUDE CODE - anything bigger than a few lines, hand to Claude Code with code_start: it builds in your " \
+                "repo #{repo.name}#{repo.about.present? ? " (#{repo.about})" : ''} and you pull what it made. It costs you " \
+                "nothing and takes a while; start it and look in a later beat." ]
+      recent = Commissions.recent(agent)
+      if recent.any?
+        lines << "What you handed over lately (newest first):"
+        recent.each { |commission| lines << "- #{commission_line(commission)}" }
+      end
+      lines.join("\n")
+    end
+
+    def commission_line(commission)
+      at = Time.zone.parse(commission["asked_at"]).in_time_zone(@life.zone).strftime("%b %-d, %l:%M%P").squish
+      how = case commission["state"]
+      when "done"
+        if commission["outcome"] == "pushed"
+          "done, #{commission['commits']} commit#{'s' unless commission['commits'] == 1} on #{commission['branch']}"
+        else
+          "done, nothing changed"
+        end
+      when "failed" then "failed: #{commission['error']}"
+      else commission["state"]
+      end
+      said = commission["said"].present? && commission["state"] == "done" ? ". It said: #{commission['said']}" : ""
+      "#{at}, \"#{commission['title']}\" (#{commission['id']}): #{how}#{said}"
     end
 
     def whisper_line

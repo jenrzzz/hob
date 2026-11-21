@@ -123,6 +123,11 @@ module HobWorld
                       config: { "host" => "#{name}.test", "user" => "hob" }, **attrs)
   end
 
+  # A code repo row (CODE.md), kept for an agent.
+  def code_repo(name = "workshop", agent:, repo: "jenrzzz/workshop", realm: "personal", owner: @principal, **attrs)
+    CodeRepo.create!(name: name, repo: repo, realm: realm, principal: owner, agent: agent, **attrs)
+  end
+
   # Runs a block the way a request from `principal` at `realm` would.
   # A console row (KVM.md). The default kind is the in-memory Fake, whose
   # device lives in Consoles::Backends::Fake.device(name) until Fake.reset!.

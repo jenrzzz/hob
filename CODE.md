@@ -83,6 +83,10 @@ inside the workspace:
    nothing is pushed.
 7. **Push** `HEAD` to the branch. Never forced.
 
+What Claude Code did is kept with the mission, pushed or not, for a person
+to read in the admin pages' Forge section (SENTINEL.md, "Trajectories").
+The agent that commissioned it sees the report, not the session.
+
 ## The sandbox
 
 A brief is written by an agent, and an agent may have read anything: a

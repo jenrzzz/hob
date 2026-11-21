@@ -8,13 +8,14 @@ module V1
   #   POST /v1/missions/:id/heartbeat { lease_token, lease? }
   #   POST /v1/missions/:id/complete  { lease_token, result }
   #   POST /v1/missions/:id/fail      { lease_token, error }
+  #   POST /v1/missions/:id/trajectory { lease_token, archive }   (base64 of a Forge::Trajectory archive)
   #   GET  /v1/missions?status=        their own
   #   GET  /v1/missions/:id?wait=      (a creator waiting on a result may long-poll)
   # People:
   #   POST /v1/missions { assignee, title, brief?, payload?, priority?, realm? }
   #   POST /v1/missions/:id/cancel
   class MissionsController < ApplicationController
-    self.agent_actions = %i[index show lease heartbeat complete fail]
+    self.agent_actions = %i[index show lease heartbeat complete fail trajectory]
 
     before_action :require_trusted!, only: %i[create cancel]
 
@@ -76,6 +77,14 @@ module V1
       mission = held_mission
       mission.fail!(params[:error].presence || "failed")
       render json: serialize(mission)
+    end
+
+    # What Claude Code did on the mission, kept beside it (SENTINEL.md,
+    # "Trajectories"). Only while the lease holds, so before the report.
+    def trajectory
+      mission = held_mission
+      rows = Trajectories.store!(mission, params.require(:archive).to_s.unpack1("m"))
+      render json: { mission: mission.id, sessions: rows.size, lines: rows.sum(&:lines) }
     end
 
     def cancel

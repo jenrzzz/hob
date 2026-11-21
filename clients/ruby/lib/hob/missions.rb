@@ -56,6 +56,12 @@ module Hob
       Mission.new(@http.post("/v1/missions/#{mission.id}/fail", { lease_token: mission.lease_token, error: error.to_s }))
     end
 
+    # POST /v1/missions/:id/trajectory — the holder of the lease hands over
+    # what Claude Code did on it: a Forge::Trajectory archive's bytes.
+    def trajectory(mission, archive)
+      @http.post("/v1/missions/#{mission.id}/trajectory", { lease_token: mission.lease_token, archive: [ archive ].pack("m0") })
+    end
+
     def cancel(id)
       Mission.new(@http.post("/v1/missions/#{id}/cancel", nil))
     end

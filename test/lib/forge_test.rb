@@ -246,12 +246,58 @@ class ForgeTest < ActiveSupport::TestCase
     assert_equal 0, worker.work(wait: 0, once: true), "an empty queue with --once returns"
   end
 
+  test "the worker hands hob what Claude Code did, before the report, for a build that worked and one that did not" do
+    hob = Hob::Fake.new
+    hob.missions.create(assignee: "forge", title: "Build capability hob.calendar.read", payload: payload)
+    hob.missions.create(assignee: "forge", title: "Build something else", payload: payload("name" => "hob.other.do"))
+    hob.missions.create(assignee: "forge", title: "Build a third", payload: payload("name" => "hob.third.do"))
+    factory = lambda do |payload, _id|
+      name = payload["spec"]["name"]
+      Struct.new(:name) do
+        def call = name == "hob.other.do" ? raise(Forge::Error, "tests failed") : { "summary" => "built" }
+        def trajectory = name == "hob.third.do" ? nil : "archive of #{name}"
+      end.new(name)
+    end
+    worker = Forge::Worker.new(hob: hob, repo: @repo, workdir: @workdir, heartbeat: 0, log: nil, build: factory)
+    assert_equal 3, worker.work(wait: 0, drain: true)
+    done, failed, bare = hob.missions.list
+    assert_equal [ "archive of hob.calendar.read" ], hob.missions.trajectories[done.id]
+    assert_equal [ "archive of hob.other.do" ], hob.missions.trajectories[failed.id], "a failed build's is kept too, once"
+    assert_nil hob.missions.trajectories[bare.id]
+    assert_equal %w[completed failed completed], [ done, failed, bare ].map(&:status)
+
+    # hob refusing the archive does not cost the mission its report.
+    hob.missions.create(assignee: "forge", title: "Build a fourth", payload: payload("name" => "hob.fourth.do"))
+    hob.missions.define_singleton_method(:trajectory) { |*| raise Hob::Invalid, "too large" }
+    assert_equal 1, worker.work(wait: 0, drain: true)
+    assert_equal "completed", hob.missions.list.last.status
+  end
+
   # --- in a Coder workspace ---------------------------------------------------
+
+  test "a workspace build asks for a trajectory and fetches it before the workspace is deleted" do
+    built = { "ok" => true, "pull_request" => "https://github.com/jenrzzz/hob/pull/9" }
+    ws = workspace(built, runner: coder_runner(built, pending: 0, trajectory: "packed\x00bytes".b))
+    ws.call
+    assert_equal "packed\x00bytes".b, ws.trajectory.b
+    start = @commands.find { |argv, _, _| argv.last.to_s.include?("setsid nohup") }
+    assert_includes start[0].last, "--trajectory /home/node/forge/trajectory.gz"
+    fetch = @commands.index { |argv, _, _| argv.last.to_s.include?("base64 -w0") }
+    assert_operator fetch, :<, @commands.index { |argv, _, _| argv.take(2) == %w[coder delete] }
+
+    # A build that reports a failure still has one; a build that left none is nil.
+    failed = workspace({ "ok" => false, "kind" => "Error", "error" => "tests failed" }, runner: coder_runner({ "ok" => false, "kind" => "Error", "error" => "tests failed" }, pending: 0, trajectory: "x"))
+    assert_raises(Forge::Error) { failed.call }
+    assert_equal "x", failed.trajectory
+    none = workspace(built, runner: coder_runner(built, pending: 0))
+    none.call
+    assert_nil none.trajectory
+  end
 
   # A runner that fakes the coder CLI: `create` and `delete` succeed, `ssh`
   # answers the poll with PENDING a few times and then with the report (or,
   # with `dead`, with DEAD from then on, and the build's log when asked).
-  def coder_runner(report, pending: 2, create: [ 0, "", "" ], ssh_failures: 0, dead: false, log: "", list: [], started: true)
+  def coder_runner(report, pending: 2, create: [ 0, "", "" ], ssh_failures: 0, dead: false, log: "", list: [], started: true, trajectory: nil)
     polls = 0
     lambda do |argv, chdir:, stdin: nil|
       @commands << [ argv, chdir, stdin ]
@@ -272,6 +318,8 @@ class ForgeTest < ActiveSupport::TestCase
           next [ 0, "DEAD\n", "" ] if dead
 
           [ 0, report.is_a?(String) ? report : report.to_json, "" ]
+        elsif command.include?("base64 -w0")
+          trajectory ? [ 0, [ trajectory ].pack("m0"), "" ] : [ 1, "", "" ]
         elsif command.include?("build.log 2>/dev/null")
           [ 0, log, "" ]
         else
@@ -319,7 +367,7 @@ class ForgeTest < ActiveSupport::TestCase
     assert_equal "--wait=no", start[2]
     assert_equal "cd /workspace && setsid nohup sh -c 'echo $$ > /home/node/forge/build.pid; exec forge-env bin/forge build " \
                  "--payload /home/node/forge/payload.json --result /home/node/forge/result.json --workdir /home/node/forge/worktrees " \
-                 "--base main' > /home/node/forge/build.log 2>&1 < /dev/null &", start.last, "the shell records its pid, then becomes the build"
+                 "--base main --trajectory /home/node/forge/trajectory.gz' > /home/node/forge/build.log 2>&1 < /dev/null &", start.last, "the shell records its pid, then becomes the build"
 
     polls = @commands.select { |argv, _, _| argv[1] == "ssh" && argv.last.include?("result.json 2>/dev/null") }
     assert_equal 3, polls.size, "two PENDING answers, then the report"

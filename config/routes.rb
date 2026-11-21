@@ -26,6 +26,9 @@ Rails.application.routes.draw do
     post "gofer_keys", to: "gofer_keys#update"
     get "herald_keys", to: "herald_keys#new", as: :herald_keys
     post "herald_keys", to: "herald_keys#update"
+    get "forge", to: "forge#index"
+    get "forge/:id", to: "forge#show", as: :forge_mission
+    get "forge/:id/trajectories/:trajectory", to: "forge#raw", as: :forge_trajectory
     get "usage", to: "usage#index"
     get "usage/:id", to: "usage#show", as: :usage_event
     get "people", to: "people#index"
@@ -180,6 +183,7 @@ Rails.application.routes.draw do
         post :heartbeat
         post :complete
         post :fail
+        post :trajectory
         post :cancel
       end
     end

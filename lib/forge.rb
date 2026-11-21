@@ -520,7 +520,9 @@ module Forge
     POLL = "cat #{DIR}/result.json 2>/dev/null || { kill -0 \"$(cat #{DIR}/build.pid 2>/dev/null)\" 2>/dev/null && echo PENDING; } " \
            "|| cat #{DIR}/result.json 2>/dev/null || echo DEAD".freeze
 
-    attr_reader :payload, :name, :template, :image, :repo, :base, :log
+    # The build's trajectory archive (Forge::Trajectory), once #call has a
+    # report; nil when the build left none or it could not be fetched.
+    attr_reader :payload, :name, :template, :image, :repo, :base, :log, :trajectory
 
     def initialize(payload:, mission: nil, template: "agent-workspace", image: "ghcr.io/jenrzzz/agent-workspace-hob:latest",
                    repo: "jenrzzz/hob", base: "main", runner: nil, log: $stderr, poll: 30, timeout: 3 * 3600,
@@ -568,6 +570,7 @@ module Forge
         start
       end
       report = wait
+      @trajectory = fetch_trajectory
       raise Refused, report["error"] if report["kind"] == "Refused"
       raise Error, report["error"].to_s unless report["ok"]
 
@@ -643,7 +646,7 @@ module Forge
     def start
       say "starting the build"
       build = "exec forge-env bin/forge build --payload #{DIR}/payload.json --result #{DIR}/result.json " \
-              "--workdir #{DIR}/worktrees --base #{base}"
+              "--workdir #{DIR}/worktrees --base #{base} --trajectory #{DIR}/trajectory.gz"
       ssh! "cd /workspace && setsid nohup sh -c 'echo $$ > #{DIR}/build.pid; #{build}' > #{DIR}/build.log 2>&1 < /dev/null &"
     end
 
@@ -676,6 +679,18 @@ module Forge
 
         sleep @poll
       end
+    end
+
+    # What Claude Code did in there, which the build packed before it wrote
+    # its report. Never a reason to fail a build that reported.
+    def fetch_trajectory
+      status, out, = ssh("test -s #{DIR}/trajectory.gz && base64 -w0 #{DIR}/trajectory.gz")
+      return nil unless status.zero? && !out.strip.empty?
+
+      out.strip.unpack1("m")
+    rescue StandardError => e
+      say "could not fetch the trajectory: #{e.class}: #{e.message}"
+      nil
     end
 
     # A dead workspace has to be gone before one of the same name is made.
@@ -787,12 +802,17 @@ module Forge
     def handle(mission)
       say "leased mission #{mission.id}: #{mission.title}"
       beat = heartbeat_thread(mission)
-      result = @build.call(mission.payload, mission.id).call
+      started = Time.now
+      build = @build.call(mission.payload, mission.id)
+      result = build.call
+      archive(mission, build, started)
+      archived = true
       @hob.missions.complete(mission, result)
       say "completed mission #{mission.id}: #{result['summary'] || result['pull_request']}"
       result
     rescue StandardError => e
       say "mission #{mission.id} failed: #{e.class}: #{e.message}"
+      archive(mission, build, started) if build && !archived
       begin
         @hob.missions.fail(mission, "#{e.class.name.split('::').last}: #{e.message}")
       rescue StandardError => report
@@ -804,6 +824,19 @@ module Forge
     end
 
     private
+
+    # Hands hob what Claude Code did, while the lease still holds, whether
+    # the build worked or not: a workspace build fetched its own, a build
+    # run here is read from this box. Losing it never fails a mission.
+    def archive(mission, build, started)
+      bytes = build.respond_to?(:trajectory) ? build.trajectory : Trajectory.pack(workdir: @workdir, since: started)
+      return if bytes.nil? || bytes.empty?
+
+      @hob.missions.trajectory(mission, bytes)
+      say "archived the trajectory of mission #{mission.id} (#{bytes.bytesize} bytes)"
+    rescue StandardError => e
+      say "could not archive the trajectory: #{e.class}: #{e.message}"
+    end
 
     def heartbeat_thread(mission)
       return nil unless @heartbeat.to_i.positive?
@@ -828,3 +861,4 @@ end
 
 require_relative "forge/upkeep"
 require_relative "forge/commission"
+require_relative "forge/trajectory"

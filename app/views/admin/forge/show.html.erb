@@ -1,0 +1,112 @@
+<% content_for :head do %>
+  <style>
+    .step { border-top: 1px solid var(--line); padding: 8px 0; }
+    .step:first-child { border-top: 0; }
+    .step .who { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .step .said { white-space: pre-wrap; word-break: break-word; margin: 2px 0; }
+    .step.side { margin-left: 18px; }
+    .step.tool summary { color: var(--ink); }
+    .step.tool summary code { background: none; padding: 0; }
+    .step.failed summary b { color: var(--danger); }
+  </style>
+<% end %>
+
+<p><%= link_to "← Forge", admin_forge_path %></p>
+<h1><%= @mission.title %></h1>
+
+<section class="card" id="mission">
+  <dl class="facts">
+    <dt>Kind</dt><dd><%= kind_of(@mission) %></dd>
+    <dt>State</dt><dd><span class="tag <%= "bad" if @mission.status == "failed" %>"><%= @mission.status %></span>
+      <% if @mission.attempts > 1 %><span class="muted">attempt <%= @mission.attempts %></span><% end %></dd>
+    <dt>Queued</dt><dd><%= @mission.created_at.utc.strftime("%Y-%m-%d %H:%M UTC") %><% if @mission.created_by %> by <%= @mission.created_by.name %><% end %></dd>
+    <% if @mission.leased_at %><dt>Took</dt><dd><%= duration_of(@mission) %>, from <%= @mission.leased_at.utc.strftime("%H:%M UTC") %></dd><% end %>
+    <dt>Realm</dt><dd><%= @mission.realm %></dd>
+    <dt>Id</dt><dd><code><%= @mission.id %></code></dd>
+  </dl>
+  <% if @mission.error.present? %>
+    <h2>Error</h2>
+    <pre id="error"><%= @mission.error %></pre>
+  <% end %>
+  <% if @mission.result.is_a?(Hash) %>
+    <h2>Report</h2>
+    <% if @mission.result["summary"].present? %><p id="summary" style="white-space: pre-wrap"><%= @mission.result["summary"] %></p><% end %>
+    <% %w[pull_request url].each do |key| %>
+      <% if @mission.result[key].to_s.start_with?("https://") %><p><%= link_to @mission.result[key], @mission.result[key], rel: "noreferrer" %></p><% end %>
+    <% end %>
+    <details><summary>The whole report</summary><pre><%= JSON.pretty_generate(@mission.result.except("summary")) %></pre></details>
+  <% end %>
+  <details><summary>What it was handed</summary><pre id="payload"><%= JSON.pretty_generate(@mission.payload) %></pre></details>
+</section>
+
+<section class="card" id="trajectory">
+  <% if @trajectories.empty? %>
+    <h2>What Claude Code did</h2>
+    <p class="muted">Nothing was kept for this mission: it ran before the forge archived its sessions, never reached Claude Code, or its workspace was lost first.</p>
+  <% else %>
+    <div class="card-head">
+      <h2>What Claude Code did</h2>
+      <span class="muted"><%= @trajectory.lines %> lines · <%= number_to_human_size(@trajectory.bytes) %> ·
+        <%= link_to "the session file", admin_forge_trajectory_path(@mission, @trajectory) %></span>
+    </div>
+    <% if @trajectories.size > 1 %>
+      <p id="sessions">
+        <% @trajectories.each_with_index do |t, i| %><%= " · " if i.positive? %><%= link_to (t.side? ? t.path.split("/").last.delete_suffix(".jsonl") : "session #{t.session.first(8)}"), admin_forge_mission_path(@mission, session: t.id), class: ("current" if t.id == @trajectory.id) %><% if t.attempt != @mission.attempts %> <span class="muted">(attempt <%= t.attempt %>)</span><% end %><% end %>
+      </p>
+    <% end %>
+
+    <div id="steps">
+      <% @steps.each do |step| %>
+        <% case step.kind %>
+        <% when :prompt %>
+          <% shown, more = clip(step.text) %>
+          <div class="step prompt <%= "side" if step.side %>">
+            <div class="who">Told</div>
+            <details <%= "open" if shown.length < 1200 %>><summary><%= shown.lines.first.to_s.strip.truncate(140) %></summary>
+              <div class="said"><%= shown %><% if more.positive? %><span class="muted"> … <%= more %> more characters in the session file</span><% end %></div></details>
+          </div>
+        <% when :text %>
+          <% shown, more = clip(step.text) %>
+          <div class="step text <%= "side" if step.side %>">
+            <div class="who">Claude</div>
+            <div class="said"><%= shown %><% if more.positive? %><span class="muted"> … <%= more %> more characters in the session file</span><% end %></div>
+          </div>
+        <% when :thinking %>
+          <% shown, more = clip(step.text) %>
+          <div class="step thinking <%= "side" if step.side %>">
+            <details><summary>Thinking: <%= shown.lines.first.to_s.strip.truncate(120) %></summary>
+              <div class="said muted"><%= shown %><% if more.positive? %> … <%= more %> more characters<% end %></div></details>
+          </div>
+        <% when :tool %>
+          <div class="step tool <%= "side" if step.side %> <%= "failed" if step.failed %>">
+            <details><summary><b><%= step.name %></b> <code><%= headline(step) %></code><% if step.failed %> <span class="tag bad">failed</span><% elsif step.result.nil? %> <span class="tag">no result</span><% end %></summary>
+              <% input = step.input.is_a?(Hash) ? step.input : {} %>
+              <% long = input.select { |_, v| v.is_a?(String) && v.include?("\n") } %>
+              <% rest = input.except(*long.keys) %>
+              <% if rest.any? %><pre><%= JSON.pretty_generate(rest) %></pre><% end %>
+              <% long.each do |key, value| %>
+                <% shown, more = clip(value) %>
+                <div class="muted"><%= key %></div>
+                <pre><%= shown %><% if more.positive? %>
+… <%= more %> more characters<% end %></pre>
+              <% end %>
+              <% unless step.result.nil? %>
+                <% shown, more = clip(step.result) %>
+                <div class="muted">came back</div>
+                <pre><%= shown.presence || "(nothing)" %><% if more.positive? %>
+… <%= more %> more characters in the session file<% end %></pre>
+              <% end %>
+            </details>
+          </div>
+        <% when :note %>
+          <% shown, more = clip(step.text, 1_000) %>
+          <div class="step note <%= "side" if step.side %>">
+            <span class="muted"><%= step.name %>: <%= shown %><% if more.positive? %> …<% end %></span>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+    <% if @steps.empty? %><p class="muted">The session file has nothing in it a person would follow.</p><% end %>
+    <% if @skipped.positive? %><p class="muted"><%= @skipped %> lines of bookkeeping are left out here and are in the session file.</p><% end %>
+  <% end %>
+</section>

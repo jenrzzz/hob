@@ -23,10 +23,11 @@
 #
 # Inside a workspace the loop runs the other form, one build with no hob:
 #
-#   bin/forge build --payload FILE --result FILE [--workdir DIR] [--base BRANCH]
+#   bin/forge build --payload FILE --result FILE [--workdir DIR] [--base BRANCH] [--trajectory FILE]
 #
 # It reads the mission payload (stdin without --payload), builds in this
-# checkout, and writes the report as JSON (stdout without --result).
+# checkout, and writes the report as JSON (stdout without --result). With
+# --trajectory it also leaves what Claude Code did, packed (Forge::Trajectory).
 #
 # The key comes from `bin/rails "hob:forge:setup[forge]"` on the hob box.
 require "optparse"
@@ -50,11 +51,22 @@ if ARGV.first == "build"
     o.on("--result FILE") { |f| options[:result] = f }
     o.on("--workdir DIR") { |d| options[:workdir] = d }
     o.on("--base BRANCH") { |b| options[:base] = b }
+    o.on("--trajectory FILE") { |f| options[:trajectory] = f }
   end.parse!
   need "claude", "gh", "git"
 
   payload = JSON.parse(options[:payload] ? File.read(options[:payload]) : $stdin.read)
+  started = Time.now
   report = Forge.report(Forge.build(payload: payload, repo: root, workdir: options[:workdir], base: options[:base]))
+  # Before the report, which is what the loop waits for: what Claude Code did, whether or not it worked.
+  if options[:trajectory]
+    begin
+      archive = Forge::Trajectory.pack(workdir: options[:workdir], since: started)
+      File.binwrite(options[:trajectory], archive) if archive
+    rescue StandardError => e
+      $stderr.puts "[forge] could not pack the trajectory: #{e.class}: #{e.message}"
+    end
+  end
   json = JSON.pretty_generate(report)
   if options[:result]
     File.write("#{options[:result]}.tmp", json)

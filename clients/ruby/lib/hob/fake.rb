@@ -513,6 +513,17 @@ module Hob
         Mission.new(held(mission).merge!("status" => "failed", "error" => error.to_s, "lease_token" => nil))
       end
 
+      # The archives handed over, by mission id.
+      def trajectories
+        @trajectories ||= {}
+      end
+
+      def trajectory(mission, archive)
+        held(mission)
+        (trajectories[mission.id] ||= []) << archive
+        { "sessions" => 1 }
+      end
+
       def cancel(id)
         Mission.new(fetch(id).merge!("status" => "cancelled", "lease_token" => nil))
       end

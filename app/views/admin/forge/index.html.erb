@@ -1,0 +1,43 @@
+<h1>Forge</h1>
+<p class="muted">
+  What the forge has been handed and how each went: capabilities built from petitions, upkeep of the household's repos,
+  and commissions from agents. Open one for its brief, its report, and what Claude Code did.
+</p>
+
+<p>
+  <%= link_to "All", admin_forge_path(status: params[:status].presence), class: ("current" if params[:kind].blank?) %>
+  <% Admin::ForgeController::KINDS.each_value do |kind| %> · <%= link_to kind, admin_forge_path(kind: kind, status: params[:status].presence), class: ("current" if params[:kind] == kind) %><% end %>
+  <span class="muted">|</span>
+  <%= link_to "any state", admin_forge_path(kind: params[:kind].presence), class: ("current" if params[:status].blank?) %>
+  <% %w[queued leased completed failed].each do |status| %> · <%= link_to status, admin_forge_path(kind: params[:kind].presence, status: status), class: ("current" if params[:status] == status) %><% end %>
+</p>
+
+<section class="card" id="missions">
+  <% if @missions.empty? %>
+    <p class="muted">No forge missions match.</p>
+  <% else %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>When</th><th>Kind</th><th>Mission</th><th>State</th><th>Took</th><th>Cost</th><th>Sessions</th></tr></thead>
+        <tbody>
+          <% @missions.each do |m| %>
+            <tr>
+              <td class="muted"><%= m.created_at.utc.strftime("%b %-d %H:%M") %></td>
+              <td><%= kind_of(m) %></td>
+              <td style="white-space: normal"><%= link_to m.title.truncate(80), admin_forge_mission_path(m) %></td>
+              <td><span class="tag <%= "bad" if m.status == "failed" %>"><%= m.status %></span></td>
+              <td class="muted"><%= duration_of(m) %></td>
+              <td class="muted"><%= (cost = m.result.is_a?(Hash) && m.result["cost"]) ? number_to_currency(cost) : "" %></td>
+              <td class="muted"><%= @sessions[m.id] %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+</section>
+
+<p>
+  <% if @page > 1 %><%= link_to "Newer", admin_forge_path(kind: params[:kind].presence, status: params[:status].presence, page: @page - 1) %><% end %>
+  <% if @more %><%= link_to "Older", admin_forge_path(kind: params[:kind].presence, status: params[:status].presence, page: @page + 1) %><% end %>
+</p>

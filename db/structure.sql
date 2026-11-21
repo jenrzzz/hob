@@ -628,6 +628,26 @@ ALTER TABLE ONLY public.message_nodes FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: mission_trajectories; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mission_trajectories (
+    id character varying NOT NULL,
+    mission_id character varying NOT NULL,
+    realm character varying NOT NULL,
+    attempt integer DEFAULT 1 NOT NULL,
+    session character varying NOT NULL,
+    path character varying NOT NULL,
+    lines integer DEFAULT 0 NOT NULL,
+    bytes integer DEFAULT 0 NOT NULL,
+    body bytea NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.mission_trajectories FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: missions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2141,6 +2161,14 @@ ALTER TABLE ONLY public.message_nodes
 
 
 --
+-- Name: mission_trajectories mission_trajectories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mission_trajectories
+    ADD CONSTRAINT mission_trajectories_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: missions missions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2954,6 +2982,13 @@ CREATE INDEX index_message_nodes_on_parent_hash ON public.message_nodes USING bt
 
 
 --
+-- Name: index_mission_trajectories_on_mission_id_and_path; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_mission_trajectories_on_mission_id_and_path ON public.mission_trajectories USING btree (mission_id, path);
+
+
+--
 -- Name: index_missions_on_assignee_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3097,7 +3132,7 @@ CREATE INDEX index_people_events_on_recorded_by_id ON public.people_events USING
 -- Name: index_people_events_on_source_kind_and_source_ref; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY ((ARRAY['text'::character varying, 'mail'::character varying, 'calendar'::character varying])::text[])));
+CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY (ARRAY[('text'::character varying)::text, ('mail'::character varying)::text, ('calendar'::character varying)::text])));
 
 
 --
@@ -3886,6 +3921,14 @@ ALTER TABLE ONLY public.ward_findings
 
 
 --
+-- Name: mission_trajectories fk_rails_2b4ab5c967; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mission_trajectories
+    ADD CONSTRAINT fk_rails_2b4ab5c967 FOREIGN KEY (mission_id) REFERENCES public.missions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: calendar_contributors fk_rails_2dc963feae; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4650,6 +4693,12 @@ ALTER TABLE public.mail_backends ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.message_nodes ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: mission_trajectories; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mission_trajectories ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: missions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4851,6 +4900,15 @@ CREATE POLICY realm_visibility ON public.mail_backends USING ((( SELECT realms.r
 CREATE POLICY realm_visibility ON public.message_nodes USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (message_nodes.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: mission_trajectories realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.mission_trajectories USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (mission_trajectories.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -5127,6 +5185,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261121000004'),
 ('20261121000003'),
 ('20261121000002'),
 ('20261121000001'),

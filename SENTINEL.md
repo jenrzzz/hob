@@ -684,6 +684,41 @@ mission with a spec in its payload builds. A person can queue one by hand.
 The forge also takes `forge.upkeep` missions, which keep the household's
 other apps current ([SCHEDULES.md](SCHEDULES.md), "Upkeep").
 
+### Trajectories
+
+What Claude Code did on a mission is kept beside it. The build
+(`bin/forge build --trajectory FILE`) packs the session files Claude Code
+wrote under its working directory since it began, subagents' included
+(`Forge::Trajectory`: gzip over one JSON object), and writes the pack
+before its report. The loop fetches it before the workspace is deleted and
+hands it to hob while it still holds the lease:
+
+```
+POST /v1/missions/:id/trajectory { lease_token, archive }    # base64 of the pack
+```
+
+Whether the build worked or was refused makes no difference: a failed
+build's sessions are the ones most worth reading. A build that died with
+no report, or ran out its three hours, leaves none, since nothing packed
+them. Losing a trajectory never fails a mission.
+
+- **Rows.** `Trajectories.store!` keeps one `mission_trajectories` row per
+  session file, gzipped, at the mission's realm (a session holds the brief
+  and everything the build read). A file handed in twice replaces itself; a
+  mission built twice keeps both attempts' sessions.
+- **Secrets.** Before packing, every token in the build's environment and
+  every file under `/secrets` is replaced by `[secret]` wherever it
+  appears. A session longer than 24 MB keeps its first 400 lines and its
+  last 1200.
+- **Reading them.** The admin pages have a **Forge** section: the forge's
+  missions, newest first, by kind and state; and for one mission what it
+  was handed, its report, and each session as steps (what it was told, what
+  it said, each tool call with what came back), with the session file to
+  download. Long texts are cut at 6,000 characters on the page and whole in
+  the file.
+
+Nothing prunes them yet.
+
 ### Trust
 
 The spec reaching the forge was written by the steward from an untrusted
@@ -792,6 +827,7 @@ calendar_backends  where calendars are read from, realm-scoped: what calendar.* 
 mail_backends      the household's mail accounts, realm-scoped: what mail.* reaches (MAIL.md)            [RLS]
 browsers           the household's real browsers, realm-scoped: what browse.open reaches (BROWSE.md)   [RLS]
 shell_hosts        machines an agent may run commands on, realm-scoped: what shell.* reaches (SHELL.md)  [RLS]
+mission_trajectories  what Claude Code did on a forge mission: one gzipped session file a row, at the mission's realm  [RLS]
 code_repos         a GitHub repo that is one agent's workshop, realm-scoped: where code.start's work lands (CODE.md)  [RLS]
 browse_sessions    a tab an agent opened, for a goal: what binds each browse.act to a judged open     [RLS]
 ```

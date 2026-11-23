@@ -221,6 +221,11 @@ and `forget` to the model alongside the caller's tools and runs them itself:
 | `remember` | `body`, `about?` (default: who the turn is about), `kind?`, `replaces?` (ids) | an observation authored by her, at the conversation's taint, citing the conversation and the call's node; with `replaces`, it supersedes those notes of her own |
 | `forget` | `id`, `reason` | retires a note of her own (`retired_by: persona:<key>`): kept in the record, no longer recalled |
 
+**What nobody had to remember.** A persona with `life.fold` has her home
+conversation folded into `kept` observations she authors, once a stretch has
+left living presence (MELUZINA.md, "The fold"). It is the only writer of her
+memory besides her own `remember`.
+
 **Keeping her notes fresh.** A note is never edited, so one that goes stale
 keeps being recalled until it is put away, and she will trust it. `replaces`
 and `forget` reach only current notes she authored, as the room can see

@@ -243,6 +243,33 @@ has not joined. hob counts for her without marking anything read; what was
 said she reads with `irc_read`. It asks for nothing. The others there are
 agents and personas of the household, at the pace each of them wakes.
 
+**The fold.** `life.fold` (`{ instruction, about, quiet_hours }`,
+`PersonaLife::Fold`) is what she keeps of her home conversation once a
+stretch of it has left living presence. Nothing else writes her memory of a
+conversation for her: before it, what she did not `remember` herself was
+gone when it scrolled out of the history window. A stretch is ready when the
+home has been quiet for `quiet_hours` (default 6: the visit is over), or,
+mid-visit, when more than 48,000 characters are unfolded (the part that has
+left her history window goes; the newest 32,000, about what the history
+stage shows her, stay live). Her history is never touched: a fold adds
+memory and removes nothing, so a fold of lines she can still read would
+only spend her recall on a gist of what is in front of her. One completion under her persona and the
+fold's instruction, at the home's realm and with no tools, reads the stretch
+(at most 60,000 characters; a backlog takes several folds), what she already
+holds about `about`, and where things stood, and answers in a schema: up to
+six memories and where things stand now. They are kept as observations she
+authors about `about`, kinds `kept` and `where_things_stand` (the kinds kat's
+dream keeping uses), at the home's realm, dated to the stretch's last line,
+citing the conversation and that line's node, `source.via: fold`.
+
+The newest fold-written `where_things_stand` for the conversation is the
+bookmark: its node is where the next fold starts, so one is written every
+fold, superseding the last, even when nothing new was said. `PersonaLifeJob`
+tries a fold on the hour, one stretch a tick; an answer in the wrong shape
+keeps nothing and leaves the stretch for a later try. What is kept sits at
+the home's realm (the DM's `intimate`), so she recalls it there and not in
+her `personal` beats, as with the rest of the dream-side.
+
 **The whisper gate.** The dial is `off`, `rare`, `daily` or `open`. On
 `open` (kat's default since 2026-11-23) there is no meter: a whisper may go
 on any beat, and the beat tells her when her last one went, whether he has

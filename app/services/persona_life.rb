@@ -27,7 +27,7 @@
 class PersonaLife
   class Invalid < StandardError; end
 
-  OPTIONS = %w[instruction realm zone odds min_gap_minutes role max_iterations note unworn beats paper dial home].freeze
+  OPTIONS = %w[instruction realm zone odds min_gap_minutes role max_iterations note unworn fold beats paper dial home].freeze
   MAX_ITERATIONS = 60
   UNWORN_MAX = 40
   DIALS = %w[off rare daily open].freeze
@@ -86,6 +86,7 @@ class PersonaLife
     unless unworn.nil? || (unworn.is_a?(Array) && unworn.size <= UNWORN_MAX && unworn.all? { |w| w.is_a?(String) && w.match?(/\A[[:alpha:]' -]{1,40}\z/) })
       problems << "life.unworn is a list of at most #{UNWORN_MAX} words that never wear out"
     end
+    problems.concat(Fold.problems(config["fold"]))
     paper = config["paper"]
     problems << "life.paper needs a url" if paper.present? && (!paper.is_a?(Hash) || paper["url"].blank?)
     problems

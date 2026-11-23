@@ -643,11 +643,14 @@ module Forge
 
     # The shell writes down its own pid and then becomes the build (exec), so
     # `wait` can tell a build that died without a report from one still running.
+    # The subshell forks the build off and exits at once: a plain `&` leaves
+    # it a child of the ssh session's shell, and `coder ssh` then holds on
+    # until the build ends, which PATIENCE cuts short for any build over 15m.
     def start
       say "starting the build"
       build = "exec forge-env bin/forge build --payload #{DIR}/payload.json --result #{DIR}/result.json " \
               "--workdir #{DIR}/worktrees --base #{base} --trajectory #{DIR}/trajectory.gz"
-      ssh! "cd /workspace && setsid nohup sh -c 'echo $$ > #{DIR}/build.pid; #{build}' > #{DIR}/build.log 2>&1 < /dev/null &"
+      ssh! "cd /workspace && (setsid nohup sh -c 'echo $$ > #{DIR}/build.pid; #{build}' > #{DIR}/build.log 2>&1 < /dev/null &)"
     end
 
     # Polls until the build has written its report. A poll that cannot reach

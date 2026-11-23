@@ -365,9 +365,9 @@ class ForgeTest < ActiveSupport::TestCase
 
     start = @commands[3][0]
     assert_equal "--wait=no", start[2]
-    assert_equal "cd /workspace && setsid nohup sh -c 'echo $$ > /home/node/forge/build.pid; exec forge-env bin/forge build " \
+    assert_equal "cd /workspace && (setsid nohup sh -c 'echo $$ > /home/node/forge/build.pid; exec forge-env bin/forge build " \
                  "--payload /home/node/forge/payload.json --result /home/node/forge/result.json --workdir /home/node/forge/worktrees " \
-                 "--base main --trajectory /home/node/forge/trajectory.gz' > /home/node/forge/build.log 2>&1 < /dev/null &", start.last, "the shell records its pid, then becomes the build"
+                 "--base main --trajectory /home/node/forge/trajectory.gz' > /home/node/forge/build.log 2>&1 < /dev/null &)", start.last, "the shell records its pid, then becomes the build"
 
     polls = @commands.select { |argv, _, _| argv[1] == "ssh" && argv.last.include?("result.json 2>/dev/null") }
     assert_equal 3, polls.size, "two PENDING answers, then the report"

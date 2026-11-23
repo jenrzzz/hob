@@ -83,9 +83,9 @@ module Mcp
 
     PETITION_STATUS_TOOL = {
       "name" => "sentinel_petition_status",
-      "description" => "Look up one of your own petitions by id: pending (a person will decide), granted, building " \
+      "description" => "Look up one of your own petitions by id: pending (the steward is still deciding, or a person will), granted, building " \
                        "(the forge is making it; this takes days), proposed (built, awaiting merge), denied, or failed. " \
-                       "wait holds the call up to that many seconds for it to be granted or denied.",
+                       "wait holds the call up to that many seconds for it to be decided.",
       "inputSchema" => {
         "type" => "object",
         "required" => %w[id],
@@ -97,6 +97,9 @@ module Mcp
       },
       "annotations" => { "readOnlyHint" => true, "destructiveHint" => false }
     }.freeze
+
+    PETITION_DECIDING = "filed, and the steward is still deciding: do not petition again. Ask " \
+                        "sentinel_petition_status with this id and wait: 25".freeze
 
     PETITION_NOTES = {
       "granted" => "granted: you may ask for it now. If it is not among your tools yet, your client has to list " \
@@ -223,7 +226,8 @@ module Mcp
       petition = agent.petitions.find(id)
       wait = arguments["wait"].to_i.clamp(0, 25)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait
-      until petition.settled? || Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+      deciding = petition.deciding?
+      until petition.settled? || (deciding && !petition.deciding?) || Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
         sleep 1
         petition.reload
       end
@@ -237,7 +241,7 @@ module Mcp
 
       [ { "petition" => petition.id, "status" => petition.status, "capability" => petition.capability_name,
           "effect" => petition.effect, "rationale" => petition.rationale,
-          "note" => PETITION_NOTES[petition.status] }.compact, false ]
+          "note" => petition.deciding? ? PETITION_DECIDING : PETITION_NOTES[petition.status] }.compact, false ]
     end
   end
 end

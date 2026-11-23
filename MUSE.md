@@ -268,6 +268,7 @@ Read `status`:
 | status | meaning | what you do |
 |---|---|---|
 | `granted` | you may now ask for `capability` | `GET /v1/sentinel/capabilities/<capability>` for the schema, then request it |
+| `pending`, `deciding: true` | it landed and the steward is still deciding (it took longer than the `POST` waits) | do not send it again; `GET` it with `wait`, which returns once it is decided |
 | `pending` | a person is deciding | wait as below, as long as the mission can afford; then finish without it |
 | `building` | hob is writing the capability; a person will review the code | finish the mission without it and say so; check back another day |
 | `proposed` | the code is written and awaiting the person's merge | same as building |

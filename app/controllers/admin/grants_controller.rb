@@ -28,6 +28,7 @@ module Admin
         scope[:constraints] = params[:constraints].presence ? JSON.parse(params[:constraints]) : {}
         raise ArgumentError, "constraints must be a JSON object" unless scope[:constraints].is_a?(Hash)
       end
+      scope[:effect] = params[:effect] if params[:effect].present?
       @grant.update_scope!(**scope, source: "admin", decided_by: "human", decider: current_person,
                            rationale: params[:rationale].presence)
       redirect_to admin_grant_path(@grant), notice: "Updated #{@grant.principal.name}'s #{@grant.capability} rule."

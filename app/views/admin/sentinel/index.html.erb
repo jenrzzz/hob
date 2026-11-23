@@ -56,6 +56,7 @@
     <p><%= p.want %></p>
     <dl class="facts">
       <% if p.reason.present? %><dt>Reason</dt><dd><%= p.reason %></dd><% end %>
+      <% if p.deciding? %><dt>Steward</dt><dd class="muted">still deciding; you can decide first</dd><% end %>
       <% if p.action %><dt>Steward</dt><dd><%= p.action %><% if p.rationale.present? %>: <%= p.rationale %><% end %></dd><% end %>
       <% if p.capability_name %><dt>Recommends</dt><dd><code><%= p.capability_name %></code><% if p.effect %> at <%= p.effect %><% end %></dd><% end %>
       <% if p.spec["description"].present? %><dt>Would build</dt><dd><%= p.spec["description"] %></dd><% end %>

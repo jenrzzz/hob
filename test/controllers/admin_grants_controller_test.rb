@@ -102,4 +102,29 @@ class AdminGrantsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".flash.alert", /unknown keys/
     assert_equal 1, rule.guidance_changes.count
   end
+
+  test "a person changes a grant's effect, on the record; nothing else can" do
+    rule = policy!(@muse, "browse.open", "review", guidance: "Amazon pages.")
+    admin_sign_in
+    get "/admin/grants/#{rule.id}"
+    assert_select "select[name=effect] option[selected]", "review"
+
+    post "/admin/grants/#{rule.id}", params: { guidance: "Amazon pages.", effect: "confirm", rationale: "ask me first" }
+    follow_redirect!
+    assert_equal "confirm", rule.reload.effect
+    change = rule.guidance_changes.sole
+    assert_equal [ "review", "confirm", "ask me first" ], change.values_at(:old_effect, :new_effect, :rationale)
+    assert change.effect_changed?
+    assert_not change.guidance_changed?
+    assert_select "table td", /effect:\s*review\s*→\s*confirm/
+
+    post "/admin/grants/#{rule.id}", params: { guidance: "Amazon pages.", effect: "confirm" }
+    assert_equal 1, rule.guidance_changes.count, "the same effect again is no change"
+    post "/admin/grants/#{rule.id}", params: { guidance: "Amazon pages.", effect: "always" }
+    follow_redirect!
+    assert_select ".flash.alert", /Effect/
+    assert_equal "confirm", rule.reload.effect
+
+    assert_raises(ArgumentError) { rule.update_scope!(effect: "allow", source: "petition", decided_by: "steward") }
+  end
 end

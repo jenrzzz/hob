@@ -4,6 +4,8 @@ require "test_helper"
 # capability it does not have, and the steward grants, builds, refers, or
 # denies under the charter.
 class StewardTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
+
   setup do
     native_capabilities!
     @muse, _token = agent("muse")
@@ -51,6 +53,39 @@ class StewardTest < ActiveSupport::TestCase
     assert_raises(Sentinel::Invalid) { petition("") }
     assert_raises(Sentinel::Invalid) { petition("x", capability: "Not A Name") }
     assert_raises(Sentinel::Invalid) { as(@principal, realm: "household") { Sentinel.petition!(agent: @principal, want: "x") } }
+  end
+
+  test "off the request: the steward decides in a job, and a person's decision made first is kept" do
+    Rails.configuration.x.steward_inline = false
+    charter!(@muse, "review")
+    steward_says("grant", capability: "hob.usage", effect: "allow", rationale: "its own spend")
+    row = nil
+    assert_enqueued_with(job: StewardJob) do
+      row = as(@muse, realm: "household") { Sentinel.petition!(agent: @muse, want: "see my spend", wait: 0) }
+    end
+    assert row.deciding?, "pending, and no action yet"
+    assert_match(/still deciding: do not petition again/, Mcp::Agent.petition_outcome(row).first["note"])
+    assert_empty @fake.calls, "the request did not wait on a model"
+
+    perform_enqueued_jobs
+    assert_equal %w[granted steward], row.reload.values_at(:status, :decided_by)
+    refute row.deciding?
+
+    # A person who decides while it is queued is not overruled, and no model is asked.
+    calls = @fake.calls.size
+    second = as(@muse, realm: "household") { Sentinel.petition!(agent: @muse, want: "read the mail", wait: 0) }
+    as(@principal, realm: "intimate") { Sentinel.decide_petition!(second, decision: "deny", decider: @principal, rationale: "no") }
+    perform_enqueued_jobs
+    assert_equal %w[denied human no], second.reload.values_at(:status, :decided_by, :rationale)
+    assert_equal calls, @fake.calls.size
+
+    # No charter, or the day's limit: answered at once, nothing queued.
+    skipsy, = agent("skipsy")
+    assert_no_enqueued_jobs do
+      assert_equal "denied", as(skipsy, realm: "household") { Sentinel.petition!(agent: skipsy, want: "x", wait: 0) }.status
+    end
+  ensure
+    Rails.configuration.x.steward_inline = true
   end
 
   test "grant: the steward writes a policy rule for an existing capability, bounded by kind" do

@@ -127,15 +127,25 @@ module Sentinel
     # Decide a fresh petition: charter, limits, then the LLM, then apply. An
     # error anywhere still leaves a decision on the row: referred, with the
     # error as the rationale, so nothing is silently stuck.
+    #
+    # It may run well after the petition was filed (StewardJob), so a
+    # petition a person has decided in the meantime is left as they left it.
     def self.process!(petition)
       new(petition).process!
     rescue StandardError => e
+      return petition if petition.reload.decider_id
       Rails.logger.error("steward failed on petition #{petition.id}: #{e.class}: #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}")
       Rails.error.report(e, handled: true, severity: :error, source: "hob.steward", context: { petition: petition.id })
       steward = new(petition)
       steward.apply!(Verdict.new(action: "refer", rationale: "steward error: #{e.class.name.demodulize}: #{e.message}".truncate(500),
                                  capability: petition.capability_name, review: { "error" => e.message.truncate(500) }),
                      decided_by: "steward")
+    end
+
+    # What needs no model: no charter, or the day's petitions spent. -> the
+    # petition, denied, or nil when the steward should look.
+    def self.screen!(petition)
+      new(petition).screen!
     end
 
     # A person settles a pending or failed petition.
@@ -189,15 +199,24 @@ module Sentinel
       DEFAULT_LIMITS.merge(charter&.limits || {})
     end
 
-    def process!
+    def screen!
       if charter.nil? || charter.effect == "deny"
-        return record(Verdict.new(action: "deny", rationale: "no policy permits #{@agent.name} to petition for capabilities"), decided_by: "policy")
+        record(Verdict.new(action: "deny", rationale: "no policy permits #{@agent.name} to petition for capabilities"), decided_by: "policy")
+      elsif (problem = limit_exceeded)
+        record(Verdict.new(action: "deny", rationale: problem), decided_by: "limit")
+      else
+        return nil
       end
-      if (problem = limit_exceeded)
-        return record(Verdict.new(action: "deny", rationale: problem), decided_by: "limit")
-      end
+      @petition
+    end
+
+    def process!
+      return @petition if @petition.reload.decided_at
+      return @petition if screen!
 
       verdict = consult
+      return @petition if @petition.reload.decided_at # a person decided while the steward was thinking
+
       apply!(verdict, decided_by: "steward")
     end
 

@@ -65,24 +65,32 @@ class SentinelPolicy < ApplicationRecord
   # constraints, or both — and log it as one GuidanceChange. A constraint
   # rewrite is the change that actually widens access (a collection pattern
   # that now admits fsa-claims), so it is on the record like the words are.
-  # Pass KEEP (the default) to leave either alone. Never touches `effect`.
+  # Pass KEEP (the default) to leave either alone. `effect` moves only when a
+  # person passes one (the admin page): a petition never loosens or tightens
+  # it, and Steward never passes it.
   KEEP = Object.new.freeze
 
-  def update_scope!(guidance: KEEP, constraints: KEEP, source:, decided_by:, decider: nil, petition: nil, rationale: nil)
+  def update_scope!(guidance: KEEP, constraints: KEEP, effect: KEEP, source:, decided_by:, decider: nil, petition: nil, rationale: nil)
+    raise ArgumentError, "only a person changes a grant's effect" unless effect.equal?(KEEP) || (decided_by == "human" && decider&.trusted?)
+
+    new_effect = effect.equal?(KEEP) ? self.effect : effect.to_s
+    effect_changed = new_effect != self.effect
     new_guidance = guidance.equal?(KEEP) ? self.guidance : guidance.to_s.presence
     new_constraints = constraints.equal?(KEEP) ? self.constraints : (constraints || {}).to_h.deep_stringify_keys
     guidance_changed = new_guidance != self.guidance
     constraints_changed = new_constraints != (self.constraints || {})
-    return self unless guidance_changed || constraints_changed
+    return self unless guidance_changed || constraints_changed || effect_changed
 
     old_guidance = self.guidance
     old_constraints = self.constraints || {}
+    old_effect = self.effect
     transaction do
-      update!(guidance: new_guidance, constraints: new_constraints)
+      update!(guidance: new_guidance, constraints: new_constraints, effect: new_effect)
       guidance_changes.create!(source: source, decided_by: decided_by, decider: decider, petition: petition,
                                old_guidance: old_guidance, new_guidance: new_guidance, rationale: rationale,
                                old_constraints: (old_constraints if constraints_changed),
-                               new_constraints: (new_constraints if constraints_changed))
+                               new_constraints: (new_constraints if constraints_changed),
+                               old_effect: (old_effect if effect_changed), new_effect: (new_effect if effect_changed))
     end
     self
   end

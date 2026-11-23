@@ -9,6 +9,10 @@
 module Sentinel
   class Invalid < Gateway::Invalid; end # 422 through the controller's rescue_from
 
+  # How long a petition's own request waits for the steward before it
+  # answers "still deciding" (StewardJob decides either way).
+  STEWARD_WAIT = 20
+
   Verdict = Struct.new(:decision, :decided_by, :rationale, :review, keyword_init: true)
 
   module_function
@@ -81,8 +85,11 @@ module Sentinel
 
   # An agent asks for a capability it does not have: a petition, decided by
   # the steward (SENTINEL.md, "Petitions and the forge"). Always returns the
-  # petition; read `status`.
-  def petition!(agent:, want:, capability: nil, arguments: {}, reason: nil, on_mission: nil)
+  # petition; read `status`. The charter and the day's limit answer at once;
+  # the steward itself decides in a job (StewardJob), and this waits up to
+  # `wait` seconds for it, so most petitions still come back decided. One
+  # that does not is `pending` with no `action` yet (Petition#deciding?).
+  def petition!(agent:, want:, capability: nil, arguments: {}, reason: nil, on_mission: nil, wait: STEWARD_WAIT)
     raise Invalid, "only agents petition the sentinel" unless agent.agent?
     raise Invalid, "want is required: what the agent wants to be able to do" if want.blank?
     if capability.present? && !capability.to_s.match?(Capability::NAME_FORMAT)
@@ -94,7 +101,16 @@ module Sentinel
       arguments: (arguments || {}).to_h.deep_stringify_keys, reason: reason.presence,
       surface: Current.surface, realm: Current.clearance, on_mission_id: on_mission.presence
     )
-    Steward.process!(petition)
+    return petition if Steward.screen!(petition)
+    return Steward.process!(petition) if Rails.configuration.x.steward_inline
+
+    StewardJob.perform_later(petition.id)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait.to_f
+    while petition.deciding? && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+      sleep 0.5
+      petition.reload
+    end
+    petition
   end
 
   # A person settles a pending (or failed) petition: grant, build, or deny.

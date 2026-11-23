@@ -1,7 +1,8 @@
 # An agent asking for a capability it does not have (SENTINEL.md, "Petitions
 # and the forge"). Never deleted: with sentinel_requests, the audit trail.
 #
-#   status   pending    a person has to look (referred, or the charter says confirm)
+#   status   pending    a person has to look (referred, or the charter says confirm);
+#                       with no `action` yet, the steward is still deciding
 #            granted    a policy rule now lets the agent ask for `capability_name`
 #            building   the forge is implementing it; `mission_id` is the build
 #            proposed   a pull request is open; granted once it is merged and deployed
@@ -39,6 +40,11 @@ class Petition < ApplicationRecord
 
   def pending?
     status == "pending"
+  end
+
+  # Filed, and the steward has not answered yet (StewardJob).
+  def deciding?
+    pending? && decided_at.nil?
   end
 
   def settled?

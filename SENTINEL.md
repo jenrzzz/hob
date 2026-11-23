@@ -372,8 +372,10 @@ Guidance and constraints together are a grant's scope, and scope can change
 after the grant — an agent's petition to widen or narrow an already-held
 capability (below), or a person editing it at `/admin/grants` or over
 `PATCH /v1/sentinel/policies/:id`, all writing through
-`SentinelPolicy#update_scope!`. The effect never moves this way: widening
-scope cannot turn a `review` into an `allow`. A constraint refusal on the
+`SentinelPolicy#update_scope!`. A petition never moves the effect: widening
+scope cannot turn a `review` into an `allow`. Only a person does, at
+`/admin/grants`, and that is logged with the scope changes (`old_effect`,
+`new_effect`). A constraint refusal on the
 agent's own rule tells it so: "…; to widen this grant's scope, petition…".
 The steward sees each held rule's constraints, and rewrites them as a whole
 object that keeps every argument already constrained (a records grant whose
@@ -571,6 +573,14 @@ GET  /v1/sentinel/petitions/:id?wait=25
 POST /v1/sentinel/petitions/:id/decide { decision: grant|build|deny, capability?, effect?,
                                          constraints?, limits?, guidance?, spec?, rationale }   a person
 ```
+
+The charter and the day's limit answer in the request. The steward itself
+decides in a job (`StewardJob`), and the `POST` waits up to 20 seconds
+(`Sentinel::STEWARD_WAIT`) for it, so most petitions still come back
+decided. One that does not is `pending` with `deciding: true` and no
+`action`: it has landed, so do not send it again; `GET` it with `wait`,
+which returns as soon as the steward has answered. A person may decide a
+petition the steward is still on, and the steward's answer is then dropped.
 
 A petition names one capability, but some are one tool in several parts. A
 grant of `browse.open` carries `browse.act`, `browse.snapshot`,

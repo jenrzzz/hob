@@ -565,7 +565,9 @@ CREATE TABLE public.guidance_changes (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     old_constraints jsonb,
-    new_constraints jsonb
+    new_constraints jsonb,
+    old_effect character varying,
+    new_effect character varying
 );
 
 
@@ -5585,6 +5587,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261124000003'),
 ('20261124000002'),
 ('20261124000001'),
 ('20261123000002'),

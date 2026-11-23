@@ -9,7 +9,8 @@
 # records grant admits, say) is logged the same way: old_constraints and
 # new_constraints are set only when the constraints changed, and the
 # guidance columns then still show the text before and after (equal when
-# only the constraints moved).
+# only the constraints moved). So is a person's change to its effect, in
+# old_effect and new_effect.
 class GuidanceChange < ApplicationRecord
   SOURCES = %w[petition admin].freeze
   DECIDERS = %w[steward human].freeze
@@ -28,6 +29,10 @@ class GuidanceChange < ApplicationRecord
 
   def guidance_changed?
     old_guidance != new_guidance
+  end
+
+  def effect_changed?
+    new_effect.present?
   end
 
   def constraints_changed?

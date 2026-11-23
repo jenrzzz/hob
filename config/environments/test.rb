@@ -4,6 +4,10 @@
 # and recreated between test runs. Don't rely on the data there!
 
 Rails.application.configure do
+  # The steward decides a petition in the request, not in StewardJob, so a
+  # test reads the decision off what Sentinel.petition! returns.
+  config.x.steward_inline = true
+
   # Settings specified here will take precedence over those in config/application.rb.
 
   # While tests run files are not watched, reloading is not necessary.

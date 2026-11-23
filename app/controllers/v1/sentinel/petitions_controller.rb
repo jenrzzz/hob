@@ -4,7 +4,9 @@ module V1
     #
     # POST /v1/sentinel/petitions { want, capability?, arguments?, reason?, mission? }
     #   → 201 the petition: status granted|pending|building|proposed|denied,
-    #     with the capability granted or proposed and the rationale.
+    #     with the capability granted or proposed and the rationale; or, when
+    #     the steward takes longer than the request waits, pending with
+    #     deciding: true (poll it).
     # GET  /v1/sentinel/petitions/:id?wait=25   poll (or long-poll) until it settles
     # GET  /v1/sentinel/petitions?status=&agent=&days= agents see their own; people see all.
     #   days widens the window beyond the default most-recent-100 cap, for history.
@@ -25,7 +27,10 @@ module V1
 
       def show
         row = scope.find(params[:id])
-        long_poll(params[:wait]) { row.reload.settled? } if params[:wait].present? && !row.settled?
+        if params[:wait].present? && !row.settled?
+          deciding = row.deciding?
+          long_poll(params[:wait]) { row.reload.settled? || (deciding && !row.deciding?) }
+        end
         render json: serialize(row)
       end
 
@@ -58,7 +63,7 @@ module V1
         {
           id: row.id, agent: row.principal.name, want: row.want, capability: row.capability_name,
           arguments: row.arguments.presence, reason: row.reason, realm: row.realm, status: row.status,
-          action: row.action, decided_by: row.decided_by, rationale: row.rationale, decider: row.decider&.name,
+          deciding: (true if row.deciding?), action: row.action, decided_by: row.decided_by, rationale: row.rationale, decider: row.decider&.name,
           effect: row.effect, spec: row.spec.presence, policy: row.sentinel_policy_id,
           mission: row.mission_id, pull_request: row.pull_request, error: row.error, on_mission: row.on_mission_id,
           review: (row.review.presence unless Current.principal.agent?),

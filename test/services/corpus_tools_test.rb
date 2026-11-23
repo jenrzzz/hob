@@ -95,7 +95,7 @@ class CorpusToolsTest < ActiveSupport::TestCase
     convo = conversation(realm: "personal")
     @fake.reply("rar")
     ChatTurn.new(conversation: convo, branch: convo.branch, persona: @robyn, content: "hi").call
-    assert_equal %w[recall remember recall_archive], @fake.calls.last.tools.map { |t| t["name"] }
+    assert_equal %w[recall remember forget recall_archive], @fake.calls.last.tools.map { |t| t["name"] }
 
     clash = [ { "name" => "recall_archive", "description" => "x", "input_schema" => { "type" => "object" } } ]
     error = assert_raises(Gateway::Invalid) do

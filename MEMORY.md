@@ -212,18 +212,29 @@ persona's sheet as the conversation's realm sees it, under "Who you are now".
 
 ## Native tools
 
-DESIGN.md's native venue, first two tools. With `tools` on, hob declares
-`recall` and `remember` to the model alongside the caller's tools and runs
-them itself:
+DESIGN.md's native venue. With `tools` on, hob declares `recall`, `remember`
+and `forget` to the model alongside the caller's tools and runs them itself:
 
 | tool | arguments | does |
 |---|---|---|
 | `recall` | `query`, `about?`, `scope?` (all \| mine), `limit?` | hybrid recall at the conversation's read realm; returns observations with `yours: true` on her own |
-| `remember` | `body`, `about?` (default: who the turn is about), `kind?` | an observation authored by her, at the conversation's taint, citing the conversation and the call's node |
+| `remember` | `body`, `about?` (default: who the turn is about), `kind?`, `replaces?` (ids) | an observation authored by her, at the conversation's taint, citing the conversation and the call's node; with `replaces`, it supersedes those notes of her own |
+| `forget` | `id`, `reason` | retires a note of her own (`retired_by: persona:<key>`): kept in the record, no longer recalled |
+
+**Keeping her notes fresh.** A note is never edited, so one that goes stale
+keeps being recalled until it is put away, and she will trust it. `replaces`
+and `forget` reach only current notes she authored, as the room can see
+them, and obey rule 4: a note kept at another realm than this turn writes at
+is not changed from here. A `forget` of one is refused with that reason; a
+`remember` that names one still keeps the new note (which wins on recency
+where both can be seen) and lists the old one as `still_standing`. A
+`remember` whose words mostly match other current notes of hers returns
+them as `yours_that_say_nearly_this`, so a copy kept twice, or the stale one
+she meant to replace, is in front of her while she can still `forget` it.
 
 A bad argument is an **error result** (`is_error`) the model reads, never a
-fault. A caller's tool may not be named `recall` or `remember` while memory
-tools are on.
+fault. A caller's tool may not be named `recall`, `remember` or `forget` while
+memory tools are on.
 
 **Mixed turns.** A model turn may call native and client tools together. hob
 appends every call as a `tool_call` node, executes the native ones at once

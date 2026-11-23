@@ -129,12 +129,14 @@ module Memory
     end
   end
 
-  def retire!(old, reason:, realm:)
+  # by: who retired it, when it was not the request's principal (a persona
+  # letting go of a note of her own: "persona:<key>").
+  def retire!(old, reason:, realm:, by: nil)
     same_realm!(old, realm)
     raise Gateway::Invalid, "observation #{old.id} is #{old.status}" unless old.current?
     raise Gateway::Invalid, "a retirement needs a reason" if reason.blank?
 
-    old.update!(retired_at: Time.current, retired_by: Current.principal&.name || Current.surface, retire_reason: reason)
+    old.update!(retired_at: Time.current, retired_by: by.presence || Current.principal&.name || Current.surface, retire_reason: reason)
     old
   end
 

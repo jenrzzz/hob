@@ -179,4 +179,93 @@ class NativeToolsTest < ActiveSupport::TestCase
     assert_equal [ @noted.id ], JSON.parse(result.native.first["content"])["observations"].map { |o| o["id"] },
                  "asking for all does not widen her own memory"
   end
+
+  # Keeping her notes fresh: a note is never edited, so a correction has to
+  # put the old one away or recall keeps handing her the stale one.
+  def tools_in(convo)
+    Memory::Tools.new(Memory::Scope.build(personas: [ @velvet ], conversation: convo, request: { "tools" => true, "own" => true }))
+  end
+
+  def run_tool(tools, name, arguments)
+    outcome = tools.execute({ "id" => "t1", "name" => name, "arguments" => arguments })
+    [ JSON.parse(outcome.content), outcome.error ]
+  end
+
+  test "remember with replaces supersedes notes of her own, and recall stops handing her the stale ones" do
+    convo = conversation(realm: "personal")
+    tools = tools_in(convo)
+    mine = Memory.remember!(about: @velvet.memory_entity, body: "the worklog hookup will be wired once he approves", realm: "personal", author: @velvet.memory_entity)
+    twin = Memory.remember!(about: @velvet.memory_entity, body: "worklog hookup is pending his approval", realm: "personal", author: @velvet.memory_entity)
+
+    said, error = run_tool(tools, "remember", { "body" => "the worklog hookup is wired and live", "replaces" => [ mine.id, twin.id ] })
+    refute error, said.inspect
+    assert_equal [ mine.id, twin.id ], said["replaced"]
+    fresh = Observation.find(said["remembered"])
+    assert_equal [ "superseded", "superseded" ], [ mine.reload.status, twin.reload.status ]
+    assert_equal [ fresh.id, fresh.id ], [ mine.superseded_by_id, twin.superseded_by_id ]
+    assert_equal mine.id, fresh.supersedes_id
+    assert_equal [ @velvet.memory_entity.id, convo.id ], [ fresh.author_entity_id, fresh.conversation_id ]
+
+    found, = run_tool(tools, "recall", { "query" => "worklog hookup" })
+    assert_equal [ fresh.id ], found["observations"].map { |o| o["id"] }
+  end
+
+  test "only her own current notes, and only from the room they were kept in" do
+    convo = conversation(realm: "personal")
+    tools = tools_in(convo)
+    theirs = Memory.remember!(about: @jenner, body: "kat saw a replay.", realm: "personal")
+    said, error = run_tool(tools, "remember", { "body" => "x y z", "replaces" => [ theirs.id ] })
+    assert error
+    assert_match(/not yours to change/, said["error"])
+    assert theirs.reload.current?
+
+    # @noted is intimate: out of sight from a personal room.
+    said, error = run_tool(tools, "forget", { "id" => @noted.id, "reason" => "stale" })
+    assert error
+    assert_match(/no current note .* here/, said["error"])
+
+    # From the intimate room, a personal note is seen but stands (rule 4);
+    # the new one is still kept, and she is told.
+    low = Memory.remember!(about: @velvet.memory_entity, body: "the shed is first", realm: "personal", author: @velvet.memory_entity)
+    high = tools_in(conversation(realm: "intimate"))
+    said, error = run_tool(high, "remember", { "body" => "the shed is written", "replaces" => [ low.id ] })
+    refute error, said.inspect
+    assert_equal [ low.id ], said["still_standing"]
+    assert_match(/kept in a different room/, said["note"])
+    assert_equal "intimate", said["realm"]
+    assert low.reload.current?
+    said, error = run_tool(high, "forget", { "id" => low.id, "reason" => "stale" })
+    assert error
+    assert_match(/can only be put away from there/, said["error"])
+  end
+
+  test "forget puts one of her notes away with a reason, and a note beside its twin says so" do
+    convo = conversation(realm: "personal")
+    tools = tools_in(convo)
+    body = "MUD project: lives on my real machine in my git repo. one file per room under rooms. the hookup will be wired once he approves"
+    stale = Memory.remember!(about: @velvet.memory_entity, body: body, realm: "personal", author: @velvet.memory_entity)
+    Memory.remember!(about: @velvet.memory_entity, body: "misha knocked the garlic off the counter again", realm: "personal", author: @velvet.memory_entity)
+
+    said, = run_tool(tools, "remember", { "body" => body.sub("will be wired once he approves", "is wired and live") })
+    assert_equal [ stale.id ], said["yours_that_say_nearly_this"].map { |o| o["id"] }, "the stale copy, not the cat"
+    assert_match(/forget it by id/, said["hint"])
+
+    gone, error = run_tool(tools, "forget", { "id" => stale.id, "reason" => "the hookup is live now" })
+    refute error, gone.inspect
+    assert_equal [ "retired", "the hookup is live now", "persona:velvet" ], [ stale.reload.status, stale.retire_reason, stale.retired_by ]
+    _, error = run_tool(tools, "forget", { "id" => stale.id, "reason" => "again" })
+    assert error, "already put away"
+
+    said, = run_tool(tools, "remember", { "body" => "a wholly different thing about kerbal mods and orbital mechanics" })
+    refute said.key?("yours_that_say_nearly_this")
+  end
+
+  test "the model is offered forget beside recall and remember" do
+    @velvet.update!(memory: { "tools" => true })
+    convo = conversation(realm: "personal")
+    @fake.reply("ok")
+    turn(convo, content: "hi").call
+    assert_equal %w[recall remember forget], @fake.calls.last.tools.map { |t| t["name"] }
+    assert_includes @fake.calls.last.tools.find { |t| t["name"] == "remember" }["input_schema"]["properties"].keys, "replaces"
+  end
 end

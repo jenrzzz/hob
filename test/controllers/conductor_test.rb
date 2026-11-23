@@ -40,7 +40,7 @@ class ConductorTest < ActionDispatch::IntegrationTest
     assert_equal [ "recall" ], done["native"].map { |n| n["name"] }
     first_request = @fake.calls.last
     assert_match "He lingers on lace close-ups.", first_request.system, "the recall stage ran too"
-    assert_equal %w[show_image look recall remember], first_request.tools.map { |t| t["name"] }
+    assert_equal %w[show_image look recall remember forget], first_request.tools.map { |t| t["name"] }
 
     @fake.reply("Lace, then. Stay with it.")
     post "/v1/conversations/#{@convo}/chat", headers: auth("Accept" => "text/event-stream"), as: :json, params: {

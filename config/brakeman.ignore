@@ -137,7 +137,168 @@
         915
       ],
       "note": "Provider params are an open set (whatever the model accepts), stored as the one JSON value Preset#params."
+    },
+    {
+      "warning_type": "Command Injection",
+      "warning_code": 14,
+      "fingerprint": "4482ff023934853fddbfc144cfe5888ccdfafebf6b6249cb5a51f05af8603c2a",
+      "check_name": "Execute",
+      "message": "Possible command injection",
+      "file": "app/services/shells/backends/base.rb",
+      "line": 62,
+      "link": "https://brakemanscanner.org/docs/warning_types/command_injection/",
+      "code": "exec(\"#{\"mkdir -p -- #{quote(File.dirname(path))}\"} && #{\"cat #{append ? (\">>\") : (\">\")} #{quote(path)}\"} && #{\"chmod #{mode} -- #{quote(path)}\"}\", :stdin => content, :timeout => 30, :limit => 4000)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Shells::Backends::Base",
+        "method": "write"
+      },
+      "user_input": "quote(File.dirname(path))",
+      "confidence": "Medium",
+      "cwe_id": [
+        77
+      ],
+      "note": "Every path is passed through Shellwords.escape (quote); mode is the caller's chmod mode, and the content goes in on stdin, never through the shell."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "731c98666d4750fa987da06db1ffaacf9659b8bf85affd223409be7580dfd466",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/v1/personas_controller.rb",
+      "line": 56,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[:life][:beats].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "V1::PersonasController",
+        "method": "persona_params"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "A persona's life beats is a free-form JSON map stored as one value and checked by Persona's own validations; it is never assigned to model attributes."
+    },
+    {
+      "warning_type": "Command Injection",
+      "warning_code": 14,
+      "fingerprint": "8f3f5fc5a89eae817d456bea65765cc6128b2945e09c325555400d5327b489bb",
+      "check_name": "Execute",
+      "message": "Possible command injection",
+      "file": "app/services/shells/backends/base.rb",
+      "line": 44,
+      "link": "https://brakemanscanner.org/docs/warning_types/command_injection/",
+      "code": "exec(\"wc -c < #{quote(path)} && tail -c +#{(offset + 1)} -- #{quote(path)} | head -c #{limit}\", :timeout => 30, :limit => [(limit + 64), 4000].max)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Shells::Backends::Base",
+        "method": "read"
+      },
+      "user_input": "quote(path)",
+      "confidence": "Medium",
+      "cwe_id": [
+        77
+      ],
+      "note": "Every path is passed through Shellwords.escape (quote); offset and limit are integers."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "a1c6608612ec27be2c1131ce39acd6b19dd0f281cc6a8b0af1763c4786a38d24",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/v1/personas_controller.rb",
+      "line": 58,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[:life][:lane_realms].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "V1::PersonasController",
+        "method": "persona_params"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "A persona's life lane_realms is a free-form JSON map stored as one value and checked by Persona's own validations; it is never assigned to model attributes."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "b187a3f146c844471722e8a8edd76a5329cc83150196c0d1d73d124c272246f5",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/v1/personas_controller.rb",
+      "line": 44,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[:prompt][:relations].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "V1::PersonasController",
+        "method": "persona_params"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "A persona's prompt relations (keyed by counterpart ref) is a free-form JSON map stored as one value and checked by Persona's own validations; it is never assigned to model attributes."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "b8db0b4553aeb69b9711f25510756ca95d4606ecda85f74378900cc1eb3da9b2",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/models/usage_event/report.rb",
+      "line": 111,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "Arel.sql(\"date_trunc('#{unit}', (usage_events.created_at AT TIME ZONE 'UTC') AT TIME ZONE #{quoted_zone})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Report",
+        "method": "buckets"
+      },
+      "user_input": "unit",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "group_sql and measure_sql come from the GROUPS and METRICS allowlists, unit is one of hour/day/week, and the zone is quoted by the connection."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "ff4d756f08285c4c8567dee1c6dbaaacc92585f2244935bdf3e55e279d8b035e",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/v1/personas_controller.rb",
+      "line": 57,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[:life][:odds].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "V1::PersonasController",
+        "method": "persona_params"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "A persona's life odds is a free-form JSON map stored as one value and checked by Persona's own validations; it is never assigned to model attributes."
     }
   ],
-  "brakeman_version": "8.0.6"
+  "brakeman_version": "8.1.1"
 }

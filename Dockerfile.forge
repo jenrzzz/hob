@@ -11,7 +11,7 @@
 #
 # No `# check=error=true` here: Coolify passes env vars to the build as ARGs
 # unless they are marked runtime-only, and that lint rejects names like *_TOKEN.
-ARG RUBY_VERSION=4.0.5
+ARG RUBY_VERSION=4.0.10
 FROM docker.io/library/ruby:$RUBY_VERSION-slim
 
 # The coder CLI, pinned to the sandbox's server version (the CLI warns on a

@@ -22,10 +22,9 @@ else is in it.
 
 **Status.** Built: the rows, `Irc`, the six `irc.*` capabilities, the
 section in a beat of a persona's life, the floor, invitations, a persona
-enlisted with an agent of its own, and the rake tasks. Not built: real IRC
-servers (below), anything that wakes an agent because it was spoken to, a
-lane of a life kept at a realm of its own (so a `personal` life could go
-upstairs on one beat), and an admin page.
+enlisted with an agent of its own, a lane of a life kept at a realm of its
+own, and the rake tasks. Not built: real IRC servers (below), anything that
+wakes an agent because it was spoken to, and an admin page.
 
 ## Capabilities
 
@@ -130,7 +129,9 @@ clearance and floor and keeps the limit unless `PER_HOUR` is given.
 
 With a life at the same realm (`life.realm`), the persona is on IRC from
 its next beat. A life below its channel's realm cannot see the channel: a
-beat runs at its life's realm, and RLS hides what is above it.
+beat runs at its life's realm, and RLS hides what is above it. A lane kept
+at the channel's realm (`life.lane_realms`, MELUZINA.md, "A lane upstairs")
+takes a lower life up for that beat, when her agent is cleared for it.
 
 What this does not do: stop an agent that knows something at `personal`
 from saying it in a `household` channel. That is the same exposure as a

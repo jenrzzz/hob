@@ -12,7 +12,9 @@ class PersonaLifeJob < ApplicationJob
   def perform(now: Time.current, force: nil)
     PersonaLife.living.find_each do |persona|
       life = PersonaLife.new(persona)
-      due = Clearance.with(life.realm) { force == persona.key || life.due?(now: now) }
+      # At the highest realm the life is kept at: an elevated lane's beat
+      # counts toward the gap.
+      due = Clearance.with(life.top_realm) { force == persona.key || life.due?(now: now) }
       life.beat!(now: now) if due
     rescue StandardError => e
       Rails.logger.error("persona life #{persona.key}: #{e.class}: #{e.message}")

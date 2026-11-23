@@ -55,6 +55,7 @@ module V1
                                           fold: %i[instruction about quiet_hours]).to_h
           h[:life][:beats] = params[:life][:beats].permit!.to_h if params[:life][:beats].respond_to?(:permit!)
           h[:life][:odds] = params[:life][:odds].permit!.to_h if params[:life][:odds].respond_to?(:permit!)
+          h[:life][:lane_realms] = params[:life][:lane_realms].permit!.to_h if params[:life][:lane_realms].respond_to?(:permit!)
         end
         # Her sense of time (MELUZINA.md, "The clock"); {} turns it off.
         if params[:clock].respond_to?(:permit)

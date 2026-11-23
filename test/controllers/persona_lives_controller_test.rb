@@ -57,17 +57,42 @@ class PersonaLivesControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "a lane kept upstairs reaches kat's intimate key and not a personal one" do
+    @mel.update!(life: @mel.life.merge("beats" => { "kitchen" => [ "cook" ], "upstairs" => [ "go up" ] },
+                                       "lane_realms" => { "upstairs" => "intimate" }))
+    life = PersonaLife.new(@mel)
+    Clearance.with("personal") do
+      life.write_diary!("made soup", lane: "kitchen", at: 2.hours.ago)
+      life.set_mood!(disposition: "floury", at: 2.hours.ago)
+    end
+    Clearance.with("intimate") do
+      life.write_diary!("on the stairs", lane: "upstairs", at: 1.hour.ago, realm: "intimate")
+      life.set_mood!(disposition: "flushed", at: 1.hour.ago, realm: "intimate")
+    end
+
+    get "/v1/personas/mel/life", headers: auth
+    assert_equal [ "made soup", "on the stairs" ], body["diary"].map { |d| d["entry"] }
+    assert_equal "flushed", body["mood"]["disposition"]
+
+    token = ApiKey.issue!(principal: @principal, surface: "parlour", default_clearance: "personal")
+    get "/v1/personas/mel/life", headers: { "Authorization" => "Bearer #{token}" }
+    assert_equal [ "made soup" ], body["diary"].map { |d| d["entry"] }
+    assert_equal "floury", body["mood"]["disposition"]
+  end
+
   test "a persona push carries the life but keeps her home" do
     @mel.update!(life: @mel.life.merge("home" => "conv-1"))
     patch "/v1/personas/mel", params: { life: { instruction: "new beats", dial: "daily", home: "elsewhere",
-                                                beats: { kitchen: [ "cook" ] }, odds: { "0-5": 0.3 } } },
+                                                beats: { kitchen: [ "cook" ], upstairs: [ "go up" ] }, odds: { "0-5": 0.3 },
+                                                lane_realms: { upstairs: "intimate" } } },
                               headers: auth, as: :json
     assert_response :ok
     life = @mel.reload.life
     assert_equal "new beats", life["instruction"]
     assert_equal "daily", life["dial"]
     assert_equal "conv-1", life["home"]
-    assert_equal({ "kitchen" => [ "cook" ] }, life["beats"])
+    assert_equal({ "kitchen" => [ "cook" ], "upstairs" => [ "go up" ] }, life["beats"])
+    assert_equal({ "upstairs" => "intimate" }, life["lane_realms"])
     assert_equal({ "0-5" => 0.3 }, life["odds"])
   end
 end

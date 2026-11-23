@@ -10,6 +10,7 @@
 #     "max_iterations" => 24,            tool rounds a beat may take (default ToolExchange's); a life
 #                                        with a machine to tinker on wants more than a diary needs
 #     "beats" => { lane => [direction, ...] },   where a beat may go, drawn avoiding recent lanes
+#     "lane_realms" => { lane => realm },  a lane kept at a realm above the life's (see below)
 #     "paper" => { "url" => <JSON Feed>, "odds" => 3, "skip" => 1 },  read on one beat in `odds`,
 #                                        past the first `skip` items (a briefing)
 #     "dial" => "off" | "rare" | "daily" | "open", whether a whisper may go out: never, after a
@@ -22,12 +23,21 @@
 # whisper is an assistant node appended to her home conversation with
 # meta.whisper, which a bridge following that conversation delivers.
 #
+# A lane in `lane_realms` is kept at a realm of its own, at or above the
+# life's: a beat drawn to it runs there (its completion, its tools, her
+# agent's), and its diary entry and mood are written there. It reads her
+# life across realms; nothing it writes reaches a reader below it. It
+# never supersedes or retires an observation of a lower realm: its mood is
+# a new one beside the life's, and the newest visible is her mood. It has
+# no chew and no whisper (the whisper lands in her home conversation).
+#
 # Nothing here names a persona; the instruction and the beats are hers,
 # pushed with the rest of her.
 class PersonaLife
   class Invalid < StandardError; end
 
-  OPTIONS = %w[instruction realm zone odds min_gap_minutes role max_iterations note unworn fold beats paper dial home].freeze
+  OPTIONS = %w[instruction realm zone odds min_gap_minutes role max_iterations note unworn fold beats lane_realms paper
+               dial home].freeze
   MAX_ITERATIONS = 60
   UNWORN_MAX = 40
   DIALS = %w[off rare daily open].freeze
@@ -74,6 +84,7 @@ class PersonaLife
     problems << "life.dial is off, rare or daily" if config["dial"].present? && !DIALS.include?(config["dial"])
     problems << "life.odds maps hour ranges (\"0-5\") to chances" unless odds_read?(config["odds"])
     problems << "life.beats maps lanes to lists of directions" unless beats_read?(config["beats"])
+    problems.concat(lane_realm_problems(config))
     rounds = config["max_iterations"]
     unless rounds.nil? || (rounds.is_a?(Integer) && rounds.between?(2, MAX_ITERATIONS))
       problems << "life.max_iterations is a whole number from 2 to #{MAX_ITERATIONS}"
@@ -105,6 +116,32 @@ class PersonaLife
     beats.is_a?(Hash) && beats.all? { |lane, dirs| lane.present? && dirs.is_a?(Array) && dirs.all? { |d| d.is_a?(String) && d.present? } }
   end
 
+  # Each lane named is one of the life's beats, and its realm is a realm no
+  # lower than the life's.
+  def self.lane_realm_problems(config)
+    lanes = config["lane_realms"]
+    return [] if lanes.nil?
+    return [ "life.lane_realms maps lanes to realms" ] unless lanes.is_a?(Hash)
+
+    beats = config["beats"].is_a?(Hash) ? config["beats"].keys.map(&:to_s) : []
+    floor = rank_or_nil(config["realm"].presence || "personal")
+    lanes.flat_map do |lane, slug|
+      next [ "life.lane_realms names #{lane}, which is not one of its beats" ] unless beats.include?(lane.to_s)
+
+      rank = rank_or_nil(slug.to_s)
+      next [ "life.lane_realms.#{lane} #{slug} is not a realm" ] if rank.nil?
+      next [ "life.lane_realms.#{lane} is below the life's realm" ] if floor && rank < floor
+
+      []
+    end
+  end
+
+  def self.rank_or_nil(slug)
+    Realm.rank_of(slug)
+  rescue ArgumentError
+    nil
+  end
+
   def self.living
     Persona.where("life ? 'instruction'")
   end
@@ -118,6 +155,22 @@ class PersonaLife
 
   def realm
     config["realm"].presence || "personal"
+  end
+
+  # Where a beat drawn to this lane runs and writes: its lane_realms entry,
+  # else the life's realm.
+  def realm_for(lane)
+    config["lane_realms"].to_h[lane.to_s].presence || realm
+  end
+
+  # The highest realm the life is kept at: where a reader sees all of it
+  # (the scheduler's gap, the draw that avoids recent lanes).
+  def top_realm
+    ([ realm ] + config["lane_realms"].to_h.values).max_by { |r| Realm.rank_of(r) }
+  end
+
+  def elevated?(at)
+    Realm.rank_of(at) > Realm.rank_of(realm)
   end
 
   def zone
@@ -163,8 +216,8 @@ class PersonaLife
     @home = config["home"].presence && at_home { Conversation.find_by(id: config["home"]) }
   end
 
-  def home_readable?
-    home.present? && Realm.rank_of(home.realm) <= Realm.rank_of(realm)
+  def home_readable?(at = realm)
+    home.present? && Realm.rank_of(home.realm) <= Realm.rank_of(at)
   end
 
   def at_home(&)
@@ -177,8 +230,13 @@ class PersonaLife
 
   # --- reading her life (at the caller's clearance) -----------------------
 
+  # Hers, at every realm at or below the one being read at (RLS hides the
+  # rest anyway): a reader at the life's realm sees what it always did, and
+  # one above it also sees what her elevated lanes wrote.
   def mine(kind)
-    Observation.current.where(entity_id: entity.id, author_entity_id: entity.id, kind: kind, realm: realm)
+    Observation.current.where(entity_id: entity.id, author_entity_id: entity.id, kind: kind)
+               .where("(SELECT rank FROM realms WHERE realms.slug = observations.realm) <= COALESCE(app_clearance_rank(), ?)",
+                      Realm.rank_of(realm))
   end
 
   # Newest first.
@@ -275,17 +333,20 @@ class PersonaLife
 
   # --- writing her life ----------------------------------------------------
 
-  def write_diary!(entry, lane: nil, at: Time.current)
+  # Every write takes the realm it is kept at (an elevated lane's, or the
+  # life's), and supersedes or retires only what is kept at that same realm.
+
+  def write_diary!(entry, lane: nil, at: Time.current, realm: self.realm)
     Memory.remember!(about: entity, author: entity, kind: "diary", body: entry.to_s.strip.truncate(DIARY_MAX),
                      realm: realm, observed_at: at, source: { "lane" => lane }.compact)
   end
 
-  def set_mood!(disposition:, obsession: nil, manifestation: nil, at: Time.current)
+  def set_mood!(disposition:, obsession: nil, manifestation: nil, at: Time.current, realm: self.realm)
     raise Invalid, "a mood needs a disposition" if disposition.blank?
 
     source = { "obsession" => obsession.to_s.strip.truncate(OBSESSION_MAX).presence,
                "manifestation" => (manifestation.to_f.clamp(0.0, 1.0) if manifestation.is_a?(Numeric)) }.compact
-    current = mood
+    current = mine("mood").where(realm: realm).order(observed_at: :desc).first
     if current
       replacement = Memory.supersede!(current, body: disposition.to_s.strip, realm: realm, reason: "a new beat")
       replacement.update_columns(source: source, observed_at: at)
@@ -297,8 +358,8 @@ class PersonaLife
   end
 
   # action: pick_up (puts any current one down), chew (it moved), spit_out.
-  def chew!(action:, subject: nil, from: nil, note: nil, take: nil, at: Time.current)
-    current = chew
+  def chew!(action:, subject: nil, from: nil, note: nil, take: nil, at: Time.current, realm: self.realm)
+    current = mine("chew").where(realm: realm).order(observed_at: :desc).first
     case action.to_s
     when "pick_up"
       raise Invalid, "pick_up needs a subject" if subject.blank?
@@ -332,7 +393,7 @@ class PersonaLife
 
   # A chew nobody touched for CHEW_EXPIRE is already gone.
   def expire_chew!(now = Time.current)
-    current = chew
+    current = mine("chew").where(realm: realm).order(observed_at: :desc).first
     Memory.retire!(current, reason: "went cold", realm: realm) if current && current.observed_at < now - CHEW_EXPIRE
   end
 
@@ -404,6 +465,8 @@ class PersonaLife
   # --- the beat ------------------------------------------------------------
 
   # Whether a beat is due now: past the gap, and the hour's odds come up.
+  # Read at top_realm, or a beat an elevated lane wrote is not seen and the
+  # gap is not kept.
   def due?(now: Time.current, rng: Random)
     last = last_beat_at
     gap = (config["min_gap_minutes"] || DEFAULT_GAP).to_i.minutes
@@ -422,13 +485,18 @@ class PersonaLife
   end
 
   # Run one beat: a completion under her persona and the life instruction,
-  # with her life's tools, her agent's, and her corpora. -> Completion::Result
+  # with her life's tools, her agent's, and her corpora. The lane is drawn
+  # seeing every realm the life uses, so recent lanes are avoided wherever
+  # they were kept; the beat then runs at its lane's realm.
+  # -> Completion::Result
   def beat!(now: Time.current, rng: Random.new)
     Clearance.with(realm) do
-      Current.set(surface: "life", clearance: realm) do
-        expire_chew!(now)
-        Beat.new(self, now: now, rng: rng).run!
-      end
+      Current.set(surface: "life", clearance: realm) { expire_chew!(now) }
+    end
+    beat = Beat.new(self, now: now, rng: rng)
+    at = Clearance.with(top_realm) { beat.realm }
+    Clearance.with(at) do
+      Current.set(surface: "life", clearance: at) { beat.run! }
     end
   end
 end

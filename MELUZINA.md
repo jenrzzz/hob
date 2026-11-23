@@ -177,7 +177,8 @@ persona's reply is not yet carried to another as its incoming line.
 `personas.life` (`PersonaLife`) holds the instruction her life turns run
 under, the realm her life is kept at (`personal`), her zone and the odds of
 a beat by her local hour, the minimum gap, the tool rounds a beat may take, the beats (lanes of directions a
-beat may be sent to, drawn avoiding the last few), an optional paper (a JSON
+beat may be sent to, drawn avoiding the last few), the lanes kept at a realm
+of their own (`lane_realms`, "A lane upstairs" below), an optional paper (a JSON
 Feed read on one beat in `odds`, past `skip` items), the whisper dial
 (`off`/`rare`/`daily`/`open`), and `home`, the conversation her whispers land in.
 kat pushes all of it with the persona except `home`, which is set at the box
@@ -185,8 +186,8 @@ kat pushes all of it with the persona except `home`, which is set at the box
 
 `PersonaLifeJob` runs every 15 minutes. For each persona with a life, past
 her minimum gap, her hour's odds are rolled; a hit runs one beat
-(`PersonaLife::Beat`): a completion titled `life`, at the life's realm,
-under her system core and the life instruction, with her clock, mood and
+(`PersonaLife::Beat`): a completion titled `life`, at the life's realm
+(or its lane's, "A lane upstairs"), under her system core and the life instruction, with her clock, mood and
 obsession, the last three diary entries, what is worn out (`Rut`, kat's
 `DiaryRut` ported), where this beat goes (a lane, or the paper), the chew,
 whether he is around, and whether a whisper may go. Her tools:
@@ -284,13 +285,51 @@ leans her toward one: a cooldown read to her as a window she had to use.
 **Realms.** The home is the Discord DM at `intimate`, above her life. A beat
 may see that the home exists, when he last wrote and when she last
 whispered, and may append the whisper to it; it reads his words into the
-beat's prompt only from a home at or below the life's realm, since what a
-beat reads lands in its own `personal` conversation.
+beat's prompt only from a home at or below the beat's realm, since what a
+beat reads lands in its own conversation, at that realm.
+
+**A lane upstairs.** `life.lane_realms` (`{ lane => realm }`) keeps a lane at
+a realm of its own, so a `personal` life can go up to `#upstairs` (IRC.md)
+on one beat. Each lane named is one of `beats`, and its realm is no lower
+than the life's. kat pushes it with the rest of her life.
+
+- **Where it runs.** The lane is drawn seeing every realm the life uses
+  (`top_realm`), so a lane used upstairs lately is avoided too. A beat drawn
+  to a kept lane runs at that lane's realm: its completion, its clearance,
+  her agent's tools, and the machine, Claude Code and IRC sections. Her
+  agent still acts at no more than its own clearance, and those sections
+  are read where it acts, so the page never shows a channel her tools
+  cannot reach.
+- **What it reads.** Her life is read at or below the realm reading it
+  (`PersonaLife#mine`), so the beat upstairs sees her `personal` diary,
+  mood and chew as well as its own. A reader at the life's realm sees
+  exactly what it did before.
+- **What it writes.** Its diary entry and mood are kept at the lane's realm.
+  It never supersedes or retires what is kept lower: its mood is a new one
+  beside the life's, each realm superseding only its own, and the newest
+  one a reader can see is her mood.
+- **What it leaves out.** No `chew` and no `whisper`. The chew is one thing
+  across her life; moving it from above would retire the one a `personal`
+  reader sees, or move it out of that reader's sight. The page shows the
+  chew and says the beat leaves it where it is. A whisper lands in her home
+  conversation, which a bridge delivers, so it is not offered.
+- **The gap.** `PersonaLifeJob` decides whether a beat is due at
+  `top_realm`, so a beat upstairs counts toward the minimum gap.
+
+Who sees it: kat reads her life at `intimate` and gets all of it; a
+`personal` key gets none of what a kept lane wrote. A conversation reads her
+life at its own realm, so her Discord DM, at `intimate`, sees the upstairs
+beats in "Your own life lately", and a `personal` conversation does not.
+Going upstairs also needs her agent cleared to the lane's realm
+(`principals.max_clearance`): below it, her agent's tools act at its own
+clearance and `#upstairs` is out of sight. Raising it also lifts her agent
+in the Discord DM, which runs at `intimate`: there she would act, and read
+IRC, at `intimate` too.
 
 **In conversation**, the persona stage renders her mood, obsession, last
 three diary entries and the chew after her sheet, read at the
 conversation's realm (`PersonaLife#render`), so a `household` conversation
-sees none of it.
+sees none of it, and a `personal` one none of a lane kept above it.
 
 **kat** reads her life back with `GET /v1/personas/:key/life` every five
 minutes (`Meluzina::HobLifeJob`) into its WorldState, moves the chew with

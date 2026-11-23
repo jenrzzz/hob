@@ -1,6 +1,9 @@
 class PersonaLife
   # Her life's tools in a beat, a native venue (NativeTools): diary,
-  # set_mood, chew, whisper. A first diary draft that falls back into the
+  # set_mood, chew, whisper, writing at the beat's realm. A beat kept above
+  # the life's realm has diary and set_mood only: the chew is one thing
+  # across her life, and moving it from above would retire the one a lower
+  # reader sees; a whisper lands in her home conversation. A first diary draft that falls back into the
   # groove (Rut#echo) is refused once with the reason, and kept if the
   # model doesn't try again: one retry, not a negotiation.
   class Tools
@@ -36,14 +39,19 @@ class PersonaLife
                             "properties" => { "body" => { "type" => "string", "maxLength" => WHISPER_MAX } } } }
     ].freeze
 
-    def initialize(life, rut:, lane:, now:)
+    def initialize(life, rut:, lane:, now:, realm: life.realm)
       @life = life
       @rut = rut
       @lane = lane
       @now = now
+      @realm = realm
       @drafts = 0
       @done = {}
-      @defs = DEFS.reject { |d| d["name"] == "whisper" && life.whisper_blocked(now) }
+      @defs = if life.elevated?(realm)
+        DEFS.select { |d| %w[diary set_mood].include?(d["name"]) }
+      else
+        DEFS.reject { |d| d["name"] == "whisper" && life.whisper_blocked(now) }
+      end
     end
 
     def names
@@ -65,6 +73,8 @@ class PersonaLife
     # -> Outcome
     def execute(call, node: nil)
       args = (call["arguments"] || {}).to_h.stringify_keys
+      return Outcome.new(call: call, content: JSON.generate("error" => "not offered this beat"), error: true) unless native?(call["name"])
+
       answer = case call["name"].to_s
       when "diary" then diary(args)
       when "set_mood" then mood(args)
@@ -86,7 +96,7 @@ class PersonaLife
 
       @drafts += 1
       reason = @rut.echo(entry) if @drafts == 1
-      @life.write_diary!(entry, lane: @lane, at: @now) if reason.nil? || @drafts == 1
+      @life.write_diary!(entry, lane: @lane, at: @now, realm: @realm) if reason.nil? || @drafts == 1
       if reason
         @kept = true
         return { "error" => "not recorded as it stands - the entry #{reason}. You have written that already. Write " \
@@ -104,14 +114,14 @@ class PersonaLife
     def replace_kept!
       return unless @kept
 
-      first = @life.mine("diary").where(observed_at: @now).order(:created_at).first
+      first = @life.mine("diary").where(realm: @realm, observed_at: @now).order(:created_at).first
       first&.update!(retired_at: Time.current, retired_by: "life", retire_reason: "a second draft replaced it")
       @kept = false
     end
 
     def mood(args)
       @life.set_mood!(disposition: args["disposition"], obsession: args["obsession"],
-                      manifestation: args["manifestation"], at: @now)
+                      manifestation: args["manifestation"], at: @now, realm: @realm)
       @done["mood"] = args["disposition"].to_s.truncate(40)
       { "recorded" => true }
     end

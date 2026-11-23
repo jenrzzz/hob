@@ -17,12 +17,32 @@ class PersonaLife
       @rng = rng
     end
 
+    # Where this beat runs and writes: its lane's realm (PersonaLife#realm_for).
+    # Draws the lane, so ask it first at the clearance the draw should see.
+    def realm
+      @realm ||= @life.realm_for(beat[:lane])
+    end
+
+    # Where her agent acts in this beat: the lowest of the beat's realm, the
+    # clearance in force and the agent's own, as AgentTools has it. Her
+    # agent's sections are read there, so the page never shows what her tools
+    # cannot reach.
+    def agent_realm
+      [ realm, Clearance.current, @life.agent&.max_clearance ].compact.min_by { |r| Realm.rank_of(r) }
+    end
+
+    # Kept above the life's realm: no chew and no whisper.
+    def elevated?
+      @life.elevated?(realm)
+    end
+
+    # Run at the beat's realm (PersonaLife#beat! sets the clearance).
     def run!
-      tools = Tools.new(@life, rut: rut, lane: beat[:lane], now: @now)
+      tools = Tools.new(@life, rut: rut, lane: beat[:lane], now: @now, realm: realm)
       completion = Completion.new(
         role: @life.config["role"].presence || @persona.model_role || ChatTurn::DEFAULT_ROLE,
         messages: [ { "role" => "user", "content" => prompt } ],
-        system: @life.config["instruction"], persona: @persona, realm: @life.realm, operation: "life",
+        system: @life.config["instruction"], persona: @persona, realm: realm, operation: "life",
         ref: "persona/#{@persona.key}/life", venues: [ tools ], max_iterations: @life.max_iterations,
         recall_also: recall_by_lane
       )
@@ -72,8 +92,12 @@ class PersonaLife
       parts << commissions_section
       parts << irc_section
       parts << whisper_line
-      parts << "Write the next beat: call diary once and set_mood once; chew only if it moved; whisper only if " \
-               "something is worth it."
+      parts << if elevated?
+        "Write the next beat: call diary once and set_mood once."
+      else
+        "Write the next beat: call diary once and set_mood once; chew only if it moved; whisper only if " \
+          "something is worth it."
+      end
       parts.compact.join("\n\n")
     end
 
@@ -149,7 +173,7 @@ class PersonaLife
 
     def brief
       @brief ||= begin
-        nodes = @life.home_readable? ? @life.home.branch.timeline.last(40) : []
+        nodes = @life.home_readable?(realm) ? @life.home.branch.timeline.last(40) : []
         nodes.select { |n| %w[user assistant].include?(n.role) && n.kind == "text" && n.content.present? }
              .last(BRIEF_LINES)
              .map { |n| "#{n.role == 'user' ? 'him' : 'you'}: #{n.content.to_s.squish.truncate(BRIEF_CHARS)}" }
@@ -169,6 +193,12 @@ class PersonaLife
 
     def chew_section
       current = @life.chew
+      if elevated?
+        return nil unless current
+
+        return "THE CHEW - you've been sitting with \"#{current.source.to_h['subject']}\". This beat leaves it " \
+               "where it is."
+      end
       return "You aren't chewing on anything right now. That's normal - only pick something up if it actually " \
              "has its hooks in you." unless current
 
@@ -202,7 +232,7 @@ class PersonaLife
     def machine_section
       agent = @life.agent or return nil
       host = Shells.hosts(agent).where(agent_id: agent.id).first or return nil
-      return nil unless Mcp::Agent.capabilities(agent, @life.realm).key?("shell_exec")
+      return nil unless Mcp::Agent.capabilities(agent, agent_realm).key?("shell_exec")
 
       lines = [ "YOUR MACHINE - #{host.name} (you are #{host.login} there)#{host.about.present? ? ": #{host.about}" : '.'}" ]
       lines << "Unlike the rest of a beat, this is not imagined: shell_exec, shell_read and shell_write really run " \
@@ -250,7 +280,7 @@ class PersonaLife
     def commissions_section
       agent = @life.agent or return nil
       repo = Commissions.repos(agent).first or return nil
-      return nil unless Mcp::Agent.capabilities(agent, @life.realm).key?("code_start")
+      return nil unless Mcp::Agent.capabilities(agent, agent_realm).key?("code_start")
 
       lines = [ "CLAUDE CODE - anything bigger than a few lines, hand to Claude Code with code_start: it builds in your " \
                 "repo #{repo.name}#{repo.about.present? ? " (#{repo.about})" : ''} and you pull what it made. It costs you " \
@@ -287,9 +317,9 @@ class PersonaLife
     # her through irc_read as data. It asks for nothing.
     def irc_section
       agent = @life.agent or return nil
-      return nil unless Mcp::Agent.capabilities(agent, @life.realm).key?("irc_read")
+      return nil unless Mcp::Agent.capabilities(agent, agent_realm).key?("irc_read")
 
-      at = Irc.glance(agent)
+      at = Clearance.with(agent_realm) { Irc.glance(agent) }
       lines = [ "IRC - hob has a small IRC of its own where the household's other agents and personas talk. You are " \
                 "#{agent.name} there. Nobody is on it all the time: a line waits until whoever it is for next looks, " \
                 "and yours will too. The people of the house are not on it, though they can read it." ]
@@ -328,6 +358,8 @@ class PersonaLife
     # to judge for herself, which is when the last one went and whether he
     # has answered.
     def whisper_line
+      return nil if elevated?
+
       if (reason = @life.whisper_blocked(@now))
         return "No whisper this beat (#{reason}). Nothing is lost by it."
       end

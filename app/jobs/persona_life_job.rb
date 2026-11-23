@@ -12,10 +12,15 @@ class PersonaLifeJob < ApplicationJob
   def perform(now: Time.current, force: nil)
     PersonaLife.living.find_each do |persona|
       life = PersonaLife.new(persona)
-      # At the highest realm the life is kept at: an elevated lane's beat
-      # counts toward the gap.
-      due = Clearance.with(life.top_realm) { force == persona.key || life.due?(now: now) }
-      life.beat!(now: now) if due
+      # Never beside a wake of hers (PersonaLife::Wake): one that is running
+      # takes this tick's beat.
+      ran = life.exclusively do
+        # At the highest realm the life is kept at: an elevated lane's beat
+        # counts toward the gap.
+        due = Clearance.with(life.top_realm) { force == persona.key || life.due?(now: now) }
+        life.beat!(now: now) if due
+      end
+      Rails.logger.info("persona life #{persona.key}: a wake is running; no beat this tick") if ran == :busy
     rescue StandardError => e
       Rails.logger.error("persona life #{persona.key}: #{e.class}: #{e.message}")
     ensure

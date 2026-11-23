@@ -95,4 +95,18 @@ class PersonaLivesControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "upstairs" => "intimate" }, life["lane_realms"])
     assert_equal({ "0-5" => 0.3 }, life["odds"])
   end
+
+  test "a push carries wakes and a budget, and show says what is spent" do
+    patch "/v1/personas/mel", params: { life: { instruction: "beats", wakes: { gap_minutes: 30, per_day: 4, delay_minutes: 2 },
+                                                budget: { tokens_per_day: 500 } } },
+                              headers: auth, as: :json
+    assert_response :ok
+    life = @mel.reload.life
+    assert_equal({ "gap_minutes" => 30, "per_day" => 4, "delay_minutes" => 2 }, life["wakes"])
+    assert_equal({ "tokens_per_day" => 500 }, life["budget"])
+
+    UsageEvent.create!(ref: "persona/mel/life", created_at: 1.hour.ago, units: { "input_tokens" => 200, "output_tokens" => 40 })
+    get "/v1/personas/mel/life", headers: auth
+    assert_equal({ "tokens_per_day" => 500, "spent_24h" => 240, "over" => false }, body["budget"])
+  end
 end

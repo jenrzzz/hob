@@ -79,8 +79,12 @@ module Irc
   end
 
   # Says up to MAX_SAY lines in a channel `who` is in, or to another agent.
+  # A line that names a persona's agent, or a DM to one, may wake her
+  # (PersonaLife::Wake). The agent of a persona whose day's tokens are spent
+  # (PersonaLife::Budget) says nothing until they come back.
   def say(who, to:, body:, action: false, request_id: nil)
     agent!(who)
+    spent!(who)
     texts = lines!(body)
     channel = to.to_s.start_with?("#") ? channel!(to).tap { |c| member!(c, who) } : dm!(who, to)
     heard!(who, channel)
@@ -89,6 +93,7 @@ module Irc
                             realm: channel.realm, sentinel_request_id: request_id)
     end
     keep_up!(channel, who, said.last)
+    PersonaLife::Wake.heard(channel, said)
     { "to" => label(channel, who), "said" => said.map(&:to_log),
       **unread(channel.memberships.find_by(principal: who), who).slice("new") }
   end
@@ -224,6 +229,17 @@ module Irc
     membership = channel.memberships.find_by(principal: who) or return
     behind = channel.lines.where("id > ?", membership.read_line_id).where("sender_id IS DISTINCT FROM ?", who.id).exists?
     membership.update!(read_line_id: line.id) unless behind
+  end
+
+  # Here, not in the irc.say handler: this module is the only door, so no
+  # other way of saying a line can step around it.
+  def spent!(who)
+    budget = PersonaLife::Budget.for_agent(who) or return
+    now = Time.current
+    return unless budget.over?(now)
+
+    again = budget.again_at(now).utc.strftime("%Y-%m-%d %H:%MZ")
+    raise Error, "#{budget.persona.key} has spent its tokens for today; it can speak again after #{again}"
   end
 
   def heard!(who, channel)

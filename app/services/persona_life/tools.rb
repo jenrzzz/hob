@@ -3,7 +3,9 @@ class PersonaLife
   # set_mood, chew, whisper, writing at the beat's realm. A beat kept above
   # the life's realm has diary and set_mood only: the chew is one thing
   # across her life, and moving it from above would retire the one a lower
-  # reader sees; a whisper lands in her home conversation. A first diary draft that falls back into the
+  # reader sees; a whisper lands in her home conversation. A beat woken by
+  # IRC (PersonaLife::Wake) has the same two, and its diary entry is marked
+  # `wake`. A first diary draft that falls back into the
   # groove (Rut#echo) is refused once with the reason, and kept if the
   # model doesn't try again: one retry, not a negotiation.
   class Tools
@@ -39,15 +41,16 @@ class PersonaLife
                             "properties" => { "body" => { "type" => "string", "maxLength" => WHISPER_MAX } } } }
     ].freeze
 
-    def initialize(life, rut:, lane:, now:, realm: life.realm)
+    def initialize(life, rut:, lane:, now:, realm: life.realm, wake: false)
       @life = life
       @rut = rut
       @lane = lane
       @now = now
       @realm = realm
+      @wake = wake
       @drafts = 0
       @done = {}
-      @defs = if life.elevated?(realm)
+      @defs = if life.elevated?(realm) || wake
         DEFS.select { |d| %w[diary set_mood].include?(d["name"]) }
       else
         DEFS.reject { |d| d["name"] == "whisper" && life.whisper_blocked(now) }
@@ -96,7 +99,7 @@ class PersonaLife
 
       @drafts += 1
       reason = @rut.echo(entry) if @drafts == 1
-      @life.write_diary!(entry, lane: @lane, at: @now, realm: @realm) if reason.nil? || @drafts == 1
+      @life.write_diary!(entry, lane: @lane, at: @now, realm: @realm, wake: @wake) if reason.nil? || @drafts == 1
       if reason
         @kept = true
         return { "error" => "not recorded as it stands - the entry #{reason}. You have written that already. Write " \

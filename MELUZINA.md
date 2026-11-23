@@ -180,7 +180,10 @@ a beat by her local hour, the minimum gap, the tool rounds a beat may take, the 
 beat may be sent to, drawn avoiding the last few), the lanes kept at a realm
 of their own (`lane_realms`, "A lane upstairs" below), an optional paper (a JSON
 Feed read on one beat in `odds`, past `skip` items), the whisper dial
-(`off`/`rare`/`daily`/`open`), and `home`, the conversation her whispers land in.
+(`off`/`rare`/`daily`/`open`), `home`, the conversation her whispers land in,
+`wakes`, a beat soon after her agent is spoken to on IRC (IRC.md, "Woken"),
+and `budget`, the tokens her life may spend in a day before her wakes and her
+IRC lines stop (IRC.md, "A persona's token budget").
 kat pushes all of it with the persona except `home`, which is set at the box
 (`hob:persona:home[meluzina,<conversation>]`; a push keeps it).
 

@@ -15,7 +15,11 @@
 #                                        past the first `skip` items (a briefing)
 #     "dial" => "off" | "rare" | "daily" | "open", whether a whisper may go out: never, after a
 #                                                  cooldown, or whenever she has one (hers to judge)
-#     "home" => <conversation id> }      where whispers land; set at the box (hob:persona:home)
+#     "home" => <conversation id>,       where whispers land; set at the box (hob:persona:home)
+#     "wakes" => { "gap_minutes" => 20, "per_day" => 8, "delay_minutes" => 3 },  a beat soon after
+#                                        her agent is named or written to on IRC (PersonaLife::Wake)
+#     "budget" => { "tokens_per_day" => 200_000 } }  what her life may spend in a day before her
+#                                        wakes and her IRC lines stop (PersonaLife::Budget)
 #
 # Her life is observations she authors about herself, at the life's realm:
 # `diary` (one per beat), `mood` (superseded each beat), `chew` (the one
@@ -37,7 +41,7 @@ class PersonaLife
   class Invalid < StandardError; end
 
   OPTIONS = %w[instruction realm zone odds min_gap_minutes role max_iterations note unworn fold beats lane_realms paper
-               dial home].freeze
+               dial home wakes budget].freeze
   MAX_ITERATIONS = 60
   UNWORN_MAX = 40
   DIALS = %w[off rare daily open].freeze
@@ -98,6 +102,8 @@ class PersonaLife
       problems << "life.unworn is a list of at most #{UNWORN_MAX} words that never wear out"
     end
     problems.concat(Fold.problems(config["fold"]))
+    problems.concat(Wake.problems(config["wakes"]))
+    problems.concat(Budget.problems(config["budget"]))
     paper = config["paper"]
     problems << "life.paper needs a url" if paper.present? && (!paper.is_a?(Hash) || paper["url"].blank?)
     problems
@@ -167,6 +173,16 @@ class PersonaLife
   # (the scheduler's gap, the draw that avoids recent lanes).
   def top_realm
     ([ realm ] + config["lane_realms"].to_h.values).max_by { |r| Realm.rank_of(r) }
+  end
+
+  # Where a beat woken from a room at `room` runs (PersonaLife::Wake): the
+  # lowest realm the life is kept at that is no lower than the room, so a
+  # room below the life is answered at the life's realm. Nil when the room
+  # is above every realm the life holds: such a room wakes nobody.
+  def realm_for_room(room)
+    rank = Realm.rank_of(room)
+    ([ realm ] + config["lane_realms"].to_h.values).uniq.select { |r| Realm.rank_of(r) >= rank }
+                                                  .min_by { |r| Realm.rank_of(r) }
   end
 
   def elevated?(at)
@@ -278,16 +294,36 @@ class PersonaLife
     mine("diary").order(observed_at: :desc).limit(AVOID_RECENT_LANES).filter_map { |o| o.source&.dig("lane") }
   end
 
+  # One beat at a time for a persona, whichever clock started it (the
+  # scheduler's or a wake): a session advisory lock on her id. -> the
+  # block's value, or :busy when another beat of hers holds it.
+  def exclusively
+    connection = ActiveRecord::Base.connection
+    key = connection.quote("persona_life:#{persona.id}")
+    return :busy unless connection.select_value("SELECT pg_try_advisory_lock(hashtext(#{key}))")
+
+    begin
+      yield
+    ensure
+      connection.select_value("SELECT pg_advisory_unlock(hashtext(#{key}))")
+    end
+  end
+
+  def budget
+    @budget ||= Budget.new(self)
+  end
+
   # Her life as she carries it, for kat or a bridge to show (GET life).
   def as_json(*)
     now = Time.current
     current_mood = mood
     current_chew = chew
     {
-      "realm" => realm, "dial" => dial, "home" => config["home"],
+      "realm" => realm, "dial" => dial, "home" => config["home"], "budget" => budget.as_json(now),
       "last_beat_at" => last_beat_at&.utc&.iso8601, "last_whisper_at" => last_whisper&.created_at&.utc&.iso8601,
       "diary" => diary(60).reverse.map do |o|
-        { "id" => o.id, "entry" => o.body, "at" => o.observed_at.utc.iso8601, "lane" => o.source&.dig("lane") }.compact
+        { "id" => o.id, "entry" => o.body, "at" => o.observed_at.utc.iso8601, "lane" => o.source&.dig("lane"),
+          "wake" => o.source&.dig("wake") }.compact
       end,
       "mood" => current_mood && {
         "id" => current_mood.id, "disposition" => current_mood.body, "at" => current_mood.observed_at.utc.iso8601,
@@ -336,9 +372,9 @@ class PersonaLife
   # Every write takes the realm it is kept at (an elevated lane's, or the
   # life's), and supersedes or retires only what is kept at that same realm.
 
-  def write_diary!(entry, lane: nil, at: Time.current, realm: self.realm)
+  def write_diary!(entry, lane: nil, at: Time.current, realm: self.realm, wake: false)
     Memory.remember!(about: entity, author: entity, kind: "diary", body: entry.to_s.strip.truncate(DIARY_MAX),
-                     realm: realm, observed_at: at, source: { "lane" => lane }.compact)
+                     realm: realm, observed_at: at, source: { "lane" => lane, "wake" => (true if wake) }.compact)
   end
 
   def set_mood!(disposition:, obsession: nil, manifestation: nil, at: Time.current, realm: self.realm)
@@ -467,10 +503,15 @@ class PersonaLife
   # Whether a beat is due now: past the gap, and the hour's odds come up.
   # Read at top_realm, or a beat an elevated lane wrote is not seen and the
   # gap is not kept.
+  # A wake counts too: no scheduled beat within the wakes' gap of the last
+  # one, whether or not that wake wrote in the diary.
   def due?(now: Time.current, rng: Random)
     last = last_beat_at
     gap = (config["min_gap_minutes"] || DEFAULT_GAP).to_i.minutes
     return false if last && last > now - gap
+
+    wakes = Wake.new(self)
+    return false if wakes.last_woken_at && wakes.last_woken_at > now - wakes.gap
 
     rng.rand < chance_at(now.in_time_zone(zone).hour)
   end
@@ -489,11 +530,14 @@ class PersonaLife
   # seeing every realm the life uses, so recent lanes are avoided wherever
   # they were kept; the beat then runs at its lane's realm.
   # -> Completion::Result
-  def beat!(now: Time.current, rng: Random.new)
+  #
+  # A woken beat (PersonaLife::Wake) passes `wake`: { realm:, calls: [{ where, nick }] }.
+  # It draws no lane and runs at the realm the wake chose.
+  def beat!(now: Time.current, rng: Random.new, wake: nil)
     Clearance.with(realm) do
       Current.set(surface: "life", clearance: realm) { expire_chew!(now) }
     end
-    beat = Beat.new(self, now: now, rng: rng)
+    beat = Beat.new(self, now: now, rng: rng, wake: wake)
     at = Clearance.with(top_realm) { beat.realm }
     Clearance.with(at) do
       Current.set(surface: "life", clearance: at) { beat.run! }

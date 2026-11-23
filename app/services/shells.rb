@@ -90,6 +90,21 @@ module Shells
     result["timed_out"] ? "#{line} (still running when hob stopped waiting)" : "#{line} (exit #{result['exit']})"
   end
 
+  # The top of a file an agent keeps on its own machine, for reading back to
+  # it (a persona's beat): hob looking on her behalf, so no request is made
+  # and nothing is logged as hers. -> { "content", "bytes", "truncated" }, or
+  # nil when the file is not there, is not text, or the machine did not answer.
+  def glance(host, path:, max_bytes: 2_000)
+    said = host.adapter.read(path(path), offset: 0, limit: max_bytes)
+    content = said["content"].to_s.b
+    return nil if content.include?("\0")
+
+    text = content.force_encoding(Encoding::UTF_8).scrub("").strip
+    text.present? ? { "content" => text, "bytes" => said["bytes"].to_i, "truncated" => said["bytes"].to_i > content.bytesize } : nil
+  rescue Error
+    nil
+  end
+
   # One command, through the login's shell, starting in its home (or `cwd`).
   def exec(command:, host: nil, cwd: nil, stdin: nil, timeout: nil)
     raise Invalid, "command must be a string of 1 to #{MAX_COMMAND} characters" unless command.is_a?(String) && command.strip.present? && command.length <= MAX_COMMAND

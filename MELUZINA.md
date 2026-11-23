@@ -211,6 +211,15 @@ tool rounds a beat may take (default 10, which a diary needs and tinkering
 outgrows); the prompt tells her the number and to keep one for the diary.
 kat pushes it with the rest of her life.
 
+**Her note.** `life.note` is the path of a file she keeps on that machine
+for herself: where a build stands and what is next, in her own words. A beat
+reads its top back to her in the machine's lines (`Shells.glance`, 2,000
+bytes; hob looking on her behalf, so no sentinel request), or says it is
+not written yet. With a note, the beat no longer asks the diary to report
+what she did on the machine: what she makes lives in the note, and the
+diary is about whatever it is about. Nothing sends her there more often
+because something is unfinished; she asked for that (2026-11-23).
+
 **Claude Code.** When her agent has a code repo and may start commissions
 (CODE.md), a beat also says that anything bigger than a few lines goes to
 Claude Code with `code_start`, and how her last three commissions went.

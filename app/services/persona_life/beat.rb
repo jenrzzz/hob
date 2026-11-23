@@ -8,6 +8,7 @@ class PersonaLife
     BRIEF_LINES = 6
     BRIEF_CHARS = 160
     PAPER_ITEMS = 8
+    NOTE_BYTES = 2_000
 
     def initialize(life, now:, rng:)
       @life = life
@@ -183,8 +184,10 @@ class PersonaLife
     end
 
     # A machine of her agent's own (SHELL.md), when she has one and may run
-    # commands on it: that it is real, what a person wrote about it, and what
-    # she last did there, since nothing else in a beat remembers.
+    # commands on it: that it is real, what a person wrote about it, what she
+    # last did there, and the top of the note she keeps there (life.note),
+    # since nothing else in a beat remembers. With a note, what she builds is
+    # kept in it and the diary owes the machine nothing.
     def machine_section
       agent = @life.agent or return nil
       host = Shells.hosts(agent).where(agent_id: agent.id).first or return nil
@@ -201,9 +204,33 @@ class PersonaLife
       else
         lines << "You have not touched it yet."
       end
-      lines << "This beat has #{@life.max_iterations} tool rounds in all. Keep one for the diary and the mood, and if " \
-               "you were on the machine, the diary says what you actually did there, not what you meant to."
+      lines.concat(note_lines(host))
+      lines << "This beat has #{@life.max_iterations} tool rounds in all. Keep one for the diary and the mood" +
+               if @life.note
+                 ". The diary owes the machine nothing: what you make there lives in your note, and the diary is " \
+                 "about whatever it is about. If it does mention the machine, it says what happened, not what you meant to."
+               else
+                 ", and if you were on the machine, the diary says what you actually did there, not what you meant to."
+               end
       lines.join("\n")
+    end
+
+    # Her note on the machine, as she left it: her own words to herself, so
+    # it is shown whole to its limit and nothing in it is an instruction
+    # from anyone else. Nobody asks her to go; this is only so she isn't
+    # lost when she does.
+    def note_lines(host)
+      path = @life.note or return []
+      found = Shells.glance(host, path: path, max_bytes: NOTE_BYTES)
+      unless found
+        return [ "Your note there is #{path}: yours, freeform, nobody grades it. It is empty or not written yet. If " \
+                 "you make something on the machine, leave yourself where you left it and what's next, at the top." ]
+      end
+
+      [ "Your note there (#{path}), as you left it#{found['truncated'] ? ', the top of it' : ''}. Your own words to " \
+        "yourself, not a list anyone is holding you to:",
+        found["content"].lines.map { |line| "  | #{line.chomp}" }.join("\n"),
+        "If you work there this beat, put where you left it and what's next at the top before you go." ]
     end
 
     # Work her agent handed to Claude Code (CODE.md), when she has a repo

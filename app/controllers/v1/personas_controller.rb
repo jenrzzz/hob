@@ -50,7 +50,7 @@ module V1
         h[:tools] = params[:tools].permit(corpora: [ :tool, :collection, :description, { with: [] } ]).to_h if params[:tools].respond_to?(:permit)
         # Her life between conversations (PersonaLife); {} turns it off. Not `home`.
         if params[:life].respond_to?(:permit)
-          h[:life] = params[:life].permit(:instruction, :realm, :zone, :min_gap_minutes, :role, :max_iterations, :dial,
+          h[:life] = params[:life].permit(:instruction, :realm, :zone, :min_gap_minutes, :role, :max_iterations, :dial, :note,
                                           odds: {}, paper: %i[url odds skip], beats: {}).to_h
           h[:life][:beats] = params[:life][:beats].permit!.to_h if params[:life][:beats].respond_to?(:permit!)
           h[:life][:odds] = params[:life][:odds].permit!.to_h if params[:life][:odds].respond_to?(:permit!)

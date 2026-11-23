@@ -236,6 +236,43 @@ class PersonaLifeTest < ActiveSupport::TestCase
     Shells::Backends::Fake.reset!
   end
 
+  test "a beat reads the top of the note she keeps on her machine, and the diary owes the machine nothing" do
+    native_capabilities!
+    agent, = agent("meluzina", clearance: "personal")
+    shell_host("meluzina-box", agent: agent)
+    policy!(agent, "shell.*", "allow")
+    @mel.update!(tools: { "agent" => "meluzina" })
+    prompt = -> { Clearance.with("personal") { PersonaLife::Beat.new(PersonaLife.new(@mel.reload), now: Time.utc(2026, 11, 21, 9, 0), rng: Random.new(1)).prompt } }
+
+    text = prompt.call
+    assert_match(/the diary says what you actually did there/, text, "no note: the machine is still owed its entry")
+    refute_match(/Your note there/, text)
+
+    @mel.update!(life: @mel.life.merge("note" => "~/workshop/WORKLOG.md"))
+    text = prompt.call
+    assert_match(%r{Your note there is ~/workshop/WORKLOG\.md: yours, freeform, nobody grades it\. It is empty or not written yet}, text)
+    assert_match(/The diary owes the machine nothing/, text)
+    refute_match(/the diary says what you actually did there/, text)
+
+    machine = Shells::Backends::Fake.machine("meluzina-box")
+    machine.files["workshop/WORKLOG.md"] = "shed door goes to threshold hall\nthreshold hall needs a smell\n"
+    text = prompt.call
+    assert_match(/as you left it\. Your own words to yourself, not a list anyone is holding you to:\n  \| shed door goes to threshold hall\n  \| threshold hall needs a smell\n/, text)
+    assert_equal [ :read, "workshop/WORKLOG.md", { offset: 0, limit: 2_000 } ], machine.calls.last
+    assert_equal 0, SentinelRequest.count, "hob looked for her; she did nothing"
+
+    machine.files["workshop/WORKLOG.md"] = "x" * 5_000
+    assert_match(/as you left it, the top of it\./, prompt.call)
+
+    machine.error = Shells::Unavailable.new("no route")
+    assert_match(/It is empty or not written yet/, prompt.call, "a machine that does not answer costs the note, not the beat")
+
+    @mel.life = @mel.life.merge("note" => "a\nb")
+    refute @mel.valid?
+  ensure
+    Shells::Backends::Fake.reset!
+  end
+
   test "a beat tells her she can hand work to Claude Code, and how the last of it went" do
     native_capabilities!
     forge!

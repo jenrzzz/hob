@@ -26,7 +26,7 @@
 class PersonaLife
   class Invalid < StandardError; end
 
-  OPTIONS = %w[instruction realm zone odds min_gap_minutes role max_iterations beats paper dial home].freeze
+  OPTIONS = %w[instruction realm zone odds min_gap_minutes role max_iterations note beats paper dial home].freeze
   MAX_ITERATIONS = 60
   DIALS = %w[off rare daily].freeze
   COOLDOWNS = { "rare" => 60.hours, "daily" => 18.hours }.freeze
@@ -76,6 +76,10 @@ class PersonaLife
     unless rounds.nil? || (rounds.is_a?(Integer) && rounds.between?(2, MAX_ITERATIONS))
       problems << "life.max_iterations is a whole number from 2 to #{MAX_ITERATIONS}"
     end
+    note = config["note"]
+    unless note.nil? || (note.is_a?(String) && note.strip.present? && note.length <= Shells::MAX_PATH && !note.match?(/[\0\r\n]/))
+      problems << "life.note is the path of a file on her machine"
+    end
     paper = config["paper"]
     problems << "life.paper needs a url" if paper.present? && (!paper.is_a?(Hash) || paper["url"].blank?)
     problems
@@ -120,6 +124,12 @@ class PersonaLife
   # Tool rounds one beat may take.
   def max_iterations
     config["max_iterations"].presence&.to_i || ToolExchange::DEFAULT_MAX_ITERATIONS
+  end
+
+  # A file on her machine she keeps for herself (where a build stands, what
+  # is next), whose top a beat reads back to her; nil when she keeps none.
+  def note
+    config["note"].presence
   end
 
   # The agent this persona acts as (AgentTools), or nil.

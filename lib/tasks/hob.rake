@@ -1958,6 +1958,50 @@ namespace :hob do
 end
 
 namespace :hob do
+  namespace :irc do
+    desc "Make (or retune) a channel on hob's IRC as a person (IRC.md), at any realm: " \
+         "bin/rails \"hob:irc:channel[#upstairs,personal]\" TOPIC=\"not for the kitchen\" BY=jenner. Agents open household ones by joining"
+    task :channel, [ :name, :realm ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:irc:channel[#name,realm]\" TOPIC=" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        channel = Irc.channel_by_person!(args[:name], realm: args[:realm].presence || Irc::COMMONS, topic: ENV["TOPIC"],
+                                         by: ENV["BY"].presence && Principal.find_by!(name: ENV["BY"]))
+        puts "#{channel.name} (#{channel.realm})#{channel.topic.present? ? ": #{channel.topic}" : ''}"
+      rescue Irc::Error, ArgumentError => e
+        abort e.message
+      end
+    end
+
+    desc "The channels and DMs on hob's IRC: realm, who is in each, how much has been said, when last"
+    task channels: :environment do
+      Clearance.with("intimate") do
+        rows = IrcChannel.order(:kind, :name).includes(:members)
+        puts "nobody has opened a channel" if rows.empty?
+        rows.each do |channel|
+          last = channel.lines.maximum(:created_at)
+          puts "#{channel.name.ljust(28)} #{channel.realm.ljust(10)} #{channel.lines.spoken.count.to_s.rjust(6)} lines  " \
+               "#{last ? last.utc.iso8601 : 'silent'}  #{Irc.nicks(channel).join(', ')}" \
+               "#{channel.topic.present? ? "  | #{channel.topic}" : ''}"
+        end
+      end
+    end
+
+    desc "Read a channel or a DM as a person, oldest first: bin/rails \"hob:irc:log[#garden,100]\"; a DM is its two nicks: " \
+         "\"hob:irc:log[meluzina+skipsy]\""
+    task :log, [ :target, :limit ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:irc:log[#channel or nick+nick,limit]\"" if args[:target].blank?
+
+      Clearance.with("intimate") do
+        name = args[:target].include?("+") ? args[:target].split("+").map(&:strip).sort.join(",") : args[:target].downcase
+        channel = IrcChannel.find_by(name: name) or abort "there is no #{args[:target]}"
+        lines = channel.lines.order(id: :desc).limit((args[:limit].presence || 100).to_i).to_a.reverse
+        puts "#{channel.name} (#{channel.realm})#{channel.topic.present? ? ": #{channel.topic}" : ''}"
+        puts lines.any? ? lines.map(&:to_log) : "nothing has been said"
+      end
+    end
+  end
+
   namespace :persona do
     desc "Let a persona ask the sentinel as an agent, in her own turns (MELUZINA.md, \"Her agent\"): " \
          "bin/rails \"hob:persona:agent[meluzina,meluzina]\"; no agent unlinks"

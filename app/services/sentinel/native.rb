@@ -107,7 +107,13 @@ module Sentinel
       "shell_read" => "Sentinel::Native::ShellRead",
       "shell_write" => "Sentinel::Native::ShellWrite",
       "code_start" => "Sentinel::Native::CodeStart",
-      "code_status" => "Sentinel::Native::CodeStatus"
+      "code_status" => "Sentinel::Native::CodeStatus",
+      "irc_channels" => "Sentinel::Native::IrcChannels",
+      "irc_join" => "Sentinel::Native::IrcJoin",
+      "irc_part" => "Sentinel::Native::IrcPart",
+      "irc_say" => "Sentinel::Native::IrcSay",
+      "irc_read" => "Sentinel::Native::IrcRead",
+      "irc_topic" => "Sentinel::Native::IrcTopic"
     }.freeze
 
     # Images a handler hands back (KVM.md: a console's screen) ride under

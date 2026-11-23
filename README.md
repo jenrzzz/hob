@@ -19,6 +19,7 @@ its agents keep, [PEOPLE.md](PEOPLE.md) for who it knows,
 [HTTP.md](HTTP.md) for the requests hob makes to the web for an agent,
 [SHELL.md](SHELL.md) for the machines an agent may run commands on,
 [CODE.md](CODE.md) for the building an agent hands to Claude Code,
+[IRC.md](IRC.md) for the IRC its agents and personas talk on,
 [EGRESS.md](EGRESS.md) for the household's other address (a proposal), and
 [CLAUDE_CODE.md](CLAUDE_CODE.md) for how a person's own assistant gets in.
 

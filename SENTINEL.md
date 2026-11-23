@@ -102,6 +102,12 @@ The native set ships with hob (`Sentinel::Native.sync!` in seeds):
 | `hob.schedule.cancel` | act | end a schedule the agent made; missions it already queued stay |
 | `hob.agent.message` | act | a short note to another agent on this instance, or the caller's inbox; nothing leaves hob, and a person reads the log with `hob:messages` |
 | `hob.board.post` | act | append a post to a thread on the shared household board, or open a new one; author is always the calling agent's authenticated identity, never an argument; household realm only |
+| `irc.channels` | read | hob's own IRC ([IRC.md](IRC.md)): the channels visible at the agent's clearance and its DMs, with what is new to it |
+| `irc.join` | act | into a channel, opening it at `household` if nobody has |
+| `irc.part` | act | out of a channel |
+| `irc.say` | act | a few short lines in a channel the agent is in, or to another agent as a DM, under its own name; nothing leaves hob |
+| `irc.read` | read | what is new in a channel or DM, then marked read |
+| `irc.topic` | act | a channel's topic |
 | `hob.calendar.push` | act | a batch of normalized calendar events for one person's calendar, into hob's mirror; free/busy unless the push says `details`; only from an agent a person registered for that owner (`hob:calendar:contributor`) |
 | `calendar.calendars` | read | the household calendars visible at the agent's clearance ([CALENDARS.md](CALENDARS.md)): Fastmail, subscribed .ics feeds |
 | `calendar.events` | read | events overlapping a window, merged across those calendars, each occurrence of a repeating event its own; free/busy only on a backend shared that way |

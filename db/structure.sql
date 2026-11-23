@@ -587,6 +587,116 @@ CREATE TABLE public.herald_key_changes (
 
 
 --
+-- Name: irc_channels; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.irc_channels (
+    id bigint NOT NULL,
+    name character varying NOT NULL,
+    kind character varying DEFAULT 'channel'::character varying NOT NULL,
+    realm character varying NOT NULL,
+    topic character varying,
+    topic_by character varying,
+    topic_at timestamp(6) without time zone,
+    created_by_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.irc_channels FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: irc_channels_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.irc_channels_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: irc_channels_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.irc_channels_id_seq OWNED BY public.irc_channels.id;
+
+
+--
+-- Name: irc_lines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.irc_lines (
+    id bigint NOT NULL,
+    irc_channel_id bigint NOT NULL,
+    sender_id bigint,
+    nick character varying NOT NULL,
+    kind character varying DEFAULT 'say'::character varying NOT NULL,
+    body text NOT NULL,
+    realm character varying NOT NULL,
+    sentinel_request_id character varying,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.irc_lines FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: irc_lines_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.irc_lines_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: irc_lines_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.irc_lines_id_seq OWNED BY public.irc_lines.id;
+
+
+--
+-- Name: irc_memberships; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.irc_memberships (
+    id bigint NOT NULL,
+    irc_channel_id bigint NOT NULL,
+    principal_id bigint NOT NULL,
+    read_line_id bigint DEFAULT 0 NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: irc_memberships_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.irc_memberships_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: irc_memberships_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.irc_memberships_id_seq OWNED BY public.irc_memberships.id;
+
+
+--
 -- Name: mail_backends; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1869,6 +1979,27 @@ ALTER TABLE ONLY public.devices ALTER COLUMN id SET DEFAULT nextval('public.devi
 
 
 --
+-- Name: irc_channels id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_channels ALTER COLUMN id SET DEFAULT nextval('public.irc_channels_id_seq'::regclass);
+
+
+--
+-- Name: irc_lines id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_lines ALTER COLUMN id SET DEFAULT nextval('public.irc_lines_id_seq'::regclass);
+
+
+--
+-- Name: irc_memberships id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_memberships ALTER COLUMN id SET DEFAULT nextval('public.irc_memberships_id_seq'::regclass);
+
+
+--
 -- Name: model_roles id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2142,6 +2273,30 @@ ALTER TABLE ONLY public.guidance_changes
 
 ALTER TABLE ONLY public.herald_key_changes
     ADD CONSTRAINT herald_key_changes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: irc_channels irc_channels_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_channels
+    ADD CONSTRAINT irc_channels_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: irc_lines irc_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_lines
+    ADD CONSTRAINT irc_lines_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: irc_memberships irc_memberships_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_memberships
+    ADD CONSTRAINT irc_memberships_pkey PRIMARY KEY (id);
 
 
 --
@@ -2954,6 +3109,62 @@ CREATE INDEX index_herald_key_changes_on_text_backend_id ON public.herald_key_ch
 
 
 --
+-- Name: index_irc_channels_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_irc_channels_on_created_by_id ON public.irc_channels USING btree (created_by_id);
+
+
+--
+-- Name: index_irc_channels_on_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_irc_channels_on_name ON public.irc_channels USING btree (name);
+
+
+--
+-- Name: index_irc_lines_on_irc_channel_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_irc_lines_on_irc_channel_id ON public.irc_lines USING btree (irc_channel_id);
+
+
+--
+-- Name: index_irc_lines_on_irc_channel_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_irc_lines_on_irc_channel_id_and_id ON public.irc_lines USING btree (irc_channel_id, id);
+
+
+--
+-- Name: index_irc_lines_on_sender_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_irc_lines_on_sender_id ON public.irc_lines USING btree (sender_id);
+
+
+--
+-- Name: index_irc_memberships_on_irc_channel_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_irc_memberships_on_irc_channel_id ON public.irc_memberships USING btree (irc_channel_id);
+
+
+--
+-- Name: index_irc_memberships_on_irc_channel_id_and_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_irc_memberships_on_irc_channel_id_and_principal_id ON public.irc_memberships USING btree (irc_channel_id, principal_id);
+
+
+--
+-- Name: index_irc_memberships_on_principal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_irc_memberships_on_principal_id ON public.irc_memberships USING btree (principal_id);
+
+
+--
 -- Name: index_mail_backends_on_name; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3132,7 +3343,7 @@ CREATE INDEX index_people_events_on_recorded_by_id ON public.people_events USING
 -- Name: index_people_events_on_source_kind_and_source_ref; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY (ARRAY[('text'::character varying)::text, ('mail'::character varying)::text, ('calendar'::character varying)::text])));
+CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY ((ARRAY['text'::character varying, 'mail'::character varying, 'calendar'::character varying])::text[])));
 
 
 --
@@ -3977,6 +4188,14 @@ ALTER TABLE ONLY public.gofer_key_changes
 
 
 --
+-- Name: irc_memberships fk_rails_35be8bd3a9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_memberships
+    ADD CONSTRAINT fk_rails_35be8bd3a9 FOREIGN KEY (irc_channel_id) REFERENCES public.irc_channels(id);
+
+
+--
 -- Name: usage_payloads fk_rails_3a764762d5; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4145,6 +4364,14 @@ ALTER TABLE ONLY public.people_groups
 
 
 --
+-- Name: irc_memberships fk_rails_7387ef4d86; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_memberships
+    ADD CONSTRAINT fk_rails_7387ef4d86 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: observations fk_rails_765cd3da16; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4230,6 +4457,14 @@ ALTER TABLE ONLY public.agent_messages
 
 ALTER TABLE ONLY public.capabilities
     ADD CONSTRAINT fk_rails_9445e95ee8 FOREIGN KEY (plugin_id) REFERENCES public.plugins(id);
+
+
+--
+-- Name: irc_lines fk_rails_978c070ed2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_lines
+    ADD CONSTRAINT fk_rails_978c070ed2 FOREIGN KEY (sender_id) REFERENCES public.principals(id);
 
 
 --
@@ -4361,6 +4596,14 @@ ALTER TABLE ONLY public.ward_threat_events
 
 
 --
+-- Name: irc_channels fk_rails_bc1b0d98b0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_channels
+    ADD CONSTRAINT fk_rails_bc1b0d98b0 FOREIGN KEY (created_by_id) REFERENCES public.principals(id);
+
+
+--
 -- Name: todo_backends fk_rails_c0b35bfef2; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4478,6 +4721,14 @@ ALTER TABLE ONLY public.text_backends
 
 ALTER TABLE ONLY public.browse_sessions
     ADD CONSTRAINT fk_rails_d8df5fc7b2 FOREIGN KEY (browser_id) REFERENCES public.browsers(id);
+
+
+--
+-- Name: irc_lines fk_rails_da5c5ad322; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_lines
+    ADD CONSTRAINT fk_rails_da5c5ad322 FOREIGN KEY (irc_channel_id) REFERENCES public.irc_channels(id);
 
 
 --
@@ -4681,6 +4932,18 @@ ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_memberships ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: irc_channels; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.irc_channels ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: irc_lines; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.irc_lines ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: mail_backends; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4882,6 +5145,24 @@ CREATE POLICY realm_visibility ON public.conversations USING ((( SELECT realms.r
 CREATE POLICY realm_visibility ON public.group_memberships USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (group_memberships.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: irc_channels realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.irc_channels USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (irc_channels.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: irc_lines realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.irc_lines USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (irc_lines.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -5185,6 +5466,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261123000001'),
 ('20261121000004'),
 ('20261121000003'),
 ('20261121000002'),

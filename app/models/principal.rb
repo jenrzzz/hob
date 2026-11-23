@@ -35,8 +35,19 @@ class Principal < ApplicationRecord
 
   scope :agents, -> { where(kind: "agent") }
 
+  # The lowest realm this agent may be heard in on hob's IRC (IRC.md, "The
+  # floor"); nil is none. Never above what it is cleared for, or it could
+  # be heard nowhere.
+  validate :irc_floor_reachable, if: -> { irc_floor.present? }
+  normalizes :irc_floor, with: ->(realm) { realm.to_s.strip.presence }
+
   def agent?
     kind == "agent"
+  end
+
+  # Whether this agent may be heard at `realm` on IRC.
+  def heard_at?(realm)
+    irc_floor.blank? || Realm.rank_of(realm) >= Realm.rank_of(irc_floor)
   end
 
   # Who may decide sentinel requests and manage policies: people, not the
@@ -80,5 +91,15 @@ class Principal < ApplicationRecord
     self.claim_scrutiny_remaining = self.class.where(id: id).pick(:claim_scrutiny_remaining)
     clear_attribute_change(:claim_scrutiny_remaining)
     spent.positive?
+  end
+
+  private
+
+  def irc_floor_reachable
+    if Realm.rank_of(irc_floor) > Realm.rank_of(max_clearance)
+      errors.add(:irc_floor, "is above #{name}'s clearance (#{max_clearance})")
+    end
+  rescue ArgumentError
+    errors.add(:irc_floor, "#{irc_floor} is not a realm")
   end
 end

@@ -1267,7 +1267,8 @@ CREATE TABLE public.principals (
     oidc_subject character varying,
     capabilities_frozen_at timestamp(6) without time zone,
     capabilities_freeze_reason text,
-    claim_scrutiny_remaining integer DEFAULT 0 NOT NULL
+    claim_scrutiny_remaining integer DEFAULT 0 NOT NULL,
+    irc_floor character varying
 );
 
 
@@ -5466,6 +5467,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261123000002'),
 ('20261123000001'),
 ('20261121000004'),
 ('20261121000003'),

@@ -11,7 +11,9 @@
 # A nick is the agent's name. A channel anyone opens is at `household`; a
 # person may make one higher (hob:irc:channel). A DM is kept at the lower of
 # the two agents' clearances. Which channels and lines exist for a call is
-# RLS's answer; who may read one is membership, checked here.
+# RLS's answer; who may read one is membership, checked here. An agent with
+# a floor (principals.irc_floor) is heard only at or above it, so a persona
+# that lives upstairs never says a word where the household reads.
 module Irc
   class Error < StandardError; end
 
@@ -33,11 +35,13 @@ module Irc
   def channels(who)
     mine = memberships(who)
     rows = IrcChannel.channels.order(:name).includes(:members).map do |channel|
+      next unless mine.key?(channel.id) || who.heard_at?(channel.realm)
+
       { "name" => channel.name, "topic" => channel.topic, "members" => nicks(channel),
         "joined" => mine.key?(channel.id), **unread(mine[channel.id], who),
         "last_line_at" => channel.lines.maximum(:created_at)&.utc&.iso8601 }.compact
-    end
-    { "nick" => who.name, "channels" => rows, "dms" => dms(who, mine), "notice" => NOTICE }
+    end.compact
+    { "nick" => who.name, "floor" => who.irc_floor, "channels" => rows, "dms" => dms(who, mine), "notice" => NOTICE }.compact
   end
 
   # Joins a channel, opening it (at household) when nobody has yet.
@@ -46,7 +50,12 @@ module Irc
     name = channel_name!(name)
     channel = IrcChannel.channels.find_by(name: name)
     created = channel.nil?
+    if created && !who.heard_at?(COMMONS)
+      raise Error, "there is no #{name}, and a channel you open is at #{COMMONS}, below the #{who.irc_floor} you keep " \
+                   "to; a person opens those"
+    end
     channel ||= open!(name, who)
+    heard!(who, channel)
 
     membership = channel.memberships.find_by(principal: who)
     already = membership.present?
@@ -74,6 +83,7 @@ module Irc
     agent!(who)
     texts = lines!(body)
     channel = to.to_s.start_with?("#") ? channel!(to).tap { |c| member!(c, who) } : dm!(who, to)
+    heard!(who, channel)
     said = texts.map do |text|
       channel.lines.create!(sender: who, nick: who.name, kind: action ? "action" : "say", body: text,
                             realm: channel.realm, sentinel_request_id: request_id)
@@ -113,12 +123,38 @@ module Irc
     agent!(who)
     channel = channel!(name)
     member!(channel, who)
+    heard!(who, channel)
     topic = clean(topic).presence
     raise Error, "a topic is at most #{IrcChannel::MAX_TOPIC} characters" if topic && topic.length > IrcChannel::MAX_TOPIC
 
     channel.update!(topic: topic, topic_by: who.name, topic_at: Time.current)
     keep_up!(channel, who, event!(channel, who, "topic", topic ? "set the topic: #{topic}" : "cleared the topic", request_id))
     { "channel" => channel.name, "topic" => topic }
+  end
+
+  # A person puts an agent in a channel (hob:irc:invite), which is how one
+  # with a floor gets into a channel it could not open. Lines from the last
+  # BACKLOG before it are new to it, so its next look finds the room as it
+  # stood when it was brought in.
+  def invite(by, nick, name)
+    raise Error, "a person invites; an agent joins" unless by&.trusted?
+
+    agent = Principal.find_by(name: nick.to_s.strip)
+    raise Error, "nobody on IRC goes by #{nick.to_s.strip.inspect}" unless agent&.agent?
+
+    channel = channel!(name)
+    if Realm.rank_of(channel.realm) > Realm.rank_of(agent.max_clearance)
+      raise Error, "#{channel.name} is at #{channel.realm}, above #{agent.name}'s clearance (#{agent.max_clearance})"
+    end
+    unless agent.heard_at?(channel.realm)
+      raise Error, "#{channel.name} is at #{channel.realm}, below the #{agent.irc_floor} #{agent.name} keeps to"
+    end
+    return { "channel" => channel.name, "nick" => agent.name, "already" => true } if channel.memberships.exists?(principal: agent)
+
+    from = channel.lines.order(id: :desc).offset(BACKLOG).pick(:id).to_i
+    event!(channel, agent, "join", "joined #{channel.name}, invited by #{by.name}", nil)
+    channel.memberships.create!(principal: agent, read_line_id: from)
+    { "channel" => channel.name, "nick" => agent.name, "members" => nicks(channel.reload) }
   end
 
   # Where things stand for `who`, without marking anything read: for a page
@@ -130,7 +166,7 @@ module Irc
     joined, elsewhere = IrcChannel.channels.order(:name).includes(:members).partition { |channel| mine.key?(channel.id) }
     { "channels" => joined.map { |c| { "name" => c.name, "members" => nicks(c) - [ who.name ], **unread(mine[c.id], who) } },
       "dms" => dms(who, mine).map { |dm| dm.except("last_line_at") },
-      "elsewhere" => elsewhere.map { |c| { "name" => c.name, "members" => nicks(c) } } }
+      "elsewhere" => elsewhere.select { |c| who.heard_at?(c.realm) }.map { |c| { "name" => c.name, "members" => nicks(c) } } }
   end
 
   # A channel as a person makes or retunes it: any realm, and a topic.
@@ -188,6 +224,12 @@ module Irc
     membership = channel.memberships.find_by(principal: who) or return
     behind = channel.lines.where("id > ?", membership.read_line_id).where("sender_id IS DISTINCT FROM ?", who.id).exists?
     membership.update!(read_line_id: line.id) unless behind
+  end
+
+  def heard!(who, channel)
+    return if who.heard_at?(channel.realm)
+
+    raise Error, "#{label(channel, who)} is at #{channel.realm}, below the #{who.irc_floor} you keep to on IRC"
   end
 
   def agent!(who)
@@ -253,6 +295,12 @@ module Irc
     end
     if Realm.rank_of(peer.max_clearance) > Realm.rank_of(realm) && !peer.accepts_lower_messages?
       raise Error, "#{peer.name} is cleared above #{realm} and does not take DMs from below it"
+    end
+    [ who, peer ].each do |end_of|
+      next if end_of.heard_at?(realm)
+
+      raise Error, "a DM with #{peer.name} would be kept at #{realm}, below the #{end_of.irc_floor} " \
+                   "#{end_of == who ? 'you keep' : "#{peer.name} keeps"} to"
     end
 
     name = IrcChannel.dm_name(who, peer)

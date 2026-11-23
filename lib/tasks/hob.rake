@@ -1973,6 +1973,20 @@ namespace :hob do
       end
     end
 
+    desc "Put an agent in a channel as a person (IRC.md, \"Invited\"): the way in for one whose floor is above what " \
+         "it may open. bin/rails \"hob:irc:invite[#upstairs,celestia]\" BY=jenner"
+    task :invite, [ :name, :nick ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:irc:invite[#channel,nick]\" BY=person" if args[:nick].blank? || ENV["BY"].blank?
+
+      Clearance.with("intimate") do
+        result = Irc.invite(Principal.find_by!(name: ENV["BY"]), args[:nick], args[:name])
+        puts result["already"] ? "#{result['nick']} is already in #{result['channel']}" :
+                                 "#{result['nick']} is in #{result['channel']}, with #{(result['members'] - [ result['nick'] ]).join(', ').presence || 'nobody else'}"
+      rescue Irc::Error => e
+        abort e.message
+      end
+    end
+
     desc "The channels and DMs on hob's IRC: realm, who is in each, how much has been said, when last"
     task channels: :environment do
       Clearance.with("intimate") do
@@ -2015,6 +2029,39 @@ namespace :hob do
       agent = args[:agent].presence
       puts agent ? "#{persona.key} asks the sentinel as #{agent} (at most #{Principal.find_by!(name: agent).max_clearance})" :
                    "#{persona.key} has no agent"
+    end
+
+    desc "Give a persona an agent of its own that is on hob's IRC and nothing else (IRC.md, \"A persona of its own\"): " \
+         "bin/rails \"hob:persona:enlist[kat-celestia,celestia,intimate]\" PER_HOUR=12 FLOOR=intimate|none. " \
+         "Makes the agent (never borrows one), links it, allows irc.* with a per-hour limit; the floor defaults to " \
+         "the clearance. Re-running retunes it, keeping the limit unless PER_HOUR is given"
+    task :enlist, [ :persona, :nick, :clearance ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:persona:enlist[persona,nick,clearance]\" PER_HOUR= FLOOR=" if args[:nick].blank?
+
+      persona = Persona.find_by!(key: args[:persona])
+      clearance = args[:clearance].presence || "household"
+      Realm.rank_of(clearance)
+      linked = persona.tools.to_h.stringify_keys["agent"]
+      agent = Principal.find_by(name: args[:nick])
+      if agent && linked != agent.name
+        abort "#{agent.name} already exists#{linked.present? ? " and #{persona.key} acts as #{linked}" : ''}; enlist makes " \
+              "an agent of the persona's own, never lends one (hob:persona:agent links an existing one by hand)"
+      end
+      abort "#{persona.key} already acts as #{linked}; enlist under that nick or unlink it first" if agent.nil? && linked.present?
+
+      floor = ENV["FLOOR"] == "none" ? nil : (ENV["FLOOR"].presence || clearance)
+      ActiveRecord::Base.transaction do
+        agent ||= Principal.new(name: args[:nick], kind: "agent")
+        agent.update!(max_clearance: clearance, irc_floor: floor)
+        persona.update!(tools: persona.tools.to_h.merge("agent" => agent.name))
+        rule = SentinelPolicy.find_or_initialize_by(principal: agent, capability: "irc.*")
+        per_hour = ENV["PER_HOUR"].presence&.to_i || rule.limits.to_h["per_hour"] || 12
+        rule.update!(effect: "allow", limits: rule.limits.to_h.merge("per_hour" => per_hour))
+      end
+      puts "#{persona.key} is #{agent.name} on IRC: cleared #{agent.max_clearance}, " \
+           "#{floor ? "heard at #{floor} and above" : 'heard anywhere'}, irc.* allowed " \
+           "#{SentinelPolicy.find_by(principal: agent, capability: 'irc.*').limits['per_hour']}/hour"
+      puts "it has no key and needs none: it speaks in its persona's life beats. hob:irc:invite puts it in a channel"
     end
 
     desc "Where a persona's whispers land (PersonaLife): her home conversation, the one a bridge follows. " \

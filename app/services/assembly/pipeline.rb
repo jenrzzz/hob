@@ -7,6 +7,7 @@ module Assembly
   class Pipeline
     STAGE_DEFAULTS = [
       { "name" => "persona", "enabled" => true, "budget" => 2_000 },
+      { "name" => "counterpart", "enabled" => true, "budget" => 1_500 },
       { "name" => "memory", "enabled" => true, "budget" => 600 },
       { "name" => "scenario", "enabled" => true, "budget" => 2_000 },
       { "name" => "history", "enabled" => true, "budget" => 8_000 },
@@ -24,8 +25,9 @@ module Assembly
     # context: String | Hash | [{ name, body, budget, volatile }] (B4)
     # instruction: trailing user-turn text; falls back to the persona's (B3)
     # memory: a Memory::Scope (nil: no recall stage this turn)
+    # counterpart: who the turn is with (Counterpart; nil: nobody)
     def initialize(conversation:, head:, personas: [], context: nil, instruction: nil, preset: nil, situation: nil,
-                   memory: nil)
+                   memory: nil, counterpart: nil)
       @conversation = conversation
       @head = head
       @personas = Array(personas).compact
@@ -34,7 +36,14 @@ module Assembly
       @situation = situation
       @preset = preset
       @memory = memory
+      @counterpart = counterpart
       @stage_config = preset&.stage_config || STAGE_DEFAULTS
+      # A preset written before the counterpart stage existed still says who
+      # she is talking to: right after the persona, ahead of anything volatile.
+      if @counterpart && @stage_config.none? { |c| c["name"] == "counterpart" }
+        at = (@stage_config.index { |c| c["name"] == "persona" } || -1) + 1
+        @stage_config = @stage_config.dup.insert(at, { "name" => "counterpart", "enabled" => true, "budget" => 1_500 })
+      end
       # A preset written before the memory stage existed still recalls when
       # a turn asks for it: the stage goes where DESIGN.md puts it, after
       # the persona.
@@ -77,6 +86,7 @@ module Assembly
     def build_stage(config)
       case config["name"]
       when "persona" then persona_stage
+      when "counterpart" then counterpart_stage
       when "memory" then memory_stage(config["budget"])
       when "scenario" then scenario_stage(config["budget"])
       when "history" then history_stage(config["budget"] || 8_000)
@@ -109,6 +119,19 @@ module Assembly
       end
       { "name" => "persona", "persona" => voiced.map(&:key), "sheet" => sheets.presence,
         tokens: Assembly.estimate_tokens(text), system: text }.compact
+    end
+
+    # Who the one persona of this turn is talking to, and what they are to
+    # her (Counterpart). Stable for a conversation with one other party, so
+    # it sits in the cacheable prefix. An ensemble has no single "you".
+    def counterpart_stage
+      return nil unless @counterpart && @personas.one?
+
+      text = @counterpart.render(@personas.first)
+      return nil if text.blank?
+
+      { "name" => "counterpart", "with" => @counterpart.ref, "persona" => @personas.first.key,
+        tokens: Assembly.estimate_tokens(text), system: text }
     end
 
     # Memory recall (MEMORY.md, "The recall stage"): the scope's persona

@@ -16,6 +16,34 @@ class PersonasControllerTest < ActionDispatch::IntegrationTest
     assert_equal "You are Wren, older now.", Persona.find_by!(key: "wren").system_core
   end
 
+  test "a persona keeps who she is talking to beside who she is, and a corpus may be kept for someone" do
+    Records.create_collection({ "name" => "archive", "key" => "chunk", "description" => "DMs", "realm" => "personal" }, owner: @principal)
+    post "/v1/personas", params: { key: "robyn", name: "Robyn", prompt: {
+      system_core: "You are Robyn.", relations: { "principal:tester" => "Her oldest friend.", "*" => "Not him." }
+    }, tools: { corpora: [ { tool: "recall_archive", collection: "archive", with: [ "principal:tester" ] } ] } }, headers: auth, as: :json
+    assert_response :created
+    assert_equal({ "principal:tester" => "Her oldest friend.", "*" => "Not him." }, body.dig("prompt", "relations"))
+    assert_equal [ "principal:tester" ], body.dig("tools", "corpora", 0, "with")
+
+    post "/v1/conversations", params: { realm: "personal" }, headers: auth, as: :json
+    convo = body["id"]
+    @fake.reply("who are you")
+    post "/v1/conversations/#{convo}/chat", params: { content: "hi", persona: "robyn", with: { name: "Claude", about: "works on the house" } },
+                                            headers: auth, as: :json
+    assert_response :ok
+    assert_includes @fake.calls.last.system, "Claude: a guest"
+    assert_includes @fake.calls.last.system, "Not him."
+    assert_empty Array(@fake.calls.last.tools)
+
+    @fake.reply("rar")
+    post "/v1/conversations/#{convo}/chat", params: { content: "hi", persona: "robyn" }, headers: auth, as: :json
+    assert_includes @fake.calls.last.system, "Her oldest friend."
+    assert_equal [ "recall_archive" ], @fake.calls.last.tools.map { |t| t["name"] }
+
+    patch "/v1/personas/robyn", params: { prompt: { system_core: "x", relations: { "jenner" => "no ref" } } }, headers: auth, as: :json
+    assert_response :unprocessable_entity
+  end
+
   test "an imported card is archived whole, whatever its shape" do
     card = { "spec" => "chara_card_v2", "data" => { "name" => "Pip", "description" => "{{char}} is a sparrow.", "first_mes" => "Cheep.",
                                                     "extensions" => { "depth_prompt" => { "depth" => 4 } } } }

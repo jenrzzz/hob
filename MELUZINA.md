@@ -139,6 +139,39 @@ fail. A grant shows up in her next turn.
 Her charter is `confirm` (every petition goes to Jenner), limited to 5 a day.
 Her life turns (below) get the same tools.
 
+### Who she is talking to (built)
+
+`prompt.system_core` says who she is and holds for anyone. Who a particular
+someone is to her is kept beside it, in `prompt.relations`
+(`Assembly::Counterpart`):
+
+```
+"relations": { "principal:jenner": "The one you are talking to is Jenner ...",
+               "*": "This is not Jenner ..." }
+```
+
+The other party of a turn is the key's principal. A person's key may name
+someone else with `with:` on a chat turn: `"principal:<name>"` or
+`"persona:<key>"` for someone hob knows, or `{ name, about }` for a guest it
+doesn't. An agent's key cannot run a turn at all (it would borrow her
+agent's grants), so nobody names themselves: a person vouches for who is
+speaking, as with `situation: { person }`.
+
+The `counterpart` stage follows the persona stage, in the cacheable prefix:
+who is there (the name and what hob knows them to be, and for a guest what
+the person who brought them said), then their entry in `relations`, or the
+one under `*`. A persona with no relations gets no stage, and neither does a
+turn with nobody on the other end (a beat of her life). A completion under a
+persona renders the same text after her core, for the key's principal.
+
+A corpus may be kept for some parties: `with: ["principal:jenner"]` on its
+entry in `tools.corpora`. In a turn with anyone else the tool is not offered
+at all. A beat of her life, with nobody on the other end, keeps it.
+
+Not built: user nodes do not carry a speaker yet, so a conversation with
+more than one other party in it does not say who said what; and one
+persona's reply is not yet carried to another as its incoming line.
+
 ### 3. A persona's life (phase 3, built)
 
 `personas.life` (`PersonaLife`) holds the instruction her life turns run

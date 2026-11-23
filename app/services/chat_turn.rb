@@ -50,9 +50,11 @@ class ChatTurn
   # tools / tool_choice / tool_results / max_iterations: see ToolExchange.
   # content: a string, or text/image blocks (Attachments).
   # memory: true | false | { recall, tools, budget, about } (Memory::Scope).
+  # with: who the turn is with, when it is not the key's own principal
+  # (Assembly::Counterpart): a ref, or { name, about } for a guest.
   def initialize(conversation:, branch:, content: nil, persona: nil, personas: nil, context: nil,
                  instruction: nil, role: nil, regenerate_at: nil, preset: nil, situation: nil,
-                 tools: nil, tool_choice: nil, tool_results: nil, max_iterations: nil, memory: nil)
+                 tools: nil, tool_choice: nil, tool_results: nil, max_iterations: nil, memory: nil, with: nil)
     @conversation = conversation
     @branch = branch
     @content = content
@@ -68,11 +70,12 @@ class ChatTurn
     @tool_results = Array(tool_results).presence
     @max_iterations = (max_iterations || ToolExchange::DEFAULT_MAX_ITERATIONS).to_i
     @memory_request = memory
+    @counterpart = Assembly::Counterpart.resolve(with)
   end
 
   def call(&stream)
     scope = Memory::Scope.build(personas: @personas, conversation: @conversation, request: @memory_request)
-    native = NativeTools.build(personas: @personas, conversation: @conversation, scope: scope)
+    native = NativeTools.build(personas: @personas, conversation: @conversation, scope: scope, counterpart: @counterpart)
     tools = native ? native.declare(@tools).presence : @tools
 
     user_node, anchor = resolve_anchor
@@ -86,7 +89,7 @@ class ChatTurn
       rounds += 1
       assembly = Assembly::Pipeline.new(
         conversation: @conversation, head: anchor, personas: @personas, context: @context,
-        instruction: @instruction, preset: @preset, situation: @situation, memory: scope
+        instruction: @instruction, preset: @preset, situation: @situation, memory: scope, counterpart: @counterpart
       ).assemble
 
       unless %w[user tool].include?(assembly.messages.last&.dig("role"))

@@ -1,7 +1,7 @@
 class Persona < ApplicationRecord
   validates :key, presence: true, uniqueness: true
   validates :name, presence: true
-  validate :clock_reads, :tools_read, :life_reads
+  validate :clock_reads, :tools_read, :life_reads, :relations_read
 
   belongs_to :entity, optional: true
   has_many :sheet_revisions, class_name: "PersonaSheetRevision", dependent: :restrict_with_exception
@@ -26,13 +26,20 @@ class Persona < ApplicationRecord
   end
 
   # prompt keys: system_core (required), greetings [], examples [],
-  # instruction (optional trailing user-turn text, B3)
+  # instruction (optional trailing user-turn text, B3), relations (who a
+  # particular someone is to her, Assembly::Counterpart)
   def system_core
     prompt["system_core"].to_s
   end
 
   def instruction
     prompt["instruction"].presence
+  end
+
+  # { "principal:jenner" => text, "*" => text }: system_core is who she is,
+  # this is who she is talking to.
+  def relations
+    prompt["relations"].is_a?(Hash) ? prompt["relations"] : {}
   end
 
   # ST card v2/v3 (or bare v1 fields) -> native persona. {{char}} resolves at
@@ -66,6 +73,10 @@ class Persona < ApplicationRecord
 
   def tools_read
     (CorpusTools.problems(tools || {}) + AgentTools.problems(tools || {})).each { |problem| errors.add(:tools, problem) }
+  end
+
+  def relations_read
+    Assembly::Counterpart.problems(prompt["relations"]).each { |problem| errors.add(:prompt, problem) }
   end
 
   def life_reads

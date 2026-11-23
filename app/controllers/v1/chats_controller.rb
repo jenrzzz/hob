@@ -2,7 +2,8 @@ module V1
   # POST /v1/conversations/:conversation_id/chat
   # { content?, branch: "main", persona? | personas[]?, context?, instruction?,
   #   role?, preset?, situation?, regenerate_at?, tools?, tool_choice?, tool_results?,
-  #   max_iterations?, memory? }
+  #   max_iterations?, memory?, with? }
+  # with: who the turn is with, from a person's key (Assembly::Counterpart).
   # content and tool_results[].content: a string, or text/image blocks.
   # memory: true | false | { recall, tools, budget, about } (MEMORY.md); with
   # tools on, native recall/remember run inside the turn and stream as
@@ -26,7 +27,7 @@ module V1
         role: params[:role].presence, regenerate_at: params[:regenerate_at].presence,
         preset: preset, situation: situation_param, tools: array_param(:tools), tool_choice: params[:tool_choice].presence,
         tool_results: array_param(:tool_results), max_iterations: params[:max_iterations].presence,
-        memory: memory_param
+        memory: memory_param, with: with_param
       )
 
       if streaming_requested?
@@ -51,6 +52,12 @@ module V1
       return raw if raw.is_a?(String)
 
       raw.respond_to?(:permit!) ? raw.permit!.to_h : raw.map { |b| b.respond_to?(:permit!) ? b.permit!.to_h : b }
+    end
+
+    # with: a ref, or { name, about } for a guest (Assembly::Counterpart).
+    def with_param
+      raw = params[:with]
+      raw.respond_to?(:permit) ? raw.permit(:name, :about).to_h : raw.presence
     end
 
     def situation_param

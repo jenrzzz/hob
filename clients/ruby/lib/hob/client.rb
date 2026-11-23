@@ -63,15 +63,18 @@ module Hob
     # content and a tool result's content: a String, or blocks —
     #   [{ type: "text", text: }, Hob.image(bytes, "image/jpeg")]
     # memory: true | false | { recall:, tools:, budget:, about: [refs] } (MEMORY.md)
+    # with: who the turn is with, when it is not the key's own principal (a
+    #   person's key only): "principal:<name>", "persona:<key>", or
+    #   { name:, about: } for a guest hob does not know
     def chat(conversation:, branch: "main", content: nil, persona: nil, personas: nil, context: nil,
              instruction: nil, preset: nil, role: nil, regenerate_at: nil, tools: nil, tool_choice: nil,
-             tool_results: nil, max_iterations: nil, memory: nil, situation: nil, &on_event)
+             tool_results: nil, max_iterations: nil, memory: nil, situation: nil, with: nil, &on_event)
       id = conversation.respond_to?(:id) ? conversation.id : conversation
       body = {
         branch: branch, content: content, persona: persona, personas: personas, context: context,
         instruction: instruction, preset: preset, role: role, regenerate_at: regenerate_at,
         tools: tools, tool_choice: tool_choice, tool_results: tool_results, max_iterations: max_iterations,
-        memory: memory, situation: situation
+        memory: memory, situation: situation, with: with
       }.compact
       path = "/v1/conversations/#{id}/chat"
       data = on_event ? @http.stream(path, body, &on_event) : @http.post(path, body)

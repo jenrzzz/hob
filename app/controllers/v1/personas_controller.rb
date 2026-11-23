@@ -38,12 +38,16 @@ module V1
     # The prompt's keys are Persona's contract (see the model); anything else is dropped.
     def persona_params
       params.permit(:key, :name, :model_role, :voice_id).to_h.tap do |h|
-        h[:prompt] = params[:prompt].permit(:system_core, :instruction, greetings: [], examples: []).to_h if params[:prompt].present?
+        if params[:prompt].present?
+          h[:prompt] = params[:prompt].permit(:system_core, :instruction, greetings: [], examples: []).to_h
+          # Who a particular someone is to her (Assembly::Counterpart), keyed by ref.
+          h[:prompt][:relations] = params[:prompt][:relations].permit!.to_h if params[:prompt][:relations].respond_to?(:permit!)
+        end
         # Memory defaults (MEMORY.md): off unless set; a turn's memory: overrides.
         h[:memory] = params[:memory].permit(:recall, :tools, :budget, :own, about: [], review: %i[every_days realm]).to_h if params[:memory].respond_to?(:permit)
         # Native corpus tools (MELUZINA.md, "Searchable collections"); {} turns them off.
         # Not `agent`: that link is set with hob:persona:agent only.
-        h[:tools] = params[:tools].permit(corpora: %i[tool collection description]).to_h if params[:tools].respond_to?(:permit)
+        h[:tools] = params[:tools].permit(corpora: [ :tool, :collection, :description, { with: [] } ]).to_h if params[:tools].respond_to?(:permit)
         # Her life between conversations (PersonaLife); {} turns it off. Not `home`.
         if params[:life].respond_to?(:permit)
           h[:life] = params[:life].permit(:instruction, :realm, :zone, :min_gap_minutes, :role, :max_iterations, :dial,

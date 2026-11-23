@@ -7,11 +7,13 @@
 class NativeTools
   # -> a NativeTools, or nil when the turn has none.
   # extra: venues the caller brings (PersonaLife::Tools), answered first.
-  def self.build(personas:, conversation:, scope:, extra: [])
+  # counterpart: who the turn is with (Assembly::Counterpart), for corpora
+  # kept for some parties only.
+  def self.build(personas:, conversation:, scope:, extra: [], counterpart: nil)
     venues = [
       *extra,
       (Memory::Tools.new(scope) if scope&.tools?),
-      CorpusTools.build(personas: personas, conversation: conversation)
+      CorpusTools.build(personas: personas, conversation: conversation, counterpart: counterpart)
     ].compact
     taken = Memory::Tools::NAMES + venues.flat_map(&:names)
     venues << AgentTools.build(personas: personas, conversation: conversation, taken: taken)

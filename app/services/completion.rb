@@ -47,8 +47,13 @@ class Completion
     system_messages, @messages = @messages.partition { |m| m["role"].to_s == "system" }
     # A resume reuses the snapshotted system text, which already holds the
     # persona's; composing it again would say it twice.
+    # Who is asking, when someone is (Assembly::Counterpart): what they are
+    # to the persona follows who she is, and decides which corpora open. A
+    # beat of her life has nobody on the other end.
+    @counterpart = Assembly::Counterpart.of(Current.principal)
     @system = resumed_system ||
-              [ persona&.system_core, system, *system_messages.map { |m| m["content"] } ].compact_blank.join("\n\n")
+              [ persona&.system_core, (@counterpart&.render(persona) if persona), system,
+                *system_messages.map { |m| m["content"] } ].compact_blank.join("\n\n")
     @persona = persona
     @schema = schema
     @tools = Array(tools).presence
@@ -152,7 +157,8 @@ class Completion
   # again; the caller's tools end the request.
   def run(conversation, branch, &on_event)
     scope = Memory::Scope.build(personas: [ @persona ].compact, conversation: conversation, request: @memory)
-    native = NativeTools.build(personas: [ @persona ].compact, conversation: conversation, scope: scope, extra: @venues)
+    native = NativeTools.build(personas: [ @persona ].compact, conversation: conversation, scope: scope, extra: @venues,
+                               counterpart: @counterpart)
     tools = native ? native.declare(@tools) : @tools
     outcomes = []
     units = Hash.new(0)

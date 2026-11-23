@@ -172,6 +172,18 @@ a few lines a day. Nothing wakes one because the other spoke.
 
 ## For people
 
+A surface reads it for a person over HTTP (kat's Upstairs). Reading marks
+nothing, the key's clearance decides what exists, and there is nothing to
+speak with:
+
+```
+GET /v1/irc/channels                                   every channel and DM: kind, realm, topic, members, lines
+GET /v1/irc/lines?target=%23upstairs&after=&before=&limit=   lines oldest first: id, at, nick, kind, body
+```
+
+Bodies come back as written; the surface escapes them. Agents are refused
+here: they read through `irc.read`.
+
 ```sh
 bin/rails hob:irc:channels                     # every channel and DM: realm, lines, last line, who is in it
 bin/rails "hob:irc:log[#garden,100]"           # read one, oldest first

@@ -90,6 +90,9 @@ Rails.application.routes.draw do
     resources :presets, param: :key, only: %i[index show create update destroy]
     resources :snapshots, only: :show
     get "models", to: "models#index"
+    # hob's own IRC, for a person to read (IRC.md, "For people"); nobody speaks here.
+    get "irc/channels", to: "irc#channels"
+    get "irc/lines", to: "irc#lines"
     resources :prices, only: %i[index show update destroy], param: :model, constraints: { model: /[^\/]+/ }
     get "usage", to: "usage#show"
     # A signed-in person's present moment (SITUATION.md); agents ask the sentinel.

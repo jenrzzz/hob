@@ -2016,6 +2016,38 @@ namespace :hob do
     end
   end
 
+  desc "Register (or retune) a model provider. bin/rails \"hob:provider[openrouter,openai_compat,HOB_OPENROUTER_KEY," \
+       "https://openrouter.ai/api/v1]\" (the env var's name, never the key; base_url for openai_compat)"
+  task :provider, [ :slug, :kind, :api_key_env, :base_url ] => :environment do |_task, args|
+    abort "usage: bin/rails \"hob:provider[slug,anthropic|openai_compat,API_KEY_ENV,base_url]\"" if args[:api_key_env].blank?
+
+    provider = Provider.find_or_initialize_by(slug: args[:slug])
+    provider.update!(kind: args[:kind], config: { "api_key_env" => args[:api_key_env], "base_url" => args[:base_url].presence }.compact)
+    puts "#{provider.slug} (#{provider.kind}#{provider.config['base_url'] ? " at #{provider.config['base_url']}" : ''}): " \
+         "#{provider.available? ? 'available' : "unavailable until #{provider.config['api_key_env']} is set"}"
+  end
+
+  desc "Make (or replace) a model role with one link: bin/rails \"hob:role[grok,openrouter,x-ai/grok-4.5]\" " \
+       "PARAMS='{\"max_tokens\":4096}'. A model is a role, never code (README)"
+  task :role, [ :role, :provider, :model ] => :environment do |_task, args|
+    abort "usage: bin/rails \"hob:role[role,provider,model]\" PARAMS=" if args[:model].blank?
+
+    provider = Provider.find_by(slug: args[:provider]) or abort "no provider #{args[:provider]} (hob:provider makes one)"
+    link = { "provider" => provider.slug, "model" => args[:model] }
+    link["params"] = JSON.parse(ENV["PARAMS"]) if ENV["PARAMS"].present?
+    role = ModelRole.find_or_initialize_by(role: args[:role])
+    role.update!(chain: [ link ])
+    puts "#{role.role}: #{provider.slug}/#{args[:model]}#{link['params'] ? " #{link['params'].to_json}" : ''}" \
+         "#{provider.available? ? '' : " (#{provider.slug} is unavailable: #{provider.config['api_key_env']} is not set)"}"
+  end
+
+  desc "The model roles and what each resolves to"
+  task roles: :environment do
+    ModelRole.order(:role).each do |role|
+      puts "#{role.role.ljust(22)} #{role.chain.map { |l| "#{l['provider']}/#{l['model']}" }.join(' → ')}"
+    end
+  end
+
   namespace :persona do
     desc "Let a persona ask the sentinel as an agent, in her own turns (MELUZINA.md, \"Her agent\"): " \
          "bin/rails \"hob:persona:agent[meluzina,meluzina]\"; no agent unlinks"

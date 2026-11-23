@@ -14,6 +14,12 @@ Provider.find_or_create_by!(slug: "openai-compat") do |p|
   p.kind = "openai_compat"
   p.config = { "api_key_env" => "HOB_OPENAI_COMPAT_KEY", "base_url" => ENV["HOB_OPENAI_COMPAT_BASE"] }
 end
+# OpenRouter speaks chat completions: any model there is a role away
+# (hob:role[name,openrouter,<model id>]).
+Provider.find_or_create_by!(slug: "openrouter") do |p|
+  p.kind = "openai_compat"
+  p.config = { "api_key_env" => "HOB_OPENROUTER_KEY", "base_url" => "https://openrouter.ai/api/v1" }
+end
 
 # Model roles. Per-role params ride on the chain link; `strict` links fail
 # the request rather than fall through (the question is the product).

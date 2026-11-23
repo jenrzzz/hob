@@ -9,7 +9,10 @@ class ModelPrice < ApplicationRecord
   CACHE_READ_MULTIPLIER = 0.1
   CACHE_WRITE_MULTIPLIER = 1.25
 
-  validates :model, presence: true, format: { with: /\A[a-z0-9][a-z0-9._@:-]*\z/i }
+  # A provider's id as it names it: OpenRouter's carry their vendor
+  # ("x-ai/grok-4.7"), which PUT /v1/prices/:model cannot put in a path, so
+  # those are priced at the box (hob:price).
+  validates :model, presence: true, format: { with: %r{\A[a-z0-9][a-z0-9._@:/-]*\z}i }
   validates :input, :output, :cache_read, :cache_write, numericality: { greater_than_or_equal_to: 0 }
 
   # Longest matching prefix wins, so a specific row beats a family row.

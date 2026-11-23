@@ -1,6 +1,12 @@
 require "test_helper"
 
 class ModelPriceTest < ActiveSupport::TestCase
+  test "an OpenRouter id, vendor and all, is priced and found" do
+    ModelPrice.set!(model: "x-ai/grok-4.7", input: 2, output: 6)
+    assert_equal "x-ai/grok-4.7", ModelPrice.for_model("x-ai/grok-4.7").model
+    refute ModelPrice.new(model: "/grok", input: 1, output: 1).valid?
+  end
+
   test "longest prefix wins and dated ids match family rows" do
     ModelPrice.create!(model: "claude-haiku-4-5", input: 1, output: 5)
     ModelPrice.create!(model: "claude-haiku-4-5-20251001", input: 0.8, output: 4)

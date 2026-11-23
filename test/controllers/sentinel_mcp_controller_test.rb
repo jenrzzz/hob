@@ -119,6 +119,14 @@ class SentinelMcpControllerTest < ActionDispatch::IntegrationTest
     assert_equal 2, @codex.sentinel_requests.count
   end
 
+  test "a tool says what the agent's own grant covers" do
+    policy!(@claude, "hob.board.post", "allow", constraints: { "body" => { "max" => 10 }, "title" => { "pattern" => "^handoff" } })
+    rpc("tools/list")
+    tools = body["result"]["tools"].index_by { |tool| tool["name"] }
+    assert_match(/Your grant covers only: body at most 10; title matching \^handoff\./, tools["hob_board_post"]["description"])
+    assert_no_match(/Your grant covers/, tools["hob_board_read"]["description"])
+  end
+
   test "a denial and a failure are answers the model can read, and are written down" do
     policy!(@claude, "hob.board.post", "allow", constraints: { "body" => { "max" => 10 } })
     result = call_tool("hob_board_post", { title: "long", body: "far too long for this rule" })

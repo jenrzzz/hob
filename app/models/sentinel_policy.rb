@@ -87,7 +87,63 @@ class SentinelPolicy < ApplicationRecord
     self
   end
 
+  # Why these arguments fall outside the rule's constraints, or nil when
+  # they are within them. constraints: { arg => [allowed] | { in:, max:,
+  # pattern: } }. "realm" is reserved for the calling agent's authenticated
+  # realm rather than a capability argument: no capability's input_schema
+  # declares a "realm" property, so a constraint keyed "realm" would
+  # otherwise always read nil out of the arguments and deny every request
+  # it covers, regardless of the "in" list. This is what lets a household
+  # grant a household-realm, review-effect capability to a personal-realm
+  # agent (e.g. hob.board.post for skipsy) without touching the capability's
+  # own minimum-realm check, which only ever raises the bar, never lowers it.
+  #
+  # `given_only` judges only the constrained arguments that are present: for
+  # a petition's example arguments, which need not be a whole call.
+  def violation(arguments, realm: nil, given_only: false)
+    arguments = (arguments || {}).to_h.stringify_keys
+    (constraints || {}).each do |arg, spec|
+      next if given_only && arg.to_s != "realm" && !arguments.key?(arg.to_s)
+
+      spec = { "in" => spec } if spec.is_a?(Array)
+      value = arg.to_s == "realm" ? realm : arguments[arg.to_s]
+      if spec.key?("in") && !spec["in"].any? { |allowed| allowed == value || allowed.to_s == value.to_s }
+        return "#{arg} must be one of #{spec['in'].join(', ')}, got #{value.inspect}"
+      end
+      if spec.key?("max") && !value.nil? && measure(value) > spec["max"]
+        return "#{arg} exceeds #{spec['max']}"
+      end
+      if spec.key?("pattern") && !value.to_s.match?(Regexp.new(spec["pattern"]))
+        return "#{arg} does not match #{spec['pattern']}, got #{value.inspect}"
+      end
+    end
+    nil
+  end
+
+  # The constraints in words, for whoever has to live within them or decide
+  # whether to widen them: "approved matching ^(false)?$; document at most
+  # 40". nil when the rule has none.
+  def bounds
+    parts = (constraints || {}).map do |arg, spec|
+      spec = { "in" => spec } if spec.is_a?(Array)
+      said = []
+      said << "one of #{spec['in'].join(', ')}" if spec.key?("in")
+      said << "at most #{spec['max']}" if spec.key?("max")
+      said << "matching #{spec['pattern']}" if spec.key?("pattern")
+      "#{arg} #{said.join(', ')}"
+    end
+    parts.join("; ").presence
+  end
+
   private
+
+  def measure(value)
+    case value
+    when Numeric then value
+    when String, Array, Hash then value.size
+    else 0
+    end
+  end
 
   def principal_is_agent
     errors.add(:principal, "must be an agent") if principal && !principal.agent?

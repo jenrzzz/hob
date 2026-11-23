@@ -117,7 +117,7 @@ module Admin
       row = ::Sentinel.decide_petition!(
         Petition.find(params[:id]), decision: params.expect(:decision), decider: current_person,
         capability: params[:capability].presence, effect: params[:effect].presence, guidance: params[:guidance].presence,
-        rationale: params[:rationale].presence
+        constraints: constraints_param, rationale: params[:rationale].presence
       )
       redirect_to admin_sentinel_path, notice: "Petition #{row.id} from #{row.principal.name}: #{row.status}" \
                                                "#{row.capability_name && " #{row.capability_name}"}#{row.effect && " at #{row.effect}"}." \
@@ -127,6 +127,19 @@ module Admin
     end
 
     private
+
+    # The petition form's constraints box: the whole object as JSON, or
+    # blank to leave a held grant's constraints as they are.
+    def constraints_param
+      return nil if params[:constraints].blank?
+
+      value = JSON.parse(params[:constraints])
+      raise Gateway::Invalid, "constraints must be a JSON object of argument => rule" unless value.is_a?(Hash)
+
+      value
+    rescue JSON::ParserError => e
+      raise Gateway::Invalid, "constraints is not JSON: #{e.message}"
+    end
 
     # A reference (message_id, attachment_id: no bytes) or an upload
     # (filename, mime_type, content_base64), exactly as Email.file_entry!

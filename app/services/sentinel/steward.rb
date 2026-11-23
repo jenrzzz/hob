@@ -293,8 +293,9 @@ module Sentinel
           if rescoping_constraints && !human && (dropped = (rule.constraints || {}).keys - verdict.constraints.keys).any?
             return refer(verdict, "#{verdict.rationale} (the new constraints drop #{dropped.join(', ')}, which would lift that bound entirely)")
           end
-          verdict.rationale = "already permitted: #{rule.effect} by the #{@agent.name} rule for #{cap.name}" unless rescoping_guidance || rescoping_constraints
-          return verdict
+          return verdict if rescoping_guidance || rescoping_constraints
+
+          return unchanged(verdict, cap, rule, human: human)
         end
         verdict.effect ||= EFFECT_CAP.fetch(cap.kind)
         verdict.effect = tighter(verdict.effect, EFFECT_CAP.fetch(cap.kind)) unless human
@@ -323,6 +324,32 @@ module Sentinel
       else
         refer(verdict, "the steward answered #{verdict.action.inspect}")
       end
+    end
+
+    # A grant of what the agent already holds, with nothing to rescope: the
+    # rule stays as it is. When the rule is bounded, "granted" must not read
+    # as the bound lifted (skipsy, 2026-11-19: a petition to approve budget
+    # transactions was granted this way while the rule still held `approved`
+    # to false). So the rationale names the bounds; a steward's grant whose
+    # own example arguments fall outside them goes to a person; and a person
+    # is told it would change nothing, unless the petition's arguments show
+    # it already fits.
+    def unchanged(verdict, cap, rule, human:)
+      verdict.rationale = "already permitted: #{rule.effect} by the #{@agent.name} rule for #{cap.name}"
+      bounds = rule.bounds or return verdict
+
+      given = @petition.arguments.to_h
+      outside = rule.violation(given, realm: @petition.realm, given_only: true)
+      fits = outside.nil? && (given.keys & rule.constraints.keys).any?
+      if human && !fits
+        raise Invalid, "#{@agent.name}'s grant for #{cap.name} is bounded (#{bounds}) and granting this would change nothing" \
+                       "#{": it still refuses what the petition asks (#{outside})" if outside}. " \
+                       "Give the whole new constraints to widen it, or deny it and say it is already permitted"
+      end
+      return refer(verdict, "#{verdict.rationale}, but within its constraints (#{bounds}), which refuse what the petition asks: #{outside}") if outside
+
+      verdict.rationale = "#{verdict.rationale}, within its constraints (#{bounds}); nothing was widened"
+      verdict
     end
 
     def refer(verdict, rationale)

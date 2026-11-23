@@ -132,13 +132,20 @@ module Mcp
 
     def tools(agent, clearance)
       claimant = Sentinel::Claims::KNOWN_AGENTS.include?(agent.name)
-      tools = capabilities(agent, clearance).map { |name, capability| as_json(name, capability, claimant: claimant) }
+      rules = SentinelPolicy.where(principal_id: [ agent.id, nil ]).to_a
+      tools = capabilities(agent, clearance).map do |name, capability|
+        rule = SentinelPolicy.resolve(principal: agent, capability: capability.name, rules: rules)
+        as_json(name, capability, claimant: claimant, bounds: rule&.bounds)
+      end
       tools << REQUEST_TOOL
       tools += [ PETITION_TOOL, PETITION_STATUS_TOOL ] if petitions?(agent)
       tools
     end
 
-    def as_json(name, capability, claimant: false)
+    # `bounds` is the agent's own grant in words (SentinelPolicy#bounds): said
+    # with the tool, so a call outside it is not how the agent finds out
+    # (skipsy, 2026-11-19: 146 denials of `approved: true` in 82 seconds).
+    def as_json(name, capability, claimant: false, bounds: nil)
       schema = capability.input_schema.presence || { "type" => "object" }
       unless schema.dig("properties", REASON)
         schema = schema.merge("properties" => (schema["properties"] || {}).merge(REASON => REASON_PROPERTY))
@@ -147,7 +154,9 @@ module Mcp
         schema = schema.merge("properties" => schema["properties"].merge(USER_AUTHORIZATION => USER_AUTHORIZATION_PROPERTY))
       end
       {
-        "name" => name, "title" => capability.name, "description" => capability.description, "inputSchema" => schema,
+        "name" => name, "title" => capability.name, "inputSchema" => schema,
+        "description" => [ capability.description,
+                           ("Your grant covers only: #{bounds}. A call outside that is denied; petition to widen it." if bounds) ].compact.join(" "),
         "annotations" => { "readOnlyHint" => capability.kind == "read", "destructiveHint" => false }
       }
     end

@@ -125,6 +125,28 @@ class AdminSentinelControllerTest < ActionDispatch::IntegrationTest
     assert_equal petition, change.petition
   end
 
+  test "a held, bounded grant shows its bounds, is not granted unchanged, and is widened from the constraints box" do
+    rule = policy!(@muse, "hob.usage", "review", constraints: { "days" => { "max" => 7 } })
+    petition = pending_petition
+    admin_sign_in
+    get "/admin/sentinel"
+    assert_select "#petition-#{petition.id} dd", /bounded: days at most 7/
+    assert_select "#petition-#{petition.id} textarea[name=constraints]", text: /"days":\{"max":7\}/
+
+    post "/admin/sentinel/petitions/#{petition.id}/decide", params: { decision: "grant", constraints: rule.constraints.to_json }
+    follow_redirect!
+    assert_select ".flash.alert", /bounded \(days at most 7\) and granting this would change nothing/
+    assert_equal "pending", petition.reload.status
+
+    post "/admin/sentinel/petitions/#{petition.id}/decide", params: { decision: "grant", constraints: "{not json" }
+    follow_redirect!
+    assert_select ".flash.alert", /constraints is not JSON/
+
+    post "/admin/sentinel/petitions/#{petition.id}/decide", params: { decision: "grant", constraints: '{"days":{"max":30}}' }
+    assert_equal "granted", petition.reload.status
+    assert_equal({ "days" => { "max" => 30 } }, rule.reload.constraints)
+  end
+
   test "a bad decision is refused with a message" do
     petition = pending_petition
     admin_sign_in

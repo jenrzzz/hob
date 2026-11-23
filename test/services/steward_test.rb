@@ -287,6 +287,49 @@ class StewardTest < ActiveSupport::TestCase
     assert_equal "^(amazon|fsa-claims$)", rule.reload.constraints.dig("collection", "pattern")
   end
 
+  test "granting a bounded grant unchanged never reads as the bound lifted" do
+    charter!(@muse, "review")
+    bound = { "approved" => { "pattern" => "^(false)?$" } }
+    rule = policy!(@muse, "budget.transaction.update", "review", constraints: bound)
+
+    # The steward grants with nothing to rescope, and the petition's own
+    # arguments are outside the grant: a person looks.
+    steward_says("grant", capability: "budget.transaction.update")
+    row = petition("approve transactions when asked", capability: "budget.transaction.update", arguments: { "approved" => true })
+    assert_equal "pending", row.status
+    assert_match(/approved matching \^\(false\)\?\$.*refuse what the petition asks: approved does not match/, row.rationale)
+
+    # A person granting it as it stands is told it would change nothing.
+    error = assert_raises(Sentinel::Invalid) do
+      Sentinel.decide_petition!(row, decision: "grant", decider: @principal, capability: "budget.transaction.update")
+    end
+    assert_match(/bounded \(approved matching .*would change nothing: it still refuses what the petition asks/, error.message)
+    assert_equal "pending", row.reload.status
+    assert_equal bound, rule.reload.constraints
+
+    # With the whole new constraints, it is widened and on the record.
+    granted = Sentinel.decide_petition!(row, decision: "grant", decider: @principal, capability: "budget.transaction.update",
+                                        constraints: { "approved" => { "in" => [ true, false ] } })
+    assert_equal "granted", granted.status
+    assert_equal({ "approved" => { "in" => [ true, false ] } }, rule.reload.constraints)
+    assert rule.guidance_changes.sole.constraints_changed?
+
+    # No arguments to judge by: the steward's grant stands, and says what still bounds it.
+    steward_says("grant", capability: "budget.transaction.update")
+    vague = petition("update transactions", capability: "budget.transaction.update")
+    assert_equal "granted", vague.status
+    assert_match(/already permitted: review.*within its constraints \(approved one of true, false\); nothing was widened/, vague.rationale)
+
+    # A person's unchanged grant goes through only when the petition's arguments show it fits.
+    SentinelPolicy.find_by!(principal: @muse, capability: Sentinel::Steward::CHARTER).update!(effect: "confirm")
+    steward_says("refer", rationale: "not sure")
+    fits = petition("unapprove one", capability: "budget.transaction.update", arguments: { "id" => "t1", "approved" => false })
+    assert_equal "granted", Sentinel.decide_petition!(fits, decision: "grant", decider: @principal).status
+    steward_says("refer", rationale: "not sure")
+    unknown = petition("something with transactions", capability: "budget.transaction.update")
+    assert_raises(Sentinel::Invalid) { Sentinel.decide_petition!(unknown, decision: "grant", decider: @principal) }
+  end
+
   test "a confirm charter refers everything, with the steward's advice attached" do
     charter!(nil, "confirm")
     steward_says("grant", capability: "hob.usage", effect: "allow", rationale: "harmless")

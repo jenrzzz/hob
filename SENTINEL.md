@@ -385,6 +385,17 @@ new text, the old and new constraints when they moved, and whether a
 petition or an admin edit drove it — kept alongside the rule, never
 deleted. A rule's `/admin/grants/:id` page lists its own history.
 
+A grant of a held rule with nothing to rescope changes nothing, and must
+not read as a bound lifted: its rationale says "already permitted … within
+its constraints (approved matching ^(false)?$); nothing was widened". When
+the petition's own example arguments fall outside the constraints, the
+steward's grant goes to a person instead; and a person granting it
+unchanged is refused and told so, unless the petition's arguments show it
+already fits (`/admin/sentinel` has a constraints box for the whole new
+object; `CONSTRAINTS=` on the rake task). An agent on `/v1/sentinel/mcp`
+reads its own grant's constraints in each tool's description ("Your grant
+covers only: …"), and a refusal says what was sent ("…, got true").
+
 ### The reviewer
 
 `Sentinel::Reviewer` runs the request through the `sentinel-reviewer` model

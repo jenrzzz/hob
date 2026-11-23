@@ -41,7 +41,7 @@ module Sentinel
       return deny("policy", "no policy permits #{@agent.name} to use #{@capability.name}") if rule.nil?
       return deny("policy", rule_label(rule)) if rule.effect == "deny"
 
-      if (problem = constraint_violation(rule))
+      if (problem = rule.violation(@request.arguments, realm: @request.realm))
         return deny("constraint", "#{problem}#{petition_hint(rule)}")
       end
       if (problem = limit_exceeded(rule))
@@ -85,40 +85,6 @@ module Sentinel
 
     def rule_label(rule)
       "#{rule.effect} by #{rule.for_every_agent? ? 'the default' : @agent.name} rule for #{rule.capability}"
-    end
-
-    # constraints: { arg => [allowed] | { in:, max:, pattern: } }. "realm" is
-    # reserved for the calling agent's authenticated realm rather than a
-    # capability argument: no capability's input_schema declares a "realm"
-    # property, so a constraint keyed "realm" would otherwise always read
-    # nil out of @request.arguments and deny every request it covers,
-    # regardless of the "in" list. This is what lets a household grant a
-    # household-realm, review-effect capability to a personal-realm agent
-    # (e.g. hob.board.post for skipsy) without touching the capability's own
-    # minimum-realm check above, which only ever raises the bar, never lowers it.
-    def constraint_violation(rule)
-      rule.constraints.each do |arg, spec|
-        spec = { "in" => spec } if spec.is_a?(Array)
-        value = arg.to_s == "realm" ? @request.realm : @request.arguments[arg.to_s]
-        if spec.key?("in") && !spec["in"].any? { |allowed| allowed == value || allowed.to_s == value.to_s }
-          return "#{arg} must be one of #{spec['in'].join(', ')}, got #{value.inspect}"
-        end
-        if spec.key?("max") && !value.nil? && measure(value) > spec["max"]
-          return "#{arg} exceeds #{spec['max']}"
-        end
-        if spec.key?("pattern") && !value.to_s.match?(Regexp.new(spec["pattern"]))
-          return "#{arg} does not match #{spec['pattern']}"
-        end
-      end
-      nil
-    end
-
-    def measure(value)
-      case value
-      when Numeric then value
-      when String, Array, Hash then value.size
-      else 0
-      end
     end
 
     # limits: { per_hour:, per_day: } count this agent's non-denied requests

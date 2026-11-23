@@ -1,14 +1,18 @@
 module V1
   # hob's own IRC (IRC.md), for a person to read from a surface (kat's
-  # Upstairs). People read all of it and say nothing, so there is nothing
-  # here to write with; the key's clearance decides, through RLS, which
-  # channels and lines exist. Reading marks nothing.
+  # Upstairs). People read all of it and say nothing; the one thing written
+  # here is a channel's seed tray (Irc::Pulse), which a surface fills with
+  # things worth reacting to. The key's clearance decides, through RLS,
+  # which channels and lines exist. Reading marks nothing.
   #
   #   GET /v1/irc/channels                    every channel and DM visible: realm, topic, members, line count
   #   GET /v1/irc/lines?target=#upstairs      the last `limit` lines, oldest first
   #                    &after=<id>            only lines after that one (following along)
   #                    &before=<id>           only lines before it (scrolling back)
   #                    &limit=100             at most Irc::MAX_READ
+  #   GET  /v1/irc/seeds?target=#upstairs     its tray: waiting seeds, and the last ones taken
+  #   POST /v1/irc/seeds                      { target, seeds: [{ kind, title?, body, key?, source? }] }
+  #                                           planted at the channel's realm; a key already planted is skipped
   #
   # A DM's target is its row name, its two nicks in order: "meluzina,twilight".
   class IrcController < ApplicationController
@@ -24,8 +28,7 @@ module V1
     end
 
     def lines
-      channel = IrcChannel.find_by(name: params.require(:target).to_s.strip.downcase)
-      return render(json: { error: "there is no #{params[:target]}" }, status: :not_found) if channel.nil?
+      channel = target or return
 
       limit = (params[:limit].presence || Irc::DEFAULT_READ).to_i.clamp(1, Irc::MAX_READ)
       scope = channel.lines
@@ -42,6 +45,54 @@ module V1
                    members: Irc.nicks(channel) },
         lines: lines.map { |line| { id: line.id, at: line.created_at.utc.iso8601, nick: line.nick, kind: line.kind, body: line.body } }
       }
+    end
+
+    TAKEN_SHOWN = 10
+    PLANT_MAX = 50
+
+    def seeds
+      channel = target or return
+      render json: {
+        channel: channel.name, pulse: channel.pulse, pulse_state: channel.pulse_state.presence,
+        waiting: channel.seeds.waiting.order(:id).map { |seed| seed_json(seed) },
+        taken: channel.seeds.where.not(taken_at: nil).order(taken_at: :desc).limit(TAKEN_SHOWN).map { |seed| seed_json(seed) }
+      }.compact
+    end
+
+    def plant
+      channel = target or return
+      rows = Array(params.require(:seeds))
+      raise Gateway::Invalid, "at most #{PLANT_MAX} seeds at once" if rows.size > PLANT_MAX
+
+      planted = []
+      skipped = 0
+      IrcSeed.transaction do
+        rows.each do |row|
+          row = deep_plain(row).to_h.stringify_keys
+          key = row["key"].to_s.strip.presence
+          if key && channel.seeds.exists?(key: key)
+            skipped += 1
+            next
+          end
+
+          planted << channel.seeds.create!(kind: row["kind"].to_s.strip.downcase, title: row["title"].to_s.strip.presence,
+                                           body: row["body"].to_s.strip, key: key, source: row["source"].to_h)
+        end
+      end
+      render json: { planted: planted.map(&:id), skipped: skipped, waiting: channel.seeds.waiting.count }, status: :created
+    end
+
+    private
+
+    def target
+      channel = IrcChannel.find_by(name: params.require(:target).to_s.strip.downcase)
+      render(json: { error: "there is no #{params[:target]}" }, status: :not_found) if channel.nil?
+      channel
+    end
+
+    def seed_json(seed)
+      { id: seed.id, kind: seed.kind, title: seed.title, body: seed.body, key: seed.key, source: seed.source.presence,
+        created_at: seed.created_at.utc.iso8601, taken_at: seed.taken_at&.utc&.iso8601, taken_by: seed.taken_by&.name }.compact
     end
   end
 end

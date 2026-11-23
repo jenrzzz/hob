@@ -600,7 +600,9 @@ CREATE TABLE public.irc_channels (
     topic_at timestamp(6) without time zone,
     created_by_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    pulse jsonb,
+    pulse_state jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 ALTER TABLE ONLY public.irc_channels FORCE ROW LEVEL SECURITY;
@@ -694,6 +696,47 @@ CREATE SEQUENCE public.irc_memberships_id_seq
 --
 
 ALTER SEQUENCE public.irc_memberships_id_seq OWNED BY public.irc_memberships.id;
+
+
+--
+-- Name: irc_seeds; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.irc_seeds (
+    id bigint NOT NULL,
+    irc_channel_id bigint NOT NULL,
+    realm character varying NOT NULL,
+    kind character varying NOT NULL,
+    title character varying,
+    body text NOT NULL,
+    key character varying,
+    source jsonb DEFAULT '{}'::jsonb NOT NULL,
+    taken_by_id bigint,
+    taken_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.irc_seeds FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: irc_seeds_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.irc_seeds_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: irc_seeds_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.irc_seeds_id_seq OWNED BY public.irc_seeds.id;
 
 
 --
@@ -2002,6 +2045,13 @@ ALTER TABLE ONLY public.irc_memberships ALTER COLUMN id SET DEFAULT nextval('pub
 
 
 --
+-- Name: irc_seeds id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_seeds ALTER COLUMN id SET DEFAULT nextval('public.irc_seeds_id_seq'::regclass);
+
+
+--
 -- Name: model_roles id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2299,6 +2349,14 @@ ALTER TABLE ONLY public.irc_lines
 
 ALTER TABLE ONLY public.irc_memberships
     ADD CONSTRAINT irc_memberships_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: irc_seeds irc_seeds_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_seeds
+    ADD CONSTRAINT irc_seeds_pkey PRIMARY KEY (id);
 
 
 --
@@ -3164,6 +3222,34 @@ CREATE UNIQUE INDEX index_irc_memberships_on_irc_channel_id_and_principal_id ON 
 --
 
 CREATE INDEX index_irc_memberships_on_principal_id ON public.irc_memberships USING btree (principal_id);
+
+
+--
+-- Name: index_irc_seeds_on_irc_channel_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_irc_seeds_on_irc_channel_id ON public.irc_seeds USING btree (irc_channel_id);
+
+
+--
+-- Name: index_irc_seeds_on_irc_channel_id_and_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_irc_seeds_on_irc_channel_id_and_key ON public.irc_seeds USING btree (irc_channel_id, key) WHERE (key IS NOT NULL);
+
+
+--
+-- Name: index_irc_seeds_on_irc_channel_id_and_taken_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_irc_seeds_on_irc_channel_id_and_taken_at ON public.irc_seeds USING btree (irc_channel_id, taken_at);
+
+
+--
+-- Name: index_irc_seeds_on_taken_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_irc_seeds_on_taken_by_id ON public.irc_seeds USING btree (taken_by_id);
 
 
 --
@@ -4318,6 +4404,14 @@ ALTER TABLE ONLY public.calendar_contributors
 
 
 --
+-- Name: irc_seeds fk_rails_60cb89851c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_seeds
+    ADD CONSTRAINT fk_rails_60cb89851c FOREIGN KEY (irc_channel_id) REFERENCES public.irc_channels(id);
+
+
+--
 -- Name: people_events fk_rails_696e67b95e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4563,6 +4657,14 @@ ALTER TABLE ONLY public.ward_runs
 
 ALTER TABLE ONLY public.calendar_backends
     ADD CONSTRAINT fk_rails_b20cc58246 FOREIGN KEY (principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: irc_seeds fk_rails_b2d8b445b6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_seeds
+    ADD CONSTRAINT fk_rails_b2d8b445b6 FOREIGN KEY (taken_by_id) REFERENCES public.principals(id);
 
 
 --
@@ -4946,6 +5048,12 @@ ALTER TABLE public.irc_channels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.irc_lines ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: irc_seeds; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.irc_seeds ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: mail_backends; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -5165,6 +5273,15 @@ CREATE POLICY realm_visibility ON public.irc_channels USING ((( SELECT realms.ra
 CREATE POLICY realm_visibility ON public.irc_lines USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (irc_lines.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: irc_seeds realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.irc_seeds USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (irc_seeds.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -5468,6 +5585,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261124000002'),
 ('20261124000001'),
 ('20261123000002'),
 ('20261123000001'),

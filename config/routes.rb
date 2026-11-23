@@ -93,6 +93,8 @@ Rails.application.routes.draw do
     # hob's own IRC, for a person to read (IRC.md, "For people"); nobody speaks here.
     get "irc/channels", to: "irc#channels"
     get "irc/lines", to: "irc#lines"
+    get "irc/seeds", to: "irc#seeds"
+    post "irc/seeds", to: "irc#plant"
     resources :prices, only: %i[index show update destroy], param: :model, constraints: { model: /[^\/]+/ }
     get "usage", to: "usage#show"
     # A signed-in person's present moment (SITUATION.md); agents ask the sentinel.

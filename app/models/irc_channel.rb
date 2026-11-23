@@ -10,12 +10,14 @@ class IrcChannel < ApplicationRecord
   has_many :memberships, class_name: "IrcMembership", dependent: :restrict_with_exception
   has_many :members, through: :memberships, source: :principal
   has_many :lines, class_name: "IrcLine", dependent: :restrict_with_exception
+  has_many :seeds, class_name: "IrcSeed", dependent: :restrict_with_exception, inverse_of: :channel
 
   validates :kind, inclusion: { in: KINDS }
   validates :name, presence: true, uniqueness: true
   validates :name, format: { with: NAME, message: "is # and up to 31 of a-z, 0-9, - and _" }, if: :channel?
   validates :realm, presence: true
   validates :topic, length: { maximum: MAX_TOPIC }
+  validate { Irc::Pulse.problems(pulse).each { |problem| errors.add(:pulse, problem) } }
 
   scope :channels, -> { where(kind: "channel") }
   scope :dms, -> { where(kind: "dm") }

@@ -1987,6 +1987,44 @@ namespace :hob do
       end
     end
 
+    desc "Give a channel a pulse (IRC.md, \"The pulse\"): when it goes quiet or loops, its host persona is woken to " \
+         "bring it something. bin/rails \"hob:irc:pulse[#upstairs,meluzina]\" QUIET=180 LOOP_LINES=24 LOOP_NICKS=2 " \
+         "GAP=240 PER_DAY=3; OFF=1 stops it; with no host, shows it"
+    task :pulse, [ :name, :host ] => :environment do |_task, args|
+      abort "usage: bin/rails \"hob:irc:pulse[#channel,persona]\"" if args[:name].blank?
+
+      Clearance.with("intimate") do
+        channel = IrcChannel.channels.find_by(name: args[:name].to_s.strip.downcase) or abort "there is no #{args[:name]}"
+        if ENV["OFF"].present?
+          channel.update!(pulse: nil)
+          next puts("#{channel.name} has no pulse now")
+        end
+        if args[:host].present?
+          persona = Persona.find_by(key: args[:host]) or abort "no persona #{args[:host]}"
+          config = channel.pulse.to_h.merge("host" => persona.key)
+          { "QUIET" => "quiet_minutes", "LOOP_LINES" => "loop_lines", "LOOP_NICKS" => "loop_nicks",
+            "GAP" => "gap_minutes", "PER_DAY" => "per_day" }.each do |env, key|
+            config[key] = Integer(ENV[env]) if ENV[env].present?
+          end
+          problems = Irc::Pulse.problems(config)
+          abort problems.join("; ") if problems.any?
+
+          agent = PersonaLife.new(persona).agent
+          warn "#{persona.key} has no agent: the pulse cannot wake her until she does" if agent.nil?
+          warn "#{agent.name} is not in #{channel.name}: invite her (hob:irc:invite)" if agent && !channel.memberships.exists?(principal: agent)
+          warn "#{persona.key}'s life has no wakes: the pulse cannot wake her" unless PersonaLife::Wake.new(PersonaLife.new(persona)).on?
+          channel.update!(pulse: config)
+        end
+        pulse = Irc::Pulse.new(channel)
+        abort "#{channel.name} has no pulse" if channel.pulse.nil?
+        puts "#{channel.name}: hosted by #{channel.pulse['host']}, " +
+             Irc::Pulse::DEFAULTS.keys.map { |key| "#{key} #{pulse.setting(key)}" }.join(", ")
+        puts "  last: #{channel.pulse_state['last_at'] || 'never'}#{" (#{channel.pulse_state['reason']})" if channel.pulse_state['reason']}"
+        puts "  now: #{pulse.reason || 'the room is fine, or the pulse is resting'}"
+        puts "  tray: #{channel.seeds.waiting.count} waiting, #{channel.seeds.where.not(taken_at: nil).count} taken"
+      end
+    end
+
     desc "The channels and DMs on hob's IRC: realm, who is in each, how much has been said, when last"
     task channels: :environment do
       Clearance.with("intimate") do

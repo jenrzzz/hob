@@ -66,6 +66,35 @@ class IrcControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "a person plants seeds in a channel's tray at its realm, once each, and reads the tray back" do
+    post "/v1/irc/seeds", params: { target: "#upstairs", seeds: [
+      { kind: "archive", title: "June 2021", body: "the wish only works if you mean the ugly part", key: "archive:41",
+        source: { from: "meluzina archive", at: "2021-06-02" } },
+      { kind: "library", body: "a story's best three lines", key: "library:9" }
+    ] }, headers: auth, as: :json
+    assert_response :created
+    assert_equal [ 2, 0, 2 ], [ body["planted"].size, body["skipped"], body["waiting"] ]
+
+    post "/v1/irc/seeds", params: { target: "#upstairs", seeds: [ { kind: "archive", body: "again", key: "archive:41" } ] },
+                          headers: auth, as: :json
+    assert_equal [ 0, 1 ], [ body["planted"].size, body["skipped"] ]
+
+    get "/v1/irc/seeds", params: { target: "#upstairs" }, headers: auth
+    assert_response :ok
+    assert_equal %w[archive library], body["waiting"].map { |seed| seed["kind"] }
+    assert_equal "2021-06-02", body["waiting"].first.dig("source", "at")
+    assert_equal [ "intimate" ], Clearance.with("intimate") { IrcSeed.distinct.pluck(:realm) }
+
+    post "/v1/irc/seeds", params: { target: "#upstairs", seeds: [ { kind: "Not a kind!", body: "x" } ] }, headers: auth, as: :json
+    assert_response :unprocessable_entity
+  end
+
+  test "a key below the channel cannot plant there" do
+    @token = ApiKey.issue!(principal: @principal, surface: "low", default_clearance: "household")
+    post "/v1/irc/seeds", params: { target: "#upstairs", seeds: [ { kind: "archive", body: "x" } ] }, headers: auth, as: :json
+    assert_response :not_found
+  end
+
   test "agents read IRC through the sentinel, not here" do
     _, token = agent("muse")
     get "/v1/irc/channels", headers: { "Authorization" => "Bearer #{token}" }

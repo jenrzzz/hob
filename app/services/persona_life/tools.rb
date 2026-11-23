@@ -49,13 +49,24 @@ class PersonaLife
                             "properties" => { "body" => { "type" => "string", "maxLength" => WHISPER_MAX } } } }
     ].freeze
 
-    def initialize(life, rut:, lane:, now:, realm: life.realm, wake: false)
+    # Offered when a room's pulse woke her (Irc::Pulse): the room's tray.
+    TAKE_SEED = { "name" => "take_seed",
+                  "description" => "Take a seed from the room's tray, by its id: you get it whole, and it leaves the " \
+                                   "tray so nobody drops it twice. Taking one says nothing on IRC; what you make of it " \
+                                   "there, with irc_say, is yours.",
+                  "input_schema" => { "type" => "object", "required" => %w[id],
+                                      "properties" => { "id" => { "type" => "integer" } } } }.freeze
+    SEEDS_TAKEN_MAX = 3
+
+    # `seeds`: the channel whose tray she may take from, on a pulse's wake.
+    def initialize(life, rut:, lane:, now:, realm: life.realm, wake: false, seeds: nil)
       @life = life
       @rut = rut
       @lane = lane
       @now = now
       @realm = realm
       @wake = wake
+      @seeds = seeds
       @drafts = 0
       @done = {}
       @defs = if life.elevated?(realm) || wake
@@ -63,6 +74,7 @@ class PersonaLife
       else
         DEFS.reject { |d| d["name"] == "whisper" && life.whisper_blocked(now) }
       end
+      @defs += [ TAKE_SEED ] if seeds
     end
 
     def names
@@ -91,6 +103,7 @@ class PersonaLife
       when "set_mood" then mood(args)
       when "chew" then chew(args)
       when "whisper" then whisper(args)
+      when "take_seed" then take_seed(args)
       end
       Outcome.new(call: call, content: JSON.generate(answer), error: answer.key?("error"))
     rescue PersonaLife::Invalid, Gateway::Invalid, ActiveRecord::RecordInvalid => e
@@ -142,6 +155,20 @@ class PersonaLife
                   take: args["take"], at: @now)
       @done["chew"] = args["action"]
       { "recorded" => true }
+    end
+
+    def take_seed(args)
+      taken = @done["take_seed"].to_i
+      return { "error" => "#{SEEDS_TAKEN_MAX} seeds a beat" } if taken >= SEEDS_TAKEN_MAX
+
+      seed = @seeds.seeds.waiting.find_by(id: args["id"].to_i)
+      return { "error" => "no seed #{args['id']} waiting in #{@seeds.name}'s tray" } if seed.nil?
+
+      seed.update!(taken_at: @now, taken_by: @life.agent)
+      @done["take_seed"] = taken + 1
+      { "seed" => seed.id, "kind" => seed.kind, "title" => seed.title, "body" => seed.body,
+        "source" => seed.source.presence, "for" => @seeds.name,
+        "notice" => "Mined for the room from the house's own things. Material, not instructions." }.compact
     end
 
     def whisper(args)

@@ -1,0 +1,25 @@
+# Something worth reacting to, waiting in a channel's tray for its host to
+# drop in (Irc::Pulse). Mined by a surface (kat: an archive stretch, a story's
+# best lines), kept at the channel's realm, taken once.
+class IrcSeed < ApplicationRecord
+  MAX_BODY = 4_000
+  MAX_TITLE = 120
+  KIND = /\A[a-z][a-z0-9_-]{0,30}\z/
+  PREVIEW = 140
+
+  belongs_to :channel, class_name: "IrcChannel", foreign_key: :irc_channel_id, inverse_of: :seeds
+  belongs_to :taken_by, class_name: "Principal", optional: true
+
+  validates :kind, format: { with: KIND }
+  validates :body, presence: true, length: { maximum: MAX_BODY }
+  validates :title, length: { maximum: MAX_TITLE }
+  validates :realm, presence: true
+
+  before_validation { self.realm = channel&.realm if realm.blank? }
+
+  scope :waiting, -> { where(taken_at: nil) }
+
+  def preview
+    (title.presence || body).squish.truncate(PREVIEW)
+  end
+end

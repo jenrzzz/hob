@@ -16,6 +16,9 @@ class PersonaLife
   # budget (PersonaLife::Budget), it is dropped and logged, and her next
   # scheduled beat sees the lines in its IRC section as before.
   #
+  # A room's pulse (Irc::Pulse) wakes its host the same way, with the room
+  # and why it needs something in place of who named her.
+  #
   # The woken beat draws no lane. Its page names who spoke to her and
   # where, never what they said: that reaches her through irc_read, as data.
   # It runs at the lowest realm her life is kept at that is no lower than
@@ -133,6 +136,32 @@ class PersonaLife
       PersonaWakeJob.set(wait_until: queue).perform_later(@persona.id) if queue
     end
 
+    # Her room's pulse (Irc::Pulse): `channel` needs something, for `reason`.
+    # Queues a wake like a call does, or joins the one pending; unlike a
+    # call it is not answered by reading, only by the beat it wakes.
+    # -> :queued, or why not.
+    def pulse!(channel, reason:, now: Time.current)
+      agent = @life.agent
+      return :wakes_off unless on?
+      return :no_agent unless agent
+      return :above_her if @life.realm_for_room(channel.realm).nil? || Realm.rank_of(channel.realm) > Realm.rank_of(agent.max_clearance)
+      return :not_in_channel unless channel.memberships.exists?(principal: agent)
+
+      queue = nil
+      @persona.with_lock do
+        current = state
+        due = current["due_at"] && Time.zone.parse(current["due_at"])
+        if due.nil? || due < now - STALE
+          due = now + delay
+          queue = due
+        end
+        @persona.update_columns(wake: current.merge("pulse" => { "channel" => channel.id, "reason" => reason },
+                                                    "due_at" => due.utc.iso8601))
+      end
+      PersonaWakeJob.set(wait_until: queue).perform_later(@persona.id) if queue
+      :queued
+    end
+
     # The pending wake, when it is due: runs it, waits out her gap, or drops
     # it. -> :woken, :deferred, :busy, or a reason it was dropped.
     def run!(now: Time.current, rng: Random.new)
@@ -166,7 +195,8 @@ class PersonaLife
       @persona.update_columns(wake: { "last_at" => now.utc.iso8601,
                                       "woken" => (woken_since(now) + [ now ]).map { |at| at.utc.iso8601 } })
       Rails.logger.info("wake #{@persona.key}: woken at #{wake[:realm]} by " +
-                        wake[:calls].map { |call| "#{call[:nick]} in #{call[:where]}" }.join(", "))
+                        (wake[:calls].map { |call| "#{call[:nick]} in #{call[:where]}" } +
+                         [ wake[:pulse] && "the pulse of #{wake[:pulse][:where]}" ]).compact.join(", "))
       @life.beat!(now: now, rng: rng, wake: wake)
       :woken
     end
@@ -186,10 +216,24 @@ class PersonaLife
 
         { where: channel.dm? ? nil : channel.name, nick: call["nick"], realm: realm }
       end
-      return nil if calls.empty?
-      return nil unless Mcp::Agent.capabilities(agent, calls.map { |c| c[:realm] }.max_by { |r| Realm.rank_of(r) }).key?("irc_read")
+      pulse = pulse_waiting(agent)
+      return nil if calls.empty? && pulse.nil?
 
-      { realm: calls.map { |c| c[:realm] }.max_by { |r| Realm.rank_of(r) }, calls: calls }
+      realm = (calls.map { |c| c[:realm] } + [ pulse&.dig(:realm) ]).compact.max_by { |r| Realm.rank_of(r) }
+      return nil unless Mcp::Agent.capabilities(agent, realm).key?("irc_read")
+
+      { realm: realm, calls: calls, pulse: pulse }.compact
+    end
+
+    # The room whose pulse woke her, while her agent is still in it.
+    def pulse_waiting(agent)
+      pulse = state["pulse"] or return nil
+      channel = IrcChannel.find_by(id: pulse["channel"]) or return nil
+      realm = @life.realm_for_room(channel.realm) or return nil
+      return nil if Realm.rank_of(channel.realm) > Realm.rank_of(agent.max_clearance)
+      return nil unless channel.memberships.exists?(principal: agent)
+
+      { where: channel.name, channel_id: channel.id, reason: pulse["reason"], realm: realm }
     end
 
     def defer!(at)
@@ -199,7 +243,7 @@ class PersonaLife
     end
 
     def drop!(reason)
-      @persona.update_columns(wake: state.except("due_at", "calls"))
+      @persona.update_columns(wake: state.except("due_at", "calls", "pulse"))
       Rails.logger.info("wake #{@persona.key}: skipped, #{reason}")
       reason
     end

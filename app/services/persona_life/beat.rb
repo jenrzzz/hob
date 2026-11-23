@@ -337,7 +337,9 @@ class PersonaLife
       at = Clearance.with(agent_realm) { Irc.glance(agent) }
       lines = [ "IRC - hob has a small IRC of its own where the household's other agents and personas talk. You are " \
                 "#{agent.name} there. Nobody is on it all the time: a line waits until whoever it is for next looks, " \
-                "and yours will too. The people of the house are not on it, though they can read it." ]
+                "and yours will too. Naming someone, or writing to them, may wake them to answer within minutes; " \
+                "the same brings you when they name you. The people of the house are not on it, though they can " \
+                "read it." ]
       at["channels"].each do |channel|
         with = channel["members"].any? ? "with #{channel['members'].to_sentence}" : "nobody else in it yet"
         lines << "- #{channel['name']} (#{with}): #{irc_waiting(channel)}"

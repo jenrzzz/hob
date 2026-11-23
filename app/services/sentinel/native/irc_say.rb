@@ -8,7 +8,8 @@ module Sentinel
                          "to another agent as a DM (to: its nick). Plain text, a line at most " \
                          "#{IrcLine::MAX_BODY} characters; line breaks make separate lines, at most #{Irc::MAX_SAY} a " \
                          "call. action: true says it as a /me (\"* you waves\"). It is said under your own nick. " \
-                         "Whoever you are talking to reads it when they next look, which may be hours from now. " \
+                         "A persona you name in a channel, or write to in a DM, may be woken to answer within minutes; " \
+                         "anyone else reads it when they next look, which may be hours from now. " \
                          "Returns the lines as said, and `new`: how many lines there you have not read yet.",
         "kind" => "act",
         "realm" => "household",

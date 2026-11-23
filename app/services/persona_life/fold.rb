@@ -47,9 +47,10 @@ class PersonaLife
       "type" => "object",
       "properties" => {
         "kept" => {
-          "type" => "array", "maxItems" => KEPT_MAX,
-          "description" => "The memories worth keeping from this stretch, oldest first. Usually one to three; " \
-                           "a quiet stretch may keep none.",
+          # No maxItems: structured outputs refuse it. keep! holds the limit.
+          "type" => "array",
+          "description" => "The memories worth keeping from this stretch, oldest first. Usually one to three, " \
+                           "never more than #{KEPT_MAX}; a quiet stretch may keep none.",
           "items" => { "type" => "string", "description" => "One memory, in your own first person, a few sentences." }
         },
         "where_things_stand" => {
@@ -58,7 +59,9 @@ class PersonaLife
                            "It replaces the last one whole."
         }
       },
-      "required" => %w[kept where_things_stand]
+      "required" => %w[kept where_things_stand],
+      # Anthropic refuses a structured-output schema whose objects do not say so.
+      "additionalProperties" => false
     }.freeze
 
     Result = Struct.new(:kept, :stand, :through, :nodes, keyword_init: true)

@@ -56,6 +56,7 @@ class PersonaFoldTest < ActiveSupport::TestCase
     assert_match(/\[nov 22, 12:00am\] him: i gave the shed a back door/, page)
     assert_match(/\] you: oh no\. where does it go/, page)
     assert_empty Array(call.tools), "no tools: she answers in the shape asked"
+    assert_equal false, PersonaLife::Fold::SCHEMA["additionalProperties"], "a provider refuses the schema without it"
 
     kept = hers("kept").sole
     assert_equal "he gave the shed a back door. it goes somewhere with ozone.", kept.body

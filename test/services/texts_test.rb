@@ -108,6 +108,11 @@ class TextsTest < ActiveSupport::TestCase
     assert_equal [ "Who has the oranges?" ], Texts.poll("cursor" => first["cursor"], "q" => "ORANGES")["messages"].map { |m| m["text"] }
     assert_equal [ "Here now" ], Texts.poll("cursor" => first["cursor"], "from" => "1234567")["messages"].map { |m| m["text"] }
     assert_match(/cursor is what text.poll last returned/, assert_raises(Texts::Invalid) { Texts.poll("cursor" => "nonsense!") }.message)
+    assert_match(/\Ajenner-messages=\d+\z/, second["cursor"], "a cursor a model can copy without garbling it")
+    state = second["cursor"].split("=").last
+    old_form = Base64.urlsafe_encode64({ "jenner-messages" => state }.to_json, padding: false)
+    assert_equal second["cursor"], Texts.poll("cursor" => old_form)["cursor"], "the base64 form it used to be is still read"
+    assert_equal second["cursor"], Texts.poll("cursor" => { "jenner-messages" => state }.to_json)["cursor"], "and the JSON under it"
   end
 
   test "send: into a chat, or to a person; sent with the message, or pending" do

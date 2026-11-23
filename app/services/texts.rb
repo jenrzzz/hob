@@ -210,13 +210,24 @@ module Texts
     !wanted["q"] || wanted["q"].split.all? { |word| text.include?(word) }
   end
 
-  # The cursor is opaque to the caller: each account's herald cursor, by name.
+  # Each account's herald cursor, by name, written so it survives being
+  # copied by a model: "jenner-messages=320827", accounts joined by commas.
+  # It was unpadded base64 of the same thing as JSON until 2026-11-23, and a
+  # single miscopied character made it garbage (skipsy, 2026-11-14: seven
+  # polls refused on one wrong letter); that form is still read.
+  CURSOR = /\A[a-z0-9][a-z0-9_.-]*=[A-Za-z0-9_.:-]*(,[a-z0-9][a-z0-9_.-]*=[A-Za-z0-9_.:-]*)*\z/
+
   def encode_cursor(states)
-    Base64.urlsafe_encode64(JSON.generate(states), padding: false)
+    plain = states.map { |name, state| "#{name}=#{state}" }.join(",")
+    plain.match?(CURSOR) ? plain : Base64.urlsafe_encode64(JSON.generate(states), padding: false)
   end
 
   def decode_cursor(cursor)
-    states = JSON.parse(Base64.urlsafe_decode64(string!(cursor, "cursor")))
+    cursor = string!(cursor, "cursor").strip
+    return cursor.split(",").to_h { |pair| pair.split("=", 2).then { |name, state| [ name, state.to_s ] } } if cursor.match?(CURSOR)
+
+    cursor = Base64.urlsafe_decode64(cursor) unless cursor.start_with?("{")
+    states = JSON.parse(cursor)
     raise ArgumentError unless states.is_a?(Hash) && states.all? { |k, v| k.is_a?(String) && v.is_a?(String) }
 
     states

@@ -108,8 +108,10 @@ an old message is not a new message, and neither is an edit. `chat`,
 past what they leave out, so a poll for one chat does not see the others'
 messages later either. `more: true` means herald had more than one page
 (100) and the caller should ask again now. The cursor is each account's
-herald cursor (a number that only grows), base64'd: opaque, not secret,
-and useless to anyone without the account. An agent that wants to look on
+herald cursor (a number that only grows), by name (`jenner-messages=320827`,
+accounts joined by commas): not secret, useless to anyone without the
+account, and plain so a model copying it cannot garble it. The base64 form
+it had until 2026-11-23 is still read. An agent that wants to look on
 a clock pairs it with `hob.schedule.create`.
 
 **Send** is plain text, at most 20,000 characters, into an existing `chat`

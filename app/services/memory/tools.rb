@@ -16,6 +16,11 @@ module Memory
     # called out as saying nearly the same thing.
     ALIKE = 0.6
     ALIKE_SHOWN = 3
+    # Kinds her life writes for itself (PersonaLife: the diary, the mood, the
+    # chew; the fold's kept notes and where things stand). A note given one
+    # of these is kept as a note: otherwise it reads back as a diary entry,
+    # and the beat's lane draw and rut count it as one.
+    LIFE_KINDS = %w[diary mood chew kept where_things_stand].freeze
 
     DEFS = [
       { "name" => "recall",
@@ -42,7 +47,8 @@ module Memory
           "properties" => {
             "body" => { "type" => "string", "description" => "The fact, plainly stated, whole: it stands alone." },
             "about" => { "type" => "string", "description" => "Optional: who or what it is about (default: the person you are with)." },
-            "kind" => { "type" => "string", "description" => "Optional: note (default), preference, decision, event, ..." },
+            "kind" => { "type" => "string", "description" => "Optional: note (default), preference, decision, event, ... " \
+                                                       "Not diary, mood or chew: those your life keeps itself." },
             "replaces" => { "type" => "array", "items" => { "type" => "string" }, "maxItems" => REPLACES_MAX,
                             "description" => "Optional: ids of notes of your own (the [id] recall shows) that this one replaces." }
           },
@@ -126,6 +132,11 @@ module Memory
       observation = here.any? ? replace(here, body, args, node) : keep(body, args, node)
 
       result = { "remembered" => observation.id, "about" => observation.entity.name, "realm" => observation.realm }
+      if life_kind?(args)
+        result["kind"] = observation.kind
+        result["kind_note"] = "Kept as a #{observation.kind}, not a #{args['kind'].to_s.strip.downcase}: " \
+                              "your diary, mood and chew are written by your life's own tools, not by remember."
+      end
       result["replaced"] = here.map(&:id) if here.any?
       if elsewhere.any?
         result["still_standing"] = elsewhere.map(&:id)
@@ -144,7 +155,7 @@ module Memory
     def keep(body, args, node)
       about = args["about"].presence ? Memory.entity(args["about"]) : (@scope.about.first || @scope.author)
       Memory.remember!(
-        about: about, body: body, kind: args["kind"].presence || "note", author: @scope.author,
+        about: about, body: body, kind: kind_for(args) || "note", author: @scope.author,
         realm: @scope.write_realm, conversation: @scope.conversation, node: node,
         source: { "via" => "remember" }
       )
@@ -154,12 +165,22 @@ module Memory
     def replace(olds, body, args, node)
       first, *rest = olds
       Observation.transaction do
-        observation = Memory.supersede!(first, body: body, realm: @scope.write_realm, kind: args["kind"].presence,
+        observation = Memory.supersede!(first, body: body, realm: @scope.write_realm, kind: kind_for(args),
                                                reason: "she replaced it")
         observation.update_columns(conversation_id: @scope.conversation&.id, node_hash: node)
         rest.each { |old| old.update!(superseded_by_id: observation.id, retire_reason: "she replaced it") }
         observation
       end
+    end
+
+    # The kind she asked for, unless it is one her life keeps (nil: the
+    # default, or the replaced note's own).
+    def kind_for(args)
+      args["kind"].presence unless life_kind?(args)
+    end
+
+    def life_kind?(args)
+      LIFE_KINDS.include?(args["kind"].to_s.strip.downcase)
     end
 
     def forget(args)

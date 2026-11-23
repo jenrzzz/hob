@@ -210,6 +210,19 @@ class NativeToolsTest < ActiveSupport::TestCase
     assert_equal [ fresh.id ], found["observations"].map { |o| o["id"] }
   end
 
+  test "a note given one of her life's kinds is kept as a note, out of her diary" do
+    tools = tools_in(conversation(realm: "personal"))
+    said, error = run_tool(tools, "remember", { "body" => "He asked for the quince jam again.", "kind" => " Diary" })
+    refute error, said.inspect
+    assert_equal "note", Observation.find(said["remembered"]).kind
+    assert_equal "note", said["kind"]
+    assert_match(/not by remember/, said["kind_note"])
+
+    kept, = run_tool(tools, "remember", { "body" => "He likes it slow.", "kind" => "preference" })
+    assert_equal "preference", Observation.find(kept["remembered"]).kind
+    assert_nil kept["kind_note"]
+  end
+
   test "only her own current notes, and only from the room they were kept in" do
     convo = conversation(realm: "personal")
     tools = tools_in(convo)

@@ -70,6 +70,12 @@ module Memory
       (@options["budget"] || DEFAULT_BUDGET).to_i.clamp(50, 8_000)
     end
 
+    # Did the persona or the request choose a budget? A chosen number is
+    # hers; the recall stage's own budget is only what holds when nobody did.
+    def budget_chosen?
+      @options["budget"].present?
+    end
+
     def author
       @author ||= persona.memory_entity
     end

@@ -142,7 +142,9 @@ module Assembly
     def memory_stage(budget)
       return nil unless @memory&.recall?
 
-      budget = [ budget || 600, @memory.budget_tokens ].min
+      # A budget the persona or the request chose is hers; the stage's own
+      # only caps the default.
+      budget = @memory.budget_chosen? ? @memory.budget_tokens : [ budget || 600, @memory.budget_tokens ].min
       query = @head&.ancestry&.find { |n| n.role == "user" && n.kind == "text" }&.content
       hits = @memory.read do
         Memory.recall(query: query, about: @memory.about, author: @memory.author, scope: @memory.recall_scope,

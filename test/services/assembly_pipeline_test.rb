@@ -134,4 +134,21 @@ class AssemblyPipelineTest < ActiveSupport::TestCase
     assert_match "person's key", error.message
     assert_equal [ "Hi" ], assemble(conversation: convo, head: user).messages.map { |message| message["content"] }
   end
+
+  test "a recall budget the persona chose is hers; the stage's own only caps the default" do
+    robyn = persona("robyn")
+    convo = conversation
+    6.times { |i| Memory.remember!(about: "persona:robyn", author: robyn.memory_entity, realm: "personal", body: "soup night #{i}: " + ("garlic " * 110)) }
+    head = MessageNode.append!(conversation: convo, parent_hash: MessageNode::ROOT, role: "user", content: "soup and garlic?")
+    recalled = lambda do |options|
+      robyn.update!(memory: options)
+      scope = Memory::Scope.build(personas: [ robyn ], conversation: convo)
+      assemble(conversation: convo, head: head, personas: [ robyn ], memory: scope)
+        .snapshot.assembled["stages"].find { |s| s["name"] == "memory" }["observations"].size
+    end
+
+    assert_equal 2, recalled.({ "recall" => true, "own" => true }), "the default: 600 tokens"
+    assert_equal 4, recalled.({ "recall" => true, "own" => true, "budget" => 900 }), "room for more"
+    assert_equal 1, recalled.({ "recall" => true, "own" => true, "budget" => 200 }), "and a smaller one still narrows"
+  end
 end

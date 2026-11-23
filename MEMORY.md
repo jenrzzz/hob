@@ -162,6 +162,8 @@ A chat turn or a completion opts in per persona or per request:
 
 ```
 personas.memory               { recall: true, tools: true, budget: 600, about: ["principal:jenner"], own: true }    the defaults
+                              a budget set here or on the request is used as given (50 to 8,000 tokens);
+                              the recall stage's own budget caps only the default
 POST /v1/conversations/:id/chat { ..., memory: true | false | { recall, tools, budget, about, own } }
 POST /v1/completions          { ..., persona, memory: ... }
 ```

@@ -23,7 +23,8 @@ class PersonaLife
         role: @life.config["role"].presence || @persona.model_role || ChatTurn::DEFAULT_ROLE,
         messages: [ { "role" => "user", "content" => prompt } ],
         system: @life.config["instruction"], persona: @persona, realm: @life.realm, operation: "life",
-        ref: "persona/#{@persona.key}/life", venues: [ tools ], max_iterations: @life.max_iterations
+        ref: "persona/#{@persona.key}/life", venues: [ tools ], max_iterations: @life.max_iterations,
+        recall_also: recall_by_lane
       )
       result = completion.call
       Rails.logger.info("life #{@persona.key}: #{tools.summary}")
@@ -77,8 +78,17 @@ class PersonaLife
 
     private
 
+    # What this beat's memory is searched by, beside the whole page (which
+    # is a search for everything at once): where the beat goes. The paper
+    # is its own query already, being most of the page.
+    def recall_by_lane
+      return nil if beat[:direction].blank?
+
+      "#{beat[:lane]}: #{beat[:direction]}"
+    end
+
     def rut
-      @rut ||= Rut.new(@life.diary(Rut::WINDOW).reverse.map(&:body))
+      @rut ||= Rut.new(@life.diary(Rut::WINDOW).reverse.map(&:body), unworn: @life.unworn)
     end
 
     # Where this beat comes from, decided once: the paper on a reading beat,
@@ -152,8 +162,8 @@ class PersonaLife
 
       minutes = ((@now - seen) / 60).round
       ago = minutes < 90 ? "about #{minutes} minutes ago" : "about #{(minutes / 60.0).round} hours ago"
-      "He was last talking with you #{ago}. He's around: a whisper now is far likelier to reach him, so lean " \
-        "toward one if anything at all is worth it - still never a summons, never about his coming or going."
+      "He was last talking with you #{ago}, so he may still be around. That is only a fact about the evening; it " \
+        "asks nothing of you."
     end
 
     def chew_section
@@ -268,13 +278,35 @@ class PersonaLife
       "#{at}, \"#{commission['title']}\" (#{commission['id']}): #{how}#{said}"
     end
 
+    # What she is told about whispering. Never a quota: a count would be
+    # read as one owed. On a dial with a cooldown the tool comes and goes,
+    # so the line stays short; on an open dial she is given what she needs
+    # to judge for herself, which is when the last one went and whether he
+    # has answered.
     def whisper_line
       if (reason = @life.whisper_blocked(@now))
-        "No whisper this beat (#{reason})."
-      else
-        "A whisper is a short line to him, under #{WHISPER_MAX} characters: a poke, a diary beat, a song, a take. " \
-          "Maybe one beat in three; more when he's around. Never needy, never a summons; it expects nothing back."
+        return "No whisper this beat (#{reason}). Nothing is lost by it."
       end
+
+      lines = [ "A whisper is a short line to him, under #{WHISPER_MAX} characters, there if you have one: a poke, a " \
+                "diary beat, a song, a take. It is never owed. Most beats send nothing, and a long stretch of " \
+                "nothing is fine. It is never needy, never a summons, and expects nothing back." ]
+      lines << whisper_facts if @life.dial == "open"
+      lines.compact.join(" ")
+    end
+
+    def whisper_facts
+      last = @life.last_whisper or return "You have not sent him one yet."
+
+      hours = ((@now - last.created_at) / 1.hour).round
+      ago = hours < 1 ? "within the hour" : hours < 48 ? "about #{hours} hour#{'s' unless hours == 1} ago" : "about #{(hours / 24.0).round} days ago"
+      waiting = @life.whispers_unanswered
+      heard = case waiting
+      when 0 then "he has written since"
+      when 1 then "he has not written since"
+      else "he has not written since, and that makes #{waiting} sitting unanswered"
+      end
+      "Your last one went #{ago}; #{heard}. When to send another is yours to judge."
     end
   end
 end

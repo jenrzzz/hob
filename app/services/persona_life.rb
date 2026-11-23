@@ -12,7 +12,8 @@
 #     "beats" => { lane => [direction, ...] },   where a beat may go, drawn avoiding recent lanes
 #     "paper" => { "url" => <JSON Feed>, "odds" => 3, "skip" => 1 },  read on one beat in `odds`,
 #                                        past the first `skip` items (a briefing)
-#     "dial" => "off" | "rare" | "daily",          how often a whisper may go out
+#     "dial" => "off" | "rare" | "daily" | "open", whether a whisper may go out: never, after a
+#                                                  cooldown, or whenever she has one (hers to judge)
 #     "home" => <conversation id> }      where whispers land; set at the box (hob:persona:home)
 #
 # Her life is observations she authors about herself, at the life's realm:
@@ -26,9 +27,10 @@
 class PersonaLife
   class Invalid < StandardError; end
 
-  OPTIONS = %w[instruction realm zone odds min_gap_minutes role max_iterations note beats paper dial home].freeze
+  OPTIONS = %w[instruction realm zone odds min_gap_minutes role max_iterations note unworn beats paper dial home].freeze
   MAX_ITERATIONS = 60
-  DIALS = %w[off rare daily].freeze
+  UNWORN_MAX = 40
+  DIALS = %w[off rare daily open].freeze
   COOLDOWNS = { "rare" => 60.hours, "daily" => 18.hours }.freeze
   DEFAULT_ODDS = 0.1
   DEFAULT_GAP = 180
@@ -80,6 +82,10 @@ class PersonaLife
     unless note.nil? || (note.is_a?(String) && note.strip.present? && note.length <= Shells::MAX_PATH && !note.match?(/[\0\r\n]/))
       problems << "life.note is the path of a file on her machine"
     end
+    unworn = config["unworn"]
+    unless unworn.nil? || (unworn.is_a?(Array) && unworn.size <= UNWORN_MAX && unworn.all? { |w| w.is_a?(String) && w.match?(/\A[[:alpha:]' -]{1,40}\z/) })
+      problems << "life.unworn is a list of at most #{UNWORN_MAX} words that never wear out"
+    end
     paper = config["paper"]
     problems << "life.paper needs a url" if paper.present? && (!paper.is_a?(Hash) || paper["url"].blank?)
     problems
@@ -124,6 +130,11 @@ class PersonaLife
   # Tool rounds one beat may take.
   def max_iterations
     config["max_iterations"].presence&.to_i || ToolExchange::DEFAULT_MAX_ITERATIONS
+  end
+
+  # Words her diary's repeat-guard never wears out (Rut): names, mostly.
+  def unworn
+    Array(config["unworn"])
   end
 
   # A file on her machine she keeps for herself (where a build stands, what
@@ -338,16 +349,31 @@ class PersonaLife
     at_home { home.message_nodes.where(role: "user").maximum(:created_at) }
   end
 
+  # How many whispers she has sent since he last wrote in her home: what a
+  # beat tells her in place of a limit.
+  def whispers_unanswered
+    return 0 unless home
+
+    seen = last_seen_at
+    at_home do
+      sent = home.message_nodes.where("meta @> ?", { whisper: true }.to_json)
+      (seen ? sent.where("created_at > ?", seen) : sent).count
+    end
+  end
+
   # Why a whisper can't go out now, or nil when it may.
   def whisper_blocked(now = Time.current)
-    return "whispers are off" if dial == "off"
+    return "whispers are switched off for now" if dial == "off"
     return "she has no home conversation to whisper into" if home.nil?
 
     seen = last_seen_at
     return "he is talking with her right now" if seen && seen > now - TALKING_WINDOW
 
+    # Open: no meter. Whether to send one is hers to judge, from what the
+    # beat tells her (whispers_unanswered), not a cooldown's.
+    cooldown = COOLDOWNS[dial] or return nil
     last = last_whisper
-    return nil if last.nil? || last.created_at <= now - COOLDOWNS.fetch(dial)
+    return nil if last.nil? || last.created_at <= now - cooldown
     return nil if seen && seen > last.created_at
 
     "she whispered recently and he hasn't been by since"

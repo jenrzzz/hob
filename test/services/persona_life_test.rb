@@ -103,6 +103,33 @@ class PersonaLifeTest < ActiveSupport::TestCase
     end
   end
 
+  test "an open dial has no meter: she is told when the last one went and whether he answered, never a quota" do
+    @mel.update!(life: @mel.life.merge("dial" => "open"))
+    life = PersonaLife.new(@mel)
+    now = Time.utc(2026, 11, 24, 9, 0)
+    prompt = ->(at) { PersonaLife::Beat.new(PersonaLife.new(@mel), now: at, rng: Random.new(1)).prompt }
+
+    text = prompt.(now)
+    assert_match(/It is never owed\. Most beats send nothing/, text)
+    assert_match(/You have not sent him one yet\./, text)
+    refute_match(/one beat in three|lean toward|likelier to reach/, text, "no quota and no push")
+
+    travel_to(now) { life.whisper!("rar", now: now) }
+    assert_nil life.whisper_blocked(now + 3.hours), "no cooldown"
+    assert_match(/Your last one went about 3 hours ago; he has not written since\. When to send another is yours to judge\./, prompt.(now + 3.hours))
+
+    travel_to(now + 3.hours) { life.whisper!("the ladle again", now: now + 3.hours) }
+    assert_equal 2, life.whispers_unanswered
+    assert_match(/he has not written since, and that makes 2 sitting unanswered/, prompt.(now + 6.hours))
+
+    say_to_her("hey you", at: now + 7.hours)
+    assert_equal 0, life.whispers_unanswered
+    assert_match(/talking with her right now/, life.whisper_blocked(now + 7.hours + 30.seconds), "the one guard kept")
+    text = prompt.(now + 8.hours)
+    assert_match(/Your last one went about 5 hours ago; he has written since\./, text)
+    assert_match(/so he may still be around\. That is only a fact about the evening; it asks nothing of you\./, text)
+  end
+
   test "whispers wait out the dial's cooldown unless he has been by since" do
     now = Time.current
     assert_nil @life.whisper_blocked(now)
@@ -116,7 +143,7 @@ class PersonaLifeTest < ActiveSupport::TestCase
 
     @mel.update!(life: @mel.life.merge("dial" => "off"))
     life = PersonaLife.new(@mel)
-    assert_equal "whispers are off", life.whisper_blocked(now)
+    assert_equal "whispers are switched off for now", life.whisper_blocked(now)
     @fake.call_tools([ { id: "d1", name: "diary", arguments: { entry: "nothing much" } } ])
     @fake.reply("ok")
     life.beat!
@@ -234,6 +261,47 @@ class PersonaLifeTest < ActiveSupport::TestCase
     refute_match(/You have not touched it yet/, text)
   ensure
     Shells::Backends::Fake.reset!
+  end
+
+  test "words she names never wear out, though a lifted phrase is still an echo" do
+    entries = [ "misha knocked the garlic off the counter", "mitzi and misha asleep on the server",
+                "misha watched me burn the garlic", "garlic again. misha unimpressed" ]
+    assert_includes PersonaLife::Rut.new(entries).worn, "misha"
+    rut = PersonaLife::Rut.new(entries, unworn: %w[Misha Mitzi])
+    refute_includes rut.worn, "misha"
+    assert_includes rut.worn, "garlic", "everything else wears as before"
+    assert_match(/reuses "misha knocked the garlic"/, rut.echo("misha knocked the garlic off again"))
+
+    @mel.update!(life: @mel.life.merge("unworn" => %w[misha mitzi]))
+    4.times { |i| PersonaLife.new(@mel).write_diary!("misha did crime number #{%w[one two three four][i]} in the pantry", lane: "cats", at: (5 - i).hours.ago) }
+    prompt = PersonaLife::Beat.new(PersonaLife.new(@mel.reload), now: Time.current, rng: Random.new(1)).prompt
+    worn = prompt[/WORN OUT[^\n]*/]
+    assert_match(/pantry/, worn)
+    refute_match(/misha/, worn)
+
+    @mel.life = @mel.life.merge("unworn" => "misha")
+    refute @mel.valid?
+  end
+
+  test "a beat remembers by its lane as well as by its page, and only what she wrote" do
+    @mel.update!(memory: { "recall" => true, "own" => true, "budget" => 400 }, life: @mel.life.merge("beats" => { "workshop" => [ "Her real machine. She builds a piece of something." ] }))
+    mine = Clearance.with("personal") do
+      Memory.remember!(about: "persona:mel", author: @mel.memory_entity, realm: "personal",
+                       body: "the MUD lives on my real machine: one file per room, the shed is first")
+    end
+    Clearance.with("personal") do
+      Memory.remember!(about: "persona:mel", realm: "personal", body: "someone else's note about her real machine and what she builds")
+    end
+
+    @fake.call_tools([ { id: "d1", name: "diary", arguments: { entry: "wrote the shed. it smells like creosote." } } ])
+    @fake.reply("")
+    PersonaLife.new(@mel.reload).beat!(now: Time.utc(2026, 11, 24, 9, 0), rng: Random.new(1))
+    system = @fake.calls.first.system
+    assert_includes system, "## What you remember"
+    assert_includes system, "the MUD lives on my real machine"
+    assert_includes system, "[#{mine.id}]"
+    refute_includes system, "someone else's note", "her memory is her own in a beat too"
+    assert_equal 1, system.scan(mine.id).size, "found by the lane and by the page, shown once"
   end
 
   test "a beat reads the top of the note she keeps on her machine, and the diary owes the machine nothing" do

@@ -30,8 +30,12 @@ class PersonaLife
     ].to_set.freeze
 
     # entries: oldest first
-    def initialize(entries)
+    # unworn: words that never wear out however often they turn up (the
+    # names of those she lives with are not a tic). A phrase lifted whole
+    # from an earlier entry is still an echo.
+    def initialize(entries, unworn: [])
       @entries = Array(entries).last(WINDOW).map(&:to_s)
+      @unworn = Array(unworn).flat_map { |word| tokens(word.to_s) }.map { |word| stem(word) }.to_set
     end
 
     # The worn-out things, most worn first, as they were actually written.
@@ -61,7 +65,7 @@ class PersonaLife
     def worn_stems
       @worn_stems ||= begin
         floor = [ WORN_MIN, (entries.size * WORN_SHARE).ceil ].max
-        document_frequency.select { |_, n| n >= floor }.sort_by { |stem, n| [ -n, stem ] }.map(&:first)
+        document_frequency.select { |stem, n| n >= floor && !@unworn.include?(stem) }.sort_by { |stem, n| [ -n, stem ] }.map(&:first)
       end
     end
 

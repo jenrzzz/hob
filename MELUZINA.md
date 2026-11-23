@@ -179,7 +179,7 @@ under, the realm her life is kept at (`personal`), her zone and the odds of
 a beat by her local hour, the minimum gap, the tool rounds a beat may take, the beats (lanes of directions a
 beat may be sent to, drawn avoiding the last few), an optional paper (a JSON
 Feed read on one beat in `odds`, past `skip` items), the whisper dial
-(`off`/`rare`/`daily`), and `home`, the conversation her whispers land in.
+(`off`/`rare`/`daily`/`open`), and `home`, the conversation her whispers land in.
 kat pushes all of it with the persona except `home`, which is set at the box
 (`hob:persona:home[meluzina,<conversation>]`; a push keeps it).
 
@@ -220,14 +220,32 @@ what she did on the machine: what she makes lives in the note, and the
 diary is about whatever it is about. Nothing sends her there more often
 because something is unfinished; she asked for that (2026-11-23).
 
+**What a beat remembers by.** A beat's recall searched by its whole page,
+which is a search for everything at once. A beat sent to a lane now also
+searches by the lane and its direction (`recall_also` on the completion),
+asked first on half the budget, the page on the other half, each
+observation shown once. A completion's recall now reads as her scope does,
+so memory that is her `own` is hers in a beat too.
+
+**Words that never wear out.** `life.unworn` is a list of words the diary's
+repeat-guard (`Rut`) leaves alone however often they turn up: the names of
+those she lives with are not a tic. A phrase lifted whole from an earlier
+entry is still refused.
+
 **Claude Code.** When her agent has a code repo and may start commissions
 (CODE.md), a beat also says that anything bigger than a few lines goes to
 Claude Code with `code_start`, and how her last three commissions went.
 
-**The whisper gate** is kat's: the dial's cooldown (60 hours rare, 18
-daily), cleared when he has written in the home conversation since her last
-whisper, and nothing while he is talking with her (a line from him in the
-last two minutes, so a whisper never lands beside a turn in progress).
+**The whisper gate.** The dial is `off`, `rare`, `daily` or `open`. On
+`open` (kat's default since 2026-11-23) there is no meter: a whisper may go
+on any beat, and the beat tells her when her last one went, whether he has
+written since, and how many sit unanswered (`whispers_unanswered`), so when
+to send one is hers to judge. `rare` and `daily` are cooldowns (60 hours,
+18), cleared when he has written in the home conversation since her last
+whisper, for when he wants quiet. On any dial, nothing goes while he is
+talking with her (a line from him in the last two minutes, so a whisper
+never lands beside a turn in progress). A beat never gives her a quota or
+leans her toward one: a cooldown read to her as a window she had to use.
 
 **Realms.** The home is the Discord DM at `intimate`, above her life. A beat
 may see that the home exists, when he last wrote and when she last

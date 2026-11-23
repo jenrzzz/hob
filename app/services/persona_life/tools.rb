@@ -49,7 +49,8 @@ class PersonaLife
                             "properties" => { "body" => { "type" => "string", "maxLength" => WHISPER_MAX } } } }
     ].freeze
 
-    # Offered when a room's pulse woke her (Irc::Pulse): the room's tray.
+    # Offered when a room's pulse woke her (Irc::Pulse), or deep in a run of
+    # wakes from a room with seeds waiting: the room's tray.
     TAKE_SEED = { "name" => "take_seed",
                   "description" => "Take a seed from the room's tray, by its id: you get it whole, and it leaves the " \
                                    "tray so nobody drops it twice. Taking one says nothing on IRC; what you make of it " \
@@ -58,7 +59,7 @@ class PersonaLife
                                       "properties" => { "id" => { "type" => "integer" } } } }.freeze
     SEEDS_TAKEN_MAX = 3
 
-    # `seeds`: the channel whose tray she may take from, on a pulse's wake.
+    # `seeds`: the channel whose tray she may take from (Beat#tray_channel).
     def initialize(life, rut:, lane:, now:, realm: life.realm, wake: false, seeds: nil)
       @life = life
       @rut = rut

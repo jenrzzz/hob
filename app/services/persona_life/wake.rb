@@ -4,7 +4,8 @@ class PersonaLife
   #
   #   { "gap_minutes" => 20,     no wake within this of her last beat, scheduled or woken
   #     "per_day" => 8,          at most this many wakes in any 24 hours
-  #     "delay_minutes" => 3 }   how long a wake waits, so a burst is read in one beat
+  #     "delay_minutes" => 3,    how long a wake waits, so a burst is read in one beat
+  #     "backoff" => 2 }         each wake in a row waits this many times longer than the last; 1 is never
   #
   # Absent is no wakes. A line said in a channel wakes each member whose
   # nick it names, and a DM wakes its other end; never the line's sender,
@@ -16,8 +17,17 @@ class PersonaLife
   # budget (PersonaLife::Budget), it is dropped and logged, and her next
   # scheduled beat sees the lines in its IRC section as before.
   #
+  # Wakes in a row are a room answering itself, so each waits longer than
+  # the one before (`backoff`): her gap, then twice it, four times, and no
+  # more than BACKOFF_MAX times. The run ends when she has not been woken
+  # for REST, or when something new was brought to a room that named her
+  # (Irc::Pulse#fresh_at). From DEEP wakes in a row her page says so and
+  # offers the room's tray.
+  #
   # A room's pulse (Irc::Pulse) wakes its host the same way, with the room
-  # and why it needs something in place of who named her.
+  # and why it needs something in place of who named her. Hosting is not
+  # being talked to: it keeps her plain gap, is not counted toward
+  # `per_day` or held back by it, and ends her run.
   #
   # The woken beat draws no lane. Its page names who spoke to her and
   # where, never what they said: that reaches her through irc_read, as data.
@@ -25,8 +35,14 @@ class PersonaLife
   # the room (PersonaLife#realm_for_room); a room above all of them wakes
   # nobody.
   class Wake
-    DEFAULTS = { "gap_minutes" => 20, "per_day" => 8, "delay_minutes" => 3 }.freeze
-    RANGES = { "gap_minutes" => 5..1440, "per_day" => 1..48, "delay_minutes" => 0..60 }.freeze
+    DEFAULTS = { "gap_minutes" => 20, "per_day" => 8, "delay_minutes" => 3, "backoff" => 2 }.freeze
+    RANGES = { "gap_minutes" => 5..1440, "per_day" => 1..48, "delay_minutes" => 0..60, "backoff" => 1..4 }.freeze
+    # The gap of a run of wakes never grows past this many times itself.
+    BACKOFF_MAX = 8
+    # Not woken for this long: the run is over, and the next wake is a first.
+    REST = 6.hours
+    # This many wakes in a row and her page says the room is answering itself.
+    DEEP = 3
     WINDOW = 24.hours
     # Another beat of hers is running: try again this much later.
     BUSY_RETRY = 2.minutes
@@ -37,7 +53,7 @@ class PersonaLife
     def self.problems(config)
       return [] if config.nil?
 
-      shape = "life.wakes is { gap_minutes, per_day, delay_minutes }, each a whole number"
+      shape = "life.wakes is { gap_minutes, per_day, delay_minutes, backoff }, each a whole number"
       return [ shape ] unless config.is_a?(Hash)
 
       config = config.stringify_keys
@@ -99,6 +115,25 @@ class PersonaLife
     def gap = setting("gap_minutes").minutes
     def per_day = setting("per_day")
     def delay = setting("delay_minutes").minutes
+    def backoff = setting("backoff")
+
+    # How long a wake waits after her last one, `streak` wakes into a run:
+    # her gap after the first, then `backoff` times longer after each.
+    def gap_after(streak)
+      gap * [ backoff**[ streak - 1, 0 ].max, BACKOFF_MAX ].min
+    end
+
+    # How many wakes in a row she is into, as of `now`: none once she has
+    # rested, or once something new reached a room that is naming her.
+    def streak(now)
+      last = last_woken_at
+      return 0 if last.nil? || last <= now - REST
+
+      rooms = IrcChannel.where(id: Array(state["calls"]).map { |call| call["channel"] })
+      return 0 if rooms.any? { |room| Irc::Pulse.new(room).fresh_at&.>=(last) }
+
+      state["streak"].to_i
+    end
 
     def state
       @persona.wake.to_h
@@ -146,12 +181,14 @@ class PersonaLife
       return :no_agent unless agent
       return :above_her if @life.realm_for_room(channel.realm).nil? || Realm.rank_of(channel.realm) > Realm.rank_of(agent.max_clearance)
       return :not_in_channel unless channel.memberships.exists?(principal: agent)
+      return :over_budget if @life.budget.over?(now)
 
       queue = nil
       @persona.with_lock do
         current = state
         due = current["due_at"] && Time.zone.parse(current["due_at"])
-        if due.nil? || due < now - STALE
+        # A wake pending far off is a run of names backing off: the room does not wait for that.
+        if due.nil? || due < now - STALE || due > now + delay
           due = now + delay
           queue = due
         end
@@ -181,23 +218,32 @@ class PersonaLife
       return :nothing_pending if due.nil? || due > now
       return drop!("wakes are off") unless on?
 
-      last = [ Clearance.with(@life.top_realm) { @life.last_beat_at }, last_woken_at ].compact.max
-      if last && last > now - gap
-        defer!(last + gap)
-        return :deferred
-      end
-      return drop!("#{per_day} wakes in a day already") if woken_since(now).size >= per_day
-      return drop!("over her token budget") if @life.budget.over?(now)
-
       wake = Clearance.with(@life.top_realm) { waiting }
       return drop!("nothing is waiting for her") if wake.nil?
 
-      @persona.update_columns(wake: { "last_at" => now.utc.iso8601,
-                                      "woken" => (woken_since(now) + [ now ]).map { |at| at.utc.iso8601 } })
+      hosting = wake.key?(:pulse)
+      run = hosting ? 0 : Clearance.with(@life.top_realm) { streak(now) }
+      ready = [ Clearance.with(@life.top_realm) { @life.last_beat_at }&.+(gap),
+                last_woken_at&.+(hosting ? gap : gap_after(run)) ].compact.max
+      if ready && ready > now
+        defer!(ready)
+        return :deferred
+      end
+      return drop!("#{per_day} wakes in a day already") if !hosting && woken_since(now).size >= per_day
+      return drop!("over her token budget") if @life.budget.over?(now)
+
+      @persona.update_columns(wake: { "last_at" => now.utc.iso8601, "streak" => hosting ? 0 : run + 1,
+                                      "woken" => (woken_since(now) + (hosting ? [] : [ now ])).map { |at| at.utc.iso8601 } })
+      if hosting
+        Clearance.with(@life.top_realm) do
+          Irc::Pulse.new(IrcChannel.find(wake[:pulse][:channel_id])).fired!(now: now, reason: wake[:pulse][:reason])
+        end
+      end
       Rails.logger.info("wake #{@persona.key}: woken at #{wake[:realm]} by " +
                         (wake[:calls].map { |call| "#{call[:nick]} in #{call[:where]}" } +
-                         [ wake[:pulse] && "the pulse of #{wake[:pulse][:where]}" ]).compact.join(", "))
-      @life.beat!(now: now, rng: rng, wake: wake)
+                         [ wake[:pulse] && "the pulse of #{wake[:pulse][:where]}" ]).compact.join(", ") +
+                        (run.positive? ? ", #{run} in a row before it" : ""))
+      @life.beat!(now: now, rng: rng, wake: wake.merge(streak: run))
       :woken
     end
 
@@ -214,7 +260,7 @@ class PersonaLife
         membership = channel.memberships.find_by(principal: agent) or next
         next if membership.read_line_id.to_i >= call["line"].to_i
 
-        { where: channel.dm? ? nil : channel.name, nick: call["nick"], realm: realm }
+        { where: channel.dm? ? nil : channel.name, channel_id: channel.id, nick: call["nick"], realm: realm }
       end
       pulse = pulse_waiting(agent)
       return nil if calls.empty? && pulse.nil?

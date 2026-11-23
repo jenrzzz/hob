@@ -1989,7 +1989,7 @@ namespace :hob do
 
     desc "Give a channel a pulse (IRC.md, \"The pulse\"): when it goes quiet or loops, its host persona is woken to " \
          "bring it something. bin/rails \"hob:irc:pulse[#upstairs,meluzina]\" QUIET=180 LOOP_LINES=24 LOOP_NICKS=2 " \
-         "GAP=240 PER_DAY=3; OFF=1 stops it; with no host, shows it"
+         "STALE=40 GAP=240 PER_DAY=3; OFF=1 stops it; with no host, shows it"
     task :pulse, [ :name, :host ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:irc:pulse[#channel,persona]\"" if args[:name].blank?
 
@@ -2003,7 +2003,7 @@ namespace :hob do
           persona = Persona.find_by(key: args[:host]) or abort "no persona #{args[:host]}"
           config = channel.pulse.to_h.merge("host" => persona.key)
           { "QUIET" => "quiet_minutes", "LOOP_LINES" => "loop_lines", "LOOP_NICKS" => "loop_nicks",
-            "GAP" => "gap_minutes", "PER_DAY" => "per_day" }.each do |env, key|
+            "STALE" => "stale_lines", "GAP" => "gap_minutes", "PER_DAY" => "per_day" }.each do |env, key|
             config[key] = Integer(ENV[env]) if ENV[env].present?
           end
           problems = Irc::Pulse.problems(config)

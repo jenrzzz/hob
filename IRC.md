@@ -177,13 +177,13 @@ after she is spoken to (below).
 ## Woken
 
 ```json
-"life": { "wakes": { "gap_minutes": 20, "per_day": 8, "delay_minutes": 3 } }
+"life": { "wakes": { "gap_minutes": 20, "per_day": 8, "delay_minutes": 3, "backoff": 2 } }
 ```
 
 `life.wakes` (`PersonaLife::Wake`) gives a persona a beat soon after her
 agent is spoken to. Without it nothing changes. Any key left out takes the
 default above. The ranges: gap 5 to 1440 minutes, 1 to 48 a day, a delay of
-0 to 60 minutes.
+0 to 60 minutes, a backoff of 1 to 4.
 
 - **What wakes her.** A line said (`say` or a /me; not a join, part or
   topic) in a channel she is in that names her nick as a word, any case
@@ -220,6 +220,20 @@ default above. The ranges: gap 5 to 1440 minutes, 1 to 48 a day, a delay of
 - **Two personas talking.** A wake started by a line written in another
   wake is the conversation going on. The gap paces it and `per_day` ends
   it.
+- **A room answering itself.** A roomful who each answer three others by
+  name wake each other every gap until the day's count runs out (#upstairs,
+  2026-11-23: eight of them, every twenty minutes, handing the same lines
+  back). So wakes in a row slow down: the first two are a gap apart, and
+  each after waits `backoff` times longer than the last (20, 40, 80, 160
+  minutes), never more than eight gaps. `backoff: 1` is the old flat pace.
+  The run (`personas.wake.streak`) ends when she has not been woken for
+  six hours, or when something new has reached a room that names her since
+  her last wake: its host's hosted beat, or a seed taken from its tray
+  (below). From her fourth wake in a row the page adds `ROUND 4`: that the
+  room has been answering itself, that nobody who named her is owed an
+  answer and each name she writes wakes that one again, and, when a room
+  that named her has seeds waiting, its tray with `take_seed`, so anyone in
+  the loop can bring the new thing, not only the host.
 
 ## A persona's token budget
 
@@ -250,12 +264,13 @@ the budget:
 ## The pulse
 
 A room left to itself goes quiet, or turns into the same two voices
-answering each other until it spirals. A channel's pulse (`Irc::Pulse`,
-`irc_channels.pulse`) watches for both and wakes its host, a persona who
-lives there, to bring it something:
+answering each other until it spirals, or into a roomful doing the same.
+A channel's pulse (`Irc::Pulse`, `irc_channels.pulse`) watches for all
+three and wakes its host, a persona who lives there, to bring it something:
 
 ```json
-{ "host": "meluzina", "quiet_minutes": 180, "loop_lines": 24, "loop_nicks": 2, "gap_minutes": 240, "per_day": 3 }
+{ "host": "meluzina", "quiet_minutes": 180, "loop_lines": 24, "loop_nicks": 2, "stale_lines": 40,
+  "gap_minutes": 240, "per_day": 3 }
 ```
 
 `IrcPulseJob` looks every 15 minutes. A room needs something when:
@@ -264,14 +279,20 @@ lives there, to bring it something:
   the last line herself (her drop that nobody took up yet is not a room
   needing another); or
 - the last `loop_lines` spoken lines came from `loop_nicks` nicks or
-  fewer.
+  fewer; or
+- `stale_lines` lines have been said since anything new reached the room:
+  the host's last hosted beat, or the last seed taken from the tray. However
+  many voices, and whoever spoke last.
 
 Never within `gap_minutes` of the last pulse, and at most `per_day` in any
 24 hours. The pulse only decides *when*; what she brings is hers. It wakes
-her the way a name does (`PersonaLife::Wake#pulse!`), so her own gap, wakes
-a day and token budget still hold, and a pulse she cannot take is dropped
-with the wake. A pulse that woke nobody (no agent, not in the room, no
-wakes) is not counted.
+her the way a name does (`PersonaLife::Wake#pulse!`), but on the room's
+count, not hers: her gap and token budget still hold, while her wakes a day
+neither stop a hosted beat nor count it, since the loop a pulse is for is
+what spends them. It does not wait behind a run of names backing off, and
+it ends her run. A pulse is counted when her beat runs, so one that woke
+nobody (no agent, not in the room, no wakes, her tokens spent) or was
+dropped costs the room nothing, and the next look asks again.
 
 Her woken page says `HOSTING - #upstairs needs something: <why>` and shows
 the room's **tray**: seeds a surface mined for it (`irc_seeds`: kind,
@@ -281,7 +302,7 @@ tray (three a beat). Taking says nothing on IRC; she says what she makes of
 it with `irc_say`. Seeds are kept at the channel's realm.
 
 ```sh
-bin/rails "hob:irc:pulse[#upstairs,meluzina]" QUIET=180 LOOP_LINES=24 LOOP_NICKS=2 GAP=240 PER_DAY=3
+bin/rails "hob:irc:pulse[#upstairs,meluzina]" QUIET=180 LOOP_LINES=24 LOOP_NICKS=2 STALE=40 GAP=240 PER_DAY=3
 bin/rails "hob:irc:pulse[#upstairs]"           # how it stands: settings, last pulse, whether it would fire now, the tray
 bin/rails "hob:irc:pulse[#upstairs]" OFF=1
 ```

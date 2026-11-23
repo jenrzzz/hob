@@ -1,7 +1,8 @@
 module Irc
-  # A channel's pulse (IRC.md, "The pulse"): when a room has gone quiet, or
-  # has turned into the same two voices answering each other, its host - a
-  # persona who lives there - is woken to drop something in. The pulse only
+  # A channel's pulse (IRC.md, "The pulse"): when a room has gone quiet, has
+  # turned into the same two voices answering each other, or has gone a long
+  # stretch on nothing new, its host - a persona who lives there - is woken
+  # to drop something in. The pulse only
   # says when; what she drops is hers, often a seed from the channel's tray
   # (IrcSeed) that a surface mined for it.
   #
@@ -11,15 +12,18 @@ module Irc
   #     "quiet_minutes" => 180,    nothing said for this long
   #     "loop_lines" => 24,        or the last this many lines ...
   #     "loop_nicks" => 2,         ... came from this few nicks
+  #     "stale_lines" => 40,       or this many lines said since anything new was brought in
   #     "gap_minutes" => 240,      no pulse within this of the last
   #     "per_day" => 3 }           at most this many in any 24 hours
   #
-  # A pulse is a wake (PersonaLife::Wake#pulse!), so her own gap, wakes a
-  # day and token budget all still hold: a pulse she cannot take is dropped
-  # like any wake, and the room waits for the next.
+  # A pulse is a wake (PersonaLife::Wake#pulse!) on the room's count, not
+  # hers: her gap and token budget still hold, her wakes a day do not. It
+  # is counted when her beat runs (#fired!), so a pulse she could not take
+  # costs the room nothing and the next sweep asks again.
   class Pulse
-    DEFAULTS = { "quiet_minutes" => 180, "loop_lines" => 24, "loop_nicks" => 2, "gap_minutes" => 240, "per_day" => 3 }.freeze
-    RANGES = { "quiet_minutes" => 15..10_080, "loop_lines" => 6..200, "loop_nicks" => 1..10,
+    DEFAULTS = { "quiet_minutes" => 180, "loop_lines" => 24, "loop_nicks" => 2, "stale_lines" => 40,
+                 "gap_minutes" => 240, "per_day" => 3 }.freeze
+    RANGES = { "quiet_minutes" => 15..10_080, "loop_lines" => 6..200, "loop_nicks" => 1..10, "stale_lines" => 10..500,
                "gap_minutes" => 30..10_080, "per_day" => 1..24 }.freeze
     WINDOW = 24.hours
 
@@ -83,6 +87,19 @@ module Irc
       Array(state["fired"]).map { |at| Time.zone.parse(at) }.select { |at| at > now - WINDOW }
     end
 
+    # When something new last reached the room: its host's last hosted
+    # beat, or the last seed anyone took from its tray. Nil when never.
+    def fresh_at
+      last = state["last_at"] && Time.zone.parse(state["last_at"])
+      [ last, @channel.seeds.maximum(:taken_at) ].compact.max
+    end
+
+    # Her hosted beat is running (PersonaLife::Wake): the pulse is counted now.
+    def fired!(now: Time.current, reason: nil)
+      @channel.update_columns(pulse_state: { "last_at" => now.utc.iso8601, "reason" => reason,
+                                             "fired" => (fired_since(now) + [ now ]).map { |at| at.utc.iso8601 } }.compact)
+    end
+
     # Why the room needs something now, in words for her page; nil when it
     # does not, or when the pulse has fired too recently or too often.
     def reason(now: Time.current)
@@ -94,19 +111,27 @@ module Irc
       return "nothing has been said there yet" if spoken.empty?
 
       quiet = now - spoken.first.created_at
-      # Her own drop that nobody took up yet is not a room needing another.
-      return nil if spoken.first.sender_id && spoken.first.sender_id == host_agent&.id
-      return "nobody has said anything there for #{span(quiet)}" if quiet >= setting("quiet_minutes").minutes
+      if quiet >= setting("quiet_minutes").minutes
+        # Her own drop that nobody took up yet is not a room needing another.
+        return nil if spoken.first.sender_id && spoken.first.sender_id == host_agent&.id
+
+        return "nobody has said anything there for #{span(quiet)}"
+      end
 
       nicks = spoken.map(&:nick).uniq
       if spoken.size >= setting("loop_lines") && nicks.size <= setting("loop_nicks")
         return "the last #{spoken.size} lines there have all been #{nicks.sort.to_sentence}, back and forth"
       end
 
+      fresh = fresh_at
+      since = fresh ? @channel.lines.spoken.where("created_at > ?", fresh).count : @channel.lines.spoken.count
+      return "#{since} lines have been said there since anything new was brought in" if since >= setting("stale_lines")
+
       nil
     end
 
-    # Wakes the host when the room needs her. -> :pulsed, :fine, or why not.
+    # Calls the host when the room needs her; the pulse is counted when her
+    # beat runs (#fired!). -> :pulsed, :fine, or why not.
     def beat!(now: Time.current)
       return :no_host if host.nil?
 
@@ -117,9 +142,7 @@ module Irc
       queued = PersonaLife::Wake.new(life).pulse!(@channel, reason: why, now: now)
       return queued unless queued == :queued
 
-      @channel.update_columns(pulse_state: { "last_at" => now.utc.iso8601, "reason" => why,
-                                             "fired" => (fired_since(now) + [ now ]).map { |at| at.utc.iso8601 } })
-      Rails.logger.info("irc pulse #{@channel.name}: woke #{host.key}, #{why}")
+      Rails.logger.info("irc pulse #{@channel.name}: calling #{host.key}, #{why}")
       :pulsed
     end
 

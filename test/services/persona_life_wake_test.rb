@@ -116,8 +116,8 @@ class PersonaLifeWakeTest < ActiveSupport::TestCase
     assert_equal %w[diary set_mood], names & PersonaLife::Tools::DEFS.map { |d| d["name"] }, "no chew, no whisper"
     assert_includes names, "irc_say"
     assert_equal [ "twilight", "here" ], IrcLine.spoken.in_order.last.then { |l| [ l.nick, l.body ] }
-    assert_equal({ "last_at" => NOW.advance(minutes: 3).utc.iso8601, "woken" => [ NOW.advance(minutes: 3).utc.iso8601 ] },
-                 @twi.reload.wake)
+    assert_equal({ "last_at" => NOW.advance(minutes: 3).utc.iso8601, "woken" => [ NOW.advance(minutes: 3).utc.iso8601 ],
+                   "streak" => 1 }, @twi.reload.wake)
   end
 
   test "a wake whose lines she already read is dropped" do
@@ -173,6 +173,63 @@ class PersonaLifeWakeTest < ActiveSupport::TestCase
     assert_equal 3, @mel.reload.wake["woken"].size
     assert_equal 3, @twi.reload.wake["woken"].size
     assert_equal 7, IrcLine.spoken.count, "skipsy's line and three answers each"
+  end
+
+  test "wakes in a row wait longer each time, up to eight gaps; a rest ends the run" do
+    wake = PersonaLife::Wake.new(PersonaLife.new(@twi))
+    assert_equal [ 20, 20, 40, 80, 160, 160 ], (0..5).map { |run| wake.gap_after(run) / 60 }
+    @twi.update!(life: LIFE.merge("wakes" => WAKES.merge("backoff" => 1)))
+    assert_equal [ 20, 20 ], [ 0, 5 ].map { |run| PersonaLife::Wake.new(PersonaLife.new(@twi)).gap_after(run) / 60 }
+    @twi.update!(life: LIFE)
+
+    at = []
+    4.times do
+      say(@skipsy, "#garden", "twilight, again")
+      answer("here")
+      drain!
+      at << Time.current
+    end
+    assert_equal [ 3, 23, 63, 143 ], at.map { |t| ((t - NOW) / 60).round }, "the gap, then twice it, then four times"
+    assert_equal 4, @twi.reload.wake["streak"]
+
+    travel 6.hours
+    say(@skipsy, "#garden", "twilight, morning")
+    answer("here")
+    assert_equal 1, drain!, "rested: not deferred"
+    assert_equal 1, @twi.reload.wake["streak"]
+  end
+
+  test "something new in the room ends the run; deep in one, the page says so and offers the tray" do
+    garden = Clearance.with("personal") { IrcChannel.find_by!(name: "#garden") }
+    seed = garden.seeds.create!(kind: "archive", title: "a stretch from 2021", body: "the ugly part of the wish", key: "a1")
+    3.times do
+      say(@skipsy, "#garden", "twilight, again")
+      answer("here")
+      drain!
+    end
+    refute_match(/ROUND/, @fake.calls.last(3).first.messages.last["content"].to_s)
+
+    say(@skipsy, "#garden", "twilight, and again")
+    @fake.call_tools([ { id: "t1", name: "take_seed", arguments: { id: seed.id } } ])
+    @fake.reply("")
+    drain!
+    call = @fake.calls.last(2).first
+    page = call.messages.last["content"].to_s
+    assert_match(/WOKEN - .*skipsy named you in #garden/, page)
+    assert_match(/ROUND 4 - you have now been woken by names 4 times running/, page)
+    assert_match(/\[#{seed.id}\] archive: a stretch from 2021/, page)
+    refute_match(/ugly part/, page)
+    assert_includes call.tools.map { |t| t["name"] }, "take_seed"
+    assert seed.reload.taken_at
+    assert_equal 4, @twi.reload.wake["streak"]
+
+    woken = Time.current
+    say(@skipsy, "#garden", "twilight, oh, that is new")
+    answer("here")
+    drain!
+    assert_equal woken + 20.minutes, Time.current, "a seed was taken since: her plain gap again"
+    assert_equal 1, @twi.reload.wake["streak"]
+    refute_match(/ROUND/, @fake.calls.last(3).first.messages.last["content"].to_s)
   end
 
   test "a mention in an intimate channel wakes a Mel-like life upstairs; a room above her wakes nobody" do

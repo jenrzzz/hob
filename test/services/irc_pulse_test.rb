@@ -73,13 +73,19 @@ class IrcPulseTest < ActiveSupport::TestCase
     assert_nil Clearance.with("personal") { pulse.reason }
   end
 
-  test "the sweep wakes the host once, then rests for its gap and its count" do
+  test "the sweep calls the host; the pulse is counted when her beat runs, then rests for its gap and its count" do
     say(@twilight, "anyone?")
     travel 4.hours
     assert_equal({ "#garden" => :pulsed }, Irc::Pulse.sweep)
     assert wake_job_queued?
     assert_equal "nobody has said anything there for about 4 hours", @mel.reload.wake.dig("pulse", "reason")
+    assert_nil @garden.reload.pulse_state["last_at"], "not counted until she is up"
+
+    @fake.reply("")
+    travel 3.minutes
+    assert_equal :woken, PersonaLife::Wake.new(PersonaLife.new(@mel.reload)).run!
     assert_equal Time.current.utc.iso8601, @garden.reload.pulse_state["last_at"]
+    assert_equal 1, @garden.pulse_state["fired"].size
 
     travel 1.hour
     assert_equal({ "#garden" => :fine }, Irc::Pulse.sweep, "inside the gap")
@@ -87,6 +93,48 @@ class IrcPulseTest < ActiveSupport::TestCase
     @garden.update!(pulse: { "host" => "mel", "gap_minutes" => 30, "per_day" => 1 })
     travel 1.hour
     assert_equal({ "#garden" => :fine }, Irc::Pulse.sweep, "one a day")
+  end
+
+  test "a long stretch on nothing new is stale, until a seed is taken or she hosts" do
+    @garden.update!(pulse: { "host" => "mel", "stale_lines" => 12 })
+    seed, = plant("a wish")
+    4.times do
+      say(@twilight, "trixie, the margin")
+      say(@trixie, "meluzina, credited")
+      say(@meluzina, "twilight, mostly")
+    end
+    assert_equal "12 lines have been said there since anything new was brought in",
+                 Clearance.with("personal") { pulse.reason }, "though she spoke last, and three voices are no loop"
+
+    travel 1.minute
+    seed.update!(taken_at: Time.current, taken_by: @twilight)
+    travel 1.minute
+    say(@twilight, "from the tray: a wish")
+    assert_nil Clearance.with("personal") { pulse.reason }
+  end
+
+  test "hosting is on the room's count, not hers: past her wakes a day she still hosts, and it is not one of them" do
+    @mel.update!(life: LIFE.merge("wakes" => WAKES.merge("per_day" => 1)))
+    @mel.reload.update_columns(wake: { "last_at" => (NOW - 1.hour).utc.iso8601, "streak" => 5,
+                                       "woken" => [ (NOW - 1.hour).utc.iso8601 ] })
+    say(@twilight, "anyone?")
+    travel 4.hours
+    Irc::Pulse.sweep
+    @fake.reply("")
+    travel 3.minutes
+    assert_equal :woken, PersonaLife::Wake.new(PersonaLife.new(@mel.reload)).run!
+    assert_equal 1, @mel.reload.wake["woken"].size
+    assert_equal 0, @mel.wake["streak"], "hosting ends her run"
+  end
+
+  test "a pulse does not wait behind a run of names backing off" do
+    say(@twilight, "anyone?")
+    travel 4.hours
+    far = Time.current + 2.hours
+    @mel.update_columns(wake: { "due_at" => far.utc.iso8601, "calls" => [] })
+    assert_equal({ "#garden" => :pulsed }, Irc::Pulse.sweep)
+    assert_equal (Time.current + 3.minutes).utc.iso8601, @mel.reload.wake["due_at"]
+    assert wake_job_queued?
   end
 
   test "a host whose agent is not in the room, or without wakes, is not woken" do
@@ -128,14 +176,17 @@ class IrcPulseTest < ActiveSupport::TestCase
     assert_nil @mel.reload.wake["pulse"], "the pulse is answered by the beat"
   end
 
-  test "a wake that is dropped clears the pulse with it" do
+  test "a wake that is dropped clears the pulse with it, and the room is not charged" do
     say(@twilight, "anyone?")
     travel 4.hours
     Irc::Pulse.sweep
-    @mel.update!(life: LIFE.merge("wakes" => WAKES.merge("per_day" => 1)))
-    @mel.reload.update_columns(wake: @mel.wake.merge("woken" => [ Time.current.utc.iso8601 ]))
+    @mel.update!(life: LIFE.merge("budget" => { "tokens_per_day" => 1_000 }))
+    UsageEvent.create!(ref: "persona/mel/life", created_at: Time.current - 1.hour, status: "success",
+                       units: { "input_tokens" => 2_000 })
     travel 3.minutes
-    assert_equal "1 wakes in a day already", PersonaLife::Wake.new(PersonaLife.new(@mel.reload)).run!
+    assert_equal "over her token budget", PersonaLife::Wake.new(PersonaLife.new(@mel.reload)).run!
     assert_nil @mel.reload.wake["pulse"]
+    assert_nil @garden.reload.pulse_state["last_at"]
+    assert_equal({ "#garden" => :over_budget }, Irc::Pulse.sweep, "nor is she called again while she cannot speak")
   end
 end

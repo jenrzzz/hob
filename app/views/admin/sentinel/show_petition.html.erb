@@ -1,0 +1,46 @@
+<% p = @petition %>
+<p class="muted"><%= link_to "Sentinel", admin_sentinel_path %> › petition <%= p.id %></p>
+
+<% if %w[pending failed].include?(p.status) %>
+  <%= render "petition", p: p %>
+<% else %>
+  <section class="card" id="petition-<%= p.id %>">
+    <div class="card-head">
+      <h2><%= p.principal.name %> petitioned<% if p.capability_name %> for <code><%= p.capability_name %></code><% end %></h2>
+      <span class="tag <%= "bad" if p.status == "denied" %>"><%= p.status %></span>
+      <span class="tag"><%= p.realm %></span>
+    </div>
+    <p><%= p.want %></p>
+    <dl class="facts">
+      <% if p.reason.present? %><dt>Reason</dt><dd><%= p.reason %></dd><% end %>
+      <dt>Asked</dt><dd title="<%= p.created_at.utc.iso8601 %>"><%= p.created_at.strftime("%a %b %-d %Y, %H:%M:%S") %> (<%= time_ago_in_words(p.created_at) %> ago) · from <%= p.surface %></dd>
+      <% if p.on_mission_id %><dt>On mission</dt><dd><code><%= p.on_mission_id %></code></dd><% end %>
+      <% if p.spec["description"].present? %><dt>Would build</dt><dd><%= p.spec["description"] %></dd><% end %>
+    </dl>
+    <% if p.arguments.present? %><pre><%= JSON.pretty_generate(p.arguments) %></pre><% end %>
+  </section>
+<% end %>
+
+<section class="card">
+  <h2>Decision</h2>
+  <dl class="facts">
+    <dt>Action</dt><dd><%= p.action || "—" %><% if p.effect %> at <%= p.effect %><% end %></dd>
+    <dt>Decided by</dt><dd><%= [ p.decided_by, p.decider&.name ].compact.join(" · ").presence || "—" %></dd>
+    <% if p.rationale.present? %><dt>Rationale</dt><dd><%= p.rationale %></dd><% end %>
+    <% if p.decided_at %><dt>Decided</dt><dd title="<%= p.decided_at.utc.iso8601 %>"><%= p.decided_at.strftime("%b %-d %H:%M:%S") %></dd><% end %>
+    <% if p.settled_at %><dt>Settled</dt><dd title="<%= p.settled_at.utc.iso8601 %>"><%= p.settled_at.strftime("%b %-d %H:%M:%S") %></dd><% end %>
+    <% if @grant %><dt>Grant</dt><dd><%= link_to "#{@grant.capability} at #{@grant.effect}", admin_grant_path(@grant) %></dd><% end %>
+    <% if p.mission_id %><dt>Forge mission</dt><dd><%= link_to p.mission_id, admin_forge_mission_path(p.mission_id) %></dd><% end %>
+    <% if p.pull_request.present? %><dt>Pull request</dt><dd><%= link_to p.pull_request, p.pull_request %></dd><% end %>
+    <% if p.error.present? %><dt>Error</dt><dd style="color: var(--danger)"><%= p.error %></dd><% end %>
+    <dt>Deciding cost</dt>
+    <dd><% if @usage[:calls].positive? %><%= link_to "#{number_to_currency(@usage[:cost], precision: 4)} over #{pluralize(@usage[:calls], 'model call')}", admin_usage_path(ref: @usage[:ref], period: "all") %>
+        <% else %><span class="muted">no model calls</span><% end %></dd>
+  </dl>
+  <% if p.review.present? %>
+    <details><summary>Steward's notes</summary><pre><%= JSON.pretty_generate(p.review) %></pre></details>
+  <% end %>
+  <% if p.spec.present? %>
+    <details><summary>Full spec</summary><pre><%= JSON.pretty_generate(p.spec) %></pre></details>
+  <% end %>
+</section>

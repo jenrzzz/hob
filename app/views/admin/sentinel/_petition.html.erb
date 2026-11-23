@@ -1,0 +1,45 @@
+<%# A petition waiting on a person: the steward's read, and the decide form. %>
+<section class="card" id="petition-<%= p.id %>">
+  <div class="card-head">
+    <h2><%= p.principal.name %> petitions</h2>
+    <%= link_to "petition #{p.id}", admin_sentinel_petition_path(p), class: "tag" %>
+    <span class="tag"><%= p.status %></span>
+    <span class="tag"><%= p.realm %></span>
+    <span class="muted" title="<%= p.created_at.utc.iso8601 %>"><%= time_ago_in_words(p.created_at) %> ago</span>
+  </div>
+  <p><%= p.want %></p>
+  <dl class="facts">
+    <% if p.reason.present? %><dt>Reason</dt><dd><%= p.reason %></dd><% end %>
+    <% if p.deciding? %><dt>Steward</dt><dd class="muted">still deciding; you can decide first</dd><% end %>
+    <% if p.action %><dt>Steward</dt><dd><%= p.action %><% if p.rationale.present? %>: <%= p.rationale %><% end %></dd><% end %>
+    <% if p.capability_name %><dt>Recommends</dt><dd><code><%= p.capability_name %></code><% if p.effect %> at <%= p.effect %><% end %></dd><% end %>
+    <% if p.spec["description"].present? %><dt>Would build</dt><dd><%= p.spec["description"] %></dd><% end %>
+    <% if p.spec["guidance"].present? %><dt>Steward's guidance</dt><dd><%= p.spec["guidance"] %></dd><% end %>
+    <% if (held = existing_grant(p)) %>
+      <dt>Already held</dt>
+      <dd><%= held.effect %> since <%= time_ago_in_words(held.created_at) %> ago
+        <% if held.guidance.present? %> — current guidance: “<%= held.guidance %>”<% end %>
+        <% if held.bounds %> — bounded: <code><%= held.bounds %></code><% end %></dd>
+    <% end %>
+    <% if p.error.present? %><dt>Error</dt><dd><%= p.error %></dd><% end %>
+  </dl>
+  <% if p.arguments.present? %><pre><%= JSON.pretty_generate(p.arguments) %></pre><% end %>
+  <% if p.spec.present? %>
+    <details><summary>Full spec</summary><pre><%= JSON.pretty_generate(p.spec) %></pre></details>
+  <% end %>
+  <%= form_with url: admin_decide_sentinel_petition_path(p), class: "row" do |f| %>
+    <%= f.text_field :capability, value: p.capability_name || p.spec["name"], placeholder: "capability", "aria-label": "Capability" %>
+    <%= f.select :effect, Petition::GRANTABLE_EFFECTS, { selected: p.effect || "review" }, "aria-label": "Effect" %>
+    <%= f.text_area :guidance, value: (existing_grant(p)&.guidance || p.spec["guidance"]), rows: 2,
+          placeholder: "guidance for the reviewer (blank leaves it unchanged)", "aria-label": "Guidance" %>
+    <%= f.text_area :constraints, rows: 2,
+          value: ((existing_grant(p)&.constraints.presence || p.spec["constraints"].presence)&.to_json),
+          placeholder: 'constraints as JSON, the whole object: {"arg": {"in": [], "max": 0, "pattern": ""}} (blank leaves them unchanged)',
+          "aria-label": "Constraints" %>
+    <%= f.text_field :rationale, placeholder: "why (optional)", "aria-label": "Rationale" %>
+    <%= f.button "Grant", name: "decision", value: "grant", class: "primary" %>
+    <%= f.button "Build", name: "decision", value: "build",
+          onclick: "return confirm('Have the forge build this capability as a pull request?')" %>
+    <%= f.button "Deny", name: "decision", value: "deny", class: "danger" %>
+  <% end %>
+</section>

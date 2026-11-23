@@ -77,7 +77,7 @@
       <% if current_person %>
         <%= link_to "Home", admin_root_path, class: ("current" if controller_name == "dashboard") %>
         <%= link_to "Keys", admin_principals_path, class: ("current" if controller_name == "principals") %>
-        <%= link_to admin_sentinel_path, class: ("current" if current_page?(admin_sentinel_path)) do %>Sentinel<% if (waiting = SentinelRequest.pending.count + Petition.where(status: %w[pending failed]).count).positive? %> <span class="badge"><%= waiting %></span><% end %><% end %>
+        <%= link_to admin_sentinel_path, class: ("current" if controller_name == "sentinel") do %>Sentinel<% if (waiting = SentinelRequest.pending.count + Petition.where(status: %w[pending failed]).count).positive? %> <span class="badge"><%= waiting %></span><% end %><% end %>
         <%= link_to "Grants", admin_grants_path, class: ("current" if controller_name == "grants") %>
         <%= link_to "Gofer keys", admin_gofer_keys_path, class: ("current" if controller_name == "gofer_keys") %>
         <%= link_to "Herald keys", admin_herald_keys_path, class: ("current" if controller_name == "herald_keys") %>

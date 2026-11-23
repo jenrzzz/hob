@@ -2,17 +2,44 @@ module Admin
   # What hob:sentinel:pending, :decide and :petition do from a terminal: the
   # requests and petitions waiting on a person, and deciding them.
   class SentinelController < BaseController
-    helper_method :existing_grant, :records_context, :people_context, :mail_send_files_context, :ward_threat_context
+    helper_method :existing_grant, :records_context, :people_context, :mail_send_files_context, :ward_threat_context,
+                  :history_filters
 
     # Browsers render these inline from a data URI with no new dependency;
     # heic and pdf get a metadata-only placeholder (no renderer in this stack).
     MAIL_SEND_FILES_IMAGE_TYPES = %w[image/jpeg image/png image/webp].freeze
 
+    HISTORY_PAGE = 50
+    HISTORY_KINDS = %w[requests petitions].freeze
+
+    # What waits on a person, then the whole history below it, newest first,
+    # a page at a time: `before` is the last row's cursor, and `rows=1`
+    # answers with just the next page's rows for the page to append as it
+    # scrolls.
     def index
+      load_history
+      return render(partial: "history_chunk", layout: false) if params[:rows].present?
+
       @requests = SentinelRequest.pending.recent.includes(:capability, :principal, :authorization_claim)
       @petitions = Petition.where(status: %w[pending failed]).recent.includes(:principal)
-      @recent_requests = SentinelRequest.where.not(status: "pending").recent.includes(:capability, :principal, :decider).limit(15)
-      @recent_petitions = Petition.where.not(status: %w[pending failed]).recent.includes(:principal, :decider).limit(15)
+    end
+
+    # One request, as the iOS app's RequestView shows it: what was asked,
+    # who decided and why, what came of it; and here also the grant it was
+    # asked under, what deciding it cost, and the agent's other asks of the
+    # same capability.
+    def show_request
+      @request_row = SentinelRequest.includes(:capability, :principal, :decider, :authorization_claim).find(params[:id])
+      @grant = SentinelPolicy.find_by(principal: @request_row.principal, capability: @request_row.capability.name)
+      @usage = usage_for(@request_row.ref)
+      @related = SentinelRequest.where(principal: @request_row.principal, capability: @request_row.capability)
+                                .where.not(id: @request_row.id).recent.includes(:decider).limit(10)
+    end
+
+    def show_petition
+      @petition = Petition.includes(:principal, :decider).find(params[:id])
+      @grant = @petition.sentinel_policy_id && SentinelPolicy.find_by(id: @petition.sentinel_policy_id)
+      @usage = usage_for(@petition.ref)
     end
 
     # The rule this petition's own agent already holds for its recommended
@@ -107,10 +134,10 @@ module Admin
       row = ::Sentinel.decide!(SentinelRequest.find(params[:id]), decision: params.expect(:decision),
                                decider: current_person, rationale: params[:rationale].presence,
                                fabricated: params[:fabricated] == "1")
-      redirect_to admin_sentinel_path, notice: "Request #{row.id} (#{row.capability.name} for #{row.principal.name}): #{row.status}." \
+      redirect_back_or_to admin_sentinel_path, notice: "Request #{row.id} (#{row.capability.name} for #{row.principal.name}): #{row.status}." \
                                                "#{row.error.present? ? " #{row.error}" : ''}"
     rescue Gateway::Invalid, ActionController::ParameterMissing => e
-      redirect_to admin_sentinel_path, alert: e.message
+      redirect_back_or_to admin_sentinel_path, alert: e.message
     end
 
     def decide_petition
@@ -119,14 +146,68 @@ module Admin
         capability: params[:capability].presence, effect: params[:effect].presence, guidance: params[:guidance].presence,
         constraints: constraints_param, rationale: params[:rationale].presence
       )
-      redirect_to admin_sentinel_path, notice: "Petition #{row.id} from #{row.principal.name}: #{row.status}" \
+      redirect_back_or_to admin_sentinel_path, notice: "Petition #{row.id} from #{row.principal.name}: #{row.status}" \
                                                "#{row.capability_name && " #{row.capability_name}"}#{row.effect && " at #{row.effect}"}." \
                                                "#{row.error.present? ? " #{row.error}" : ''}"
     rescue Gateway::Invalid, ActionController::ParameterMissing => e
-      redirect_to admin_sentinel_path, alert: e.message
+      redirect_back_or_to admin_sentinel_path, alert: e.message
+    end
+
+    # The history's filters as given, for links that keep them.
+    def history_filters
+      params.permit(:agent, :capability, :status, :kind).to_h.compact_blank.symbolize_keys
     end
 
     private
+
+    # Requests and petitions merged into one list by (created_at, id),
+    # filtered, and cut after HISTORY_PAGE. The cursor is that pair, so a
+    # page never repeats or skips a row however many arrive meanwhile.
+    def load_history
+      f = history_filters
+      agent = f[:agent] && Principal.find_by(name: f[:agent])
+      before = parse_cursor(params[:before])
+      scopes = []
+      unless f[:kind] == "petitions"
+        scope = SentinelRequest.includes(:capability, :principal, :decider)
+        scope = scope.where(capability: Capability.where(name: f[:capability])) if f[:capability]
+        scopes << scope
+      end
+      unless f[:kind] == "requests"
+        scope = Petition.includes(:principal, :decider)
+        scope = scope.where(capability_name: f[:capability]) if f[:capability]
+        scopes << scope
+      end
+      rows = scopes.flat_map do |scope|
+        scope = scope.where(principal: agent) if f[:agent]
+        scope = scope.where(status: f[:status]) if f[:status]
+        scope = scope.where("(#{scope.table_name}.created_at, #{scope.table_name}.id) < (?, ?)", *before) if before
+        scope.order(created_at: :desc, id: :desc).limit(HISTORY_PAGE + 1).to_a
+      end
+      rows.sort_by! { |row| [ row.created_at, row.id ] }.reverse!
+      @history = rows.first(HISTORY_PAGE)
+      last = @history.last
+      @history_next = rows.size > HISTORY_PAGE && last && "#{last.created_at.utc.iso8601(6)}~#{last.id}"
+      @history_agents = Principal.agents.order(:name).pluck(:name)
+      @history_capabilities = Capability.order(:name).pluck(:name)
+      @history_statuses = (SentinelRequest::STATUSES + Petition::STATUSES).uniq.sort
+    end
+
+    def parse_cursor(value)
+      time, id = value.to_s.split("~", 2)
+      return nil if time.blank? || id.blank?
+
+      [ Time.iso8601(time), id ]
+    rescue ArgumentError
+      nil
+    end
+
+    # What hob spent deciding it: the reviewer's, steward's or claim
+    # check's model calls, which carry the row's ref.
+    def usage_for(ref)
+      events = UsageEvent.where(ref: ref)
+      { calls: events.count, cost: events.sum(:cost).to_f, ref: ref }
+    end
 
     # The petition form's constraints box: the whole object as JSON, or
     # blank to leave a held grant's constraints as they are.

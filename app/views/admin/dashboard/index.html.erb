@@ -22,7 +22,7 @@
     <% if @requests.any? %>
       <ul class="list">
         <% @requests.each do |r| %>
-          <li><%= link_to admin_sentinel_path(anchor: "request-#{r.id}") do %><%= r.principal.name %> → <code><%= r.capability.name %></code><% end %>
+          <li><%= link_to admin_sentinel_request_path(r) do %><%= r.principal.name %> → <code><%= r.capability.name %></code><% end %>
             <span class="muted"><%= ago.(r.created_at) %><% if r.reason.present? %> · <%= r.reason.truncate(90) %><% end %></span></li>
         <% end %>
       </ul>

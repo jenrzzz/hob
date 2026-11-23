@@ -94,7 +94,8 @@ class AdminSentinelControllerTest < ActionDispatch::IntegrationTest
     assert_equal "review", SentinelPolicy.find_by!(principal: @muse, capability: "hob.usage").effect
 
     get "/admin/sentinel"
-    assert_select "table td", /muse petitioned for hob.usage/
+    assert_select "#history-rows td", /petition for hob.usage/
+    assert_select "#history-rows .tag", "granted"
   end
 
   test "approving a petition to widen an already-held capability's guidance shows the current grant and logs the change" do
@@ -163,5 +164,113 @@ class AdminSentinelControllerTest < ActionDispatch::IntegrationTest
     admin_sign_in
     get "/admin/sentinel"
     assert_select "#petition-#{petition.id}", 0
+  end
+
+  def settled_request(at:, capability: "hob.usage", status: "completed", principal: @muse, reason: "budget")
+    SentinelRequest.create!(principal: principal, capability: Capability.find_by!(name: capability), arguments: { "since" => "2026-09-01" },
+                            reason: reason, surface: "muse", realm: "household", status: status, decision: status == "denied" ? "deny" : "allow",
+                            decided_by: "reviewer", rationale: "within its charter", created_at: at, result: { "spent" => 12 })
+  end
+
+  test "the history pages through every row, newest first, without repeats or gaps" do
+    base = Time.utc(2026, 11, 1, 12)
+    requests = Array.new(Admin::SentinelController::HISTORY_PAGE + 7) { |i| settled_request(at: base + i.minutes) }
+    petition = pending_petition.tap { |p| p.update_columns(created_at: base + 30.minutes + 30.seconds, status: "granted") }
+    admin_sign_in
+
+    get "/admin/sentinel"
+    assert_response :ok
+    first = css_select("#history-rows tr").size
+    assert_equal Admin::SentinelController::HISTORY_PAGE, first
+    assert_select "#history-rows tr:first-child a[href='/admin/sentinel/requests/#{requests.last.id}']"
+    older = css_select("#history-more a[data-next]").first["href"]
+
+    get older.sub("#history", "") + "&rows=1"
+    assert_response :ok
+    assert_no_match(/<html/, response.body, "the next page is just its rows")
+    seen = css_select("tbody tr a").map { |a| a["href"] }
+    assert_equal 8, seen.size
+    assert_includes seen, "/admin/sentinel/requests/#{requests.first.id}"
+    assert_select "#history-more", /That's everything/
+
+    all = requests.map { |r| "/admin/sentinel/requests/#{r.id}" } + [ "/admin/sentinel/petitions/#{petition.id}" ]
+    get "/admin/sentinel"
+    seen += css_select("#history-rows tr td:nth-child(3) a:first-child").map { |a| a["href"] }
+    assert_equal all.sort, seen.sort
+  end
+
+  test "the history filters by agent, capability, status and kind" do
+    skipsy, = agent("skipsy")
+    mine = settled_request(at: 2.hours.ago)
+    theirs = settled_request(at: 1.hour.ago, principal: skipsy, status: "denied")
+    petition = pending_petition
+    admin_sign_in
+
+    get "/admin/sentinel", params: { agent: "skipsy" }
+    assert_select "#history-rows a[href='/admin/sentinel/requests/#{theirs.id}']"
+    assert_select "#history-rows a[href='/admin/sentinel/requests/#{mine.id}']", 0
+
+    get "/admin/sentinel", params: { status: "completed" }
+    assert_select "#history-rows a[href='/admin/sentinel/requests/#{mine.id}']"
+    assert_select "#history-rows a[href='/admin/sentinel/requests/#{theirs.id}']", 0
+
+    get "/admin/sentinel", params: { kind: "petitions", capability: "hob.usage" }
+    assert_select "#history-rows a[href='/admin/sentinel/petitions/#{petition.id}']"
+    assert_select "#history-rows tr", 1
+  end
+
+  test "a settled request's page shows what was asked, the verdict, the outcome, and what deciding it cost" do
+    request = settled_request(at: 1.hour.ago)
+    older = settled_request(at: 2.hours.ago, status: "denied", reason: "again")
+    policy!(@muse, "hob.usage", "review", guidance: "only its own spend")
+    UsageEvent.create!(role: "sentinel-reviewer", operation: "sentinel.review", ref: request.ref, model: "claude-sonnet-5", provider: "anthropic",
+                       status: "success", cost: 0.0123, units: {}, surface: "muse")
+    admin_sign_in
+
+    get "/admin/sentinel/requests/#{request.id}"
+    assert_response :ok
+    assert_select "h2", /muse asked for hob.usage/
+    assert_select "pre", /2026-09-01/
+    assert_select "dd", /within its charter/
+    assert_select "pre", /"spent": 12/
+    assert_select "a[href^='/admin/grants/']", /review/
+    assert_select "a[href*='ref=sentinel%2F#{request.id}']", /\$0.0123 over 1 model call/
+    assert_select "a[href='/admin/sentinel/requests/#{older.id}']"
+    assert_select "form", 1, "no decide form on a settled request (just sign out)"
+  end
+
+  test "a held request's page decides it and comes back to it" do
+    request = held_request
+    admin_sign_in
+    get "/admin/sentinel/requests/#{request.id}"
+    assert_select "#request-#{request.id} button[value=allow]"
+
+    post "/admin/sentinel/requests/#{request.id}/decide", params: { decision: "deny" },
+         headers: { "Referer" => "http://www.example.com/admin/sentinel/requests/#{request.id}" }
+    assert_redirected_to "http://www.example.com/admin/sentinel/requests/#{request.id}"
+    assert_equal "denied", request.reload.status
+  end
+
+  test "a petition's page shows the steward's read, and decides it while pending" do
+    petition = pending_petition
+    admin_sign_in
+    get "/admin/sentinel/petitions/#{petition.id}"
+    assert_response :ok
+    assert_select "#petition-#{petition.id} button[value=grant]"
+    assert_select "dd", /not in its charter/
+
+    petition.update_columns(status: "denied", decided_by: "human")
+    get "/admin/sentinel/petitions/#{petition.id}"
+    assert_select "h2", /muse petitioned for hob.usage/
+    assert_select "button[value=grant]", 0
+  end
+
+  test "a request above the person's clearance has no page" do
+    request = settled_request(at: 1.hour.ago)
+    request.update_columns(realm: "intimate")
+    @principal.update!(max_clearance: "personal")
+    admin_sign_in
+    get "/admin/sentinel/requests/#{request.id}"
+    assert_response :not_found
   end
 end

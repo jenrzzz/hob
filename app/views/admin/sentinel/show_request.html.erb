@@ -1,0 +1,75 @@
+<% r = @request_row %>
+<p class="muted"><%= link_to "Sentinel", admin_sentinel_path %> › request <%= r.id %></p>
+
+<% if r.pending? %>
+  <%= render "request", r: r %>
+<% else %>
+  <section class="card" id="request-<%= r.id %>">
+    <div class="card-head">
+      <h2><%= r.principal.name %> asked for <code><%= r.capability.name %></code></h2>
+      <span class="tag <%= "bad" if %w[denied failed].include?(r.status) %>"><%= r.status %></span>
+      <span class="tag"><%= r.realm %></span>
+    </div>
+    <dl class="facts">
+      <% if r.reason.present? %><dt>Reason</dt><dd><%= r.reason %></dd><% end %>
+      <dt>Asked</dt><dd title="<%= r.created_at.utc.iso8601 %>"><%= r.created_at.strftime("%a %b %-d %Y, %H:%M:%S") %> (<%= time_ago_in_words(r.created_at) %> ago) · from <%= r.surface %></dd>
+      <% if r.on_mission_id %><dt>On mission</dt><dd><code><%= r.on_mission_id %></code></dd><% end %>
+    </dl>
+    <pre><%= JSON.pretty_generate(r.arguments) %></pre>
+  </section>
+<% end %>
+
+<section class="card">
+  <h2><%= r.decided_by == "human" ? "Decision" : "Verdict" %></h2>
+  <dl class="facts">
+    <dt>Decision</dt><dd><%= r.decision || "—" %></dd>
+    <dt>Decided by</dt><dd><%= [ r.decided_by, r.decider&.name ].compact.join(" · ").presence || "—" %></dd>
+    <% if r.rationale.present? %><dt>Rationale</dt><dd><%= r.rationale %></dd><% end %>
+    <% if r.decided_at %><dt>Decided</dt><dd title="<%= r.decided_at.utc.iso8601 %>"><%= r.decided_at.strftime("%b %-d %H:%M:%S") %> (<%= distance_of_time_in_words(r.created_at, r.decided_at, include_seconds: true) %> after asking)</dd><% end %>
+    <% if (claim = r.authorization_claim) %><dt>Claimed authority</dt><dd>“<%= claim.quote %>” <span class="tag"><%= claim.status %></span></dd><% end %>
+    <% if r.contract_revision %><dt>Contract</dt><dd>revision <%= r.contract_revision %></dd><% end %>
+  </dl>
+  <% if r.review.present? %>
+    <details <%= "open" unless r.pending? %>><summary>Reviewer's notes</summary><pre><%= JSON.pretty_generate(r.review) %></pre></details>
+  <% end %>
+</section>
+
+<% if r.result || r.error.present? || r.mission_id %>
+  <section class="card">
+    <h2>Outcome</h2>
+    <dl class="facts">
+      <% if r.executed_at %><dt>Ran</dt><dd title="<%= r.executed_at.utc.iso8601 %>"><%= r.executed_at.strftime("%b %-d %H:%M:%S") %></dd><% end %>
+      <% if r.mission_id %><dt>Mission</dt><dd><code><%= r.mission_id %></code></dd><% end %>
+      <% if r.error.present? %><dt>Error</dt><dd style="color: var(--danger)"><%= r.error %></dd><% end %>
+    </dl>
+    <% unless r.result.nil? %><pre><%= JSON.pretty_generate(r.result) %></pre><% end %>
+  </section>
+<% end %>
+
+<section class="card">
+  <h2>Context</h2>
+  <dl class="facts">
+    <dt>Grant</dt>
+    <dd><% if @grant %><%= link_to "#{@grant.effect}", admin_grant_path(@grant) %><% if @grant.guidance.present? %> — “<%= @grant.guidance.truncate(160) %>”<% end %>
+        <% else %><span class="muted">none held now (capability default)</span><% end %></dd>
+    <dt>Deciding cost</dt>
+    <dd><% if @usage[:calls].positive? %><%= link_to "#{number_to_currency(@usage[:cost], precision: 4)} over #{pluralize(@usage[:calls], 'model call')}", admin_usage_path(ref: @usage[:ref], period: "all") %>
+        <% else %><span class="muted">no model calls</span><% end %></dd>
+  </dl>
+  <% if @related.any? %>
+    <h2 style="margin-top: 10px">Other asks of <code><%= r.capability.name %></code> by <%= r.principal.name %></h2>
+    <div class="table-wrap">
+      <table>
+        <% @related.each do |o| %>
+          <tr>
+            <td class="muted"><%= link_to o.created_at.strftime("%b %-d %H:%M"), admin_sentinel_request_path(o) %></td>
+            <td style="white-space: normal"><%= o.reason&.truncate(80) %></td>
+            <td><span class="tag <%= "bad" if %w[denied failed].include?(o.status) %>"><%= o.status %></span></td>
+            <td class="muted"><%= o.decider&.name || o.decided_by || "—" %></td>
+          </tr>
+        <% end %>
+      </table>
+    </div>
+    <p><%= link_to "All of them", admin_sentinel_path(agent: r.principal.name, capability: r.capability.name, kind: "requests", anchor: "history") %></p>
+  <% end %>
+</section>

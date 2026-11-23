@@ -17,6 +17,8 @@ Rails.application.routes.draw do
     end
     post "principals/:id/unfreeze", to: "principals#unfreeze", as: :unfreeze_principal
     get "sentinel", to: "sentinel#index"
+    get "sentinel/requests/:id", to: "sentinel#show_request", as: :sentinel_request
+    get "sentinel/petitions/:id", to: "sentinel#show_petition", as: :sentinel_petition
     post "sentinel/requests/:id/decide", to: "sentinel#decide_request", as: :decide_sentinel_request
     post "sentinel/petitions/:id/decide", to: "sentinel#decide_petition", as: :decide_sentinel_petition
     get "grants", to: "grants#index"

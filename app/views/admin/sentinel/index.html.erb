@@ -5,110 +5,70 @@
 <% end %>
 
 <% @requests.each do |r| %>
-  <section class="card" id="request-<%= r.id %>">
-    <div class="card-head">
-      <h2><%= r.principal.name %> asks for <code><%= r.capability.name %></code></h2>
-      <span class="tag">request <%= r.id %></span>
-      <span class="tag"><%= r.realm %></span>
-      <span class="muted" title="<%= r.created_at.utc.iso8601 %>"><%= time_ago_in_words(r.created_at) %> ago</span>
-    </div>
-    <dl class="facts">
-      <% if r.reason.present? %><dt>Reason</dt><dd><%= r.reason %></dd><% end %>
-      <% if r.rationale.present? %><dt>Held because</dt><dd><%= r.rationale %></dd><% end %>
-      <% if r.on_mission_id %><dt>On mission</dt><dd><%= r.on_mission_id %></dd><% end %>
-    </dl>
-    <% if (records = records_context(r)) %>
-      <%= render "records_context", request: r, context: records %>
-    <% elsif (people = people_context(r)) %>
-      <%= render "people_context", request: r, context: people %>
-    <% elsif (ward_threat = ward_threat_context(r)) %>
-      <%= render "ward_threat_context", request: r, context: ward_threat %>
-    <% elsif (mail_send_files = mail_send_files_context(r)) %>
-      <%= render "mail_send_files_context", request: r, context: mail_send_files %>
-    <% else %>
-      <pre><%= JSON.pretty_generate(r.arguments) %></pre>
-    <% end %>
-    <% if r.review.present? %>
-      <details><summary>Reviewer's notes</summary><pre><%= JSON.pretty_generate(r.review) %></pre></details>
-    <% end %>
-    <%= form_with url: admin_decide_sentinel_request_path(r), class: "row" do |f| %>
-      <%= f.text_field :rationale, placeholder: "why (optional)", "aria-label": "Rationale" %>
-      <%= f.button "Allow", name: "decision", value: "allow", class: "primary" %>
-      <%= f.button "Deny", name: "decision", value: "deny", class: "danger" %>
-      <% if r.authorization_claim&.spot_checked? %>
-        <%= f.button "I never said that", name: "decision", value: "deny", class: "danger",
-              formaction: admin_decide_sentinel_request_path(r, fabricated: 1),
-              title: "Deny, and say #{r.principal.name} made up the quote: its capabilities freeze until someone unfreezes it" %>
-      <% end %>
-    <% end %>
-  </section>
+  <%= render "request", r: r %>
 <% end %>
 
 <% @petitions.each do |p| %>
-  <section class="card" id="petition-<%= p.id %>">
-    <div class="card-head">
-      <h2><%= p.principal.name %> petitions</h2>
-      <span class="tag">petition <%= p.id %></span>
-      <span class="tag"><%= p.status %></span>
-      <span class="tag"><%= p.realm %></span>
-      <span class="muted" title="<%= p.created_at.utc.iso8601 %>"><%= time_ago_in_words(p.created_at) %> ago</span>
-    </div>
-    <p><%= p.want %></p>
-    <dl class="facts">
-      <% if p.reason.present? %><dt>Reason</dt><dd><%= p.reason %></dd><% end %>
-      <% if p.deciding? %><dt>Steward</dt><dd class="muted">still deciding; you can decide first</dd><% end %>
-      <% if p.action %><dt>Steward</dt><dd><%= p.action %><% if p.rationale.present? %>: <%= p.rationale %><% end %></dd><% end %>
-      <% if p.capability_name %><dt>Recommends</dt><dd><code><%= p.capability_name %></code><% if p.effect %> at <%= p.effect %><% end %></dd><% end %>
-      <% if p.spec["description"].present? %><dt>Would build</dt><dd><%= p.spec["description"] %></dd><% end %>
-      <% if p.spec["guidance"].present? %><dt>Steward's guidance</dt><dd><%= p.spec["guidance"] %></dd><% end %>
-      <% if (held = existing_grant(p)) %>
-        <dt>Already held</dt>
-        <dd><%= held.effect %> since <%= time_ago_in_words(held.created_at) %> ago
-          <% if held.guidance.present? %> — current guidance: “<%= held.guidance %>”<% end %>
-          <% if held.bounds %> — bounded: <code><%= held.bounds %></code><% end %></dd>
-      <% end %>
-      <% if p.error.present? %><dt>Error</dt><dd><%= p.error %></dd><% end %>
-    </dl>
-    <% if p.arguments.present? %><pre><%= JSON.pretty_generate(p.arguments) %></pre><% end %>
-    <% if p.spec.present? %>
-      <details><summary>Full spec</summary><pre><%= JSON.pretty_generate(p.spec) %></pre></details>
-    <% end %>
-    <%= form_with url: admin_decide_sentinel_petition_path(p), class: "row" do |f| %>
-      <%= f.text_field :capability, value: p.capability_name || p.spec["name"], placeholder: "capability", "aria-label": "Capability" %>
-      <%= f.select :effect, Petition::GRANTABLE_EFFECTS, { selected: p.effect || "review" }, "aria-label": "Effect" %>
-      <%= f.text_area :guidance, value: (existing_grant(p)&.guidance || p.spec["guidance"]), rows: 2,
-            placeholder: "guidance for the reviewer (blank leaves it unchanged)", "aria-label": "Guidance" %>
-      <%= f.text_area :constraints, rows: 2,
-            value: ((existing_grant(p)&.constraints.presence || p.spec["constraints"].presence)&.to_json),
-            placeholder: 'constraints as JSON, the whole object: {"arg": {"in": [], "max": 0, "pattern": ""}} (blank leaves them unchanged)',
-            "aria-label": "Constraints" %>
-      <%= f.text_field :rationale, placeholder: "why (optional)", "aria-label": "Rationale" %>
-      <%= f.button "Grant", name: "decision", value: "grant", class: "primary" %>
-      <%= f.button "Build", name: "decision", value: "build",
-            onclick: "return confirm('Have the forge build this capability as a pull request?')" %>
-      <%= f.button "Deny", name: "decision", value: "deny", class: "danger" %>
-    <% end %>
-  </section>
+  <%= render "petition", p: p %>
 <% end %>
 
-<h1 style="margin-top: 32px">Recently settled</h1>
+<h1 style="margin-top: 32px" id="history">History</h1>
+<%= form_with url: admin_sentinel_path(anchor: "history"), method: :get, class: "row", style: "margin-bottom: 12px" do %>
+  <%= select_tag :kind, options_for_select([ [ "Requests and petitions", "" ], [ "Requests", "requests" ], [ "Petitions", "petitions" ] ], params[:kind]), "aria-label": "Kind" %>
+  <%= select_tag :agent, options_for_select([ [ "All agents", "" ] ] + @history_agents, params[:agent]), "aria-label": "Agent" %>
+  <%= select_tag :capability, options_for_select([ [ "All capabilities", "" ] ] + @history_capabilities, params[:capability]), "aria-label": "Capability" %>
+  <%= select_tag :status, options_for_select([ [ "Any status", "" ] ] + @history_statuses, params[:status]), "aria-label": "Status" %>
+  <button type="submit">Filter</button>
+  <% if history_filters.any? || params[:before].present? %><%= link_to "Clear", admin_sentinel_path(anchor: "history") %><% end %>
+<% end %>
+<% if params[:before].present? %>
+  <p class="muted">Showing older rows. <%= link_to "Back to the newest", admin_sentinel_path(history_filters.merge(anchor: "history")) %></p>
+<% end %>
 <section class="card">
-  <div class="table-wrap">
-    <table>
-      <tr><th>When</th><th>What</th><th>Outcome</th><th>By</th></tr>
-      <% (@recent_requests.to_a + @recent_petitions.to_a).sort_by(&:created_at).reverse.first(20).each do |row| %>
-        <tr>
-          <td title="<%= row.created_at.utc.iso8601 %>"><%= time_ago_in_words(row.created_at) %> ago</td>
-          <% if row.is_a?(SentinelRequest) %>
-            <td><%= row.principal.name %> → <code><%= row.capability.name %></code></td>
-            <td><%= row.status %></td>
-          <% else %>
-            <td title="<%= row.want %>"><%= row.principal.name %> petitioned<% if row.capability_name %> for <code><%= row.capability_name %></code><% end %></td>
-            <td><%= row.status %><% if row.pull_request.present? %> · <%= link_to "PR", row.pull_request %><% end %></td>
-          <% end %>
-          <td><%= row.decider&.name || row.decided_by || "—" %></td>
-        </tr>
-      <% end %>
-    </table>
-  </div>
+  <% if @history.empty? %>
+    <p class="muted">Nothing matches.</p>
+  <% else %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>When</th><th>Agent</th><th>Asked</th><th>Outcome</th><th>By</th></tr></thead>
+        <tbody id="history-rows"><%= render "history_rows" %></tbody>
+      </table>
+    </div>
+  <% end %>
+  <%= render "history_more" %>
 </section>
+
+<script>
+  // Infinite scroll: when the "Older" link nears the viewport, fetch the
+  // next page's rows and append them. Without script the link still pages.
+  (() => {
+    const more = document.getElementById("history-more");
+    const body = document.getElementById("history-rows");
+    if (!more || !body || !("IntersectionObserver" in window)) return;
+    let loading = false;
+    const near = () => more.getBoundingClientRect().top < window.innerHeight + 400;
+    const load = async () => {
+      const link = more.querySelector("a[data-next]");
+      if (!link || loading) return;
+      loading = true;
+      try {
+        const url = new URL(link.href);
+        url.hash = "";
+        url.searchParams.set("rows", "1");
+        const res = await fetch(url, { credentials: "same-origin", headers: { Accept: "text/html" } });
+        if (!res.ok) throw new Error(res.status);
+        const tpl = document.createElement("template");
+        tpl.innerHTML = await res.text();
+        tpl.content.querySelectorAll("tbody tr").forEach((tr) => body.appendChild(tr));
+        const next = tpl.content.getElementById("history-more");
+        more.replaceChildren(...(next ? next.childNodes : []));
+      } catch (e) {
+        loading = false;
+        return; // leave the link for a click
+      }
+      loading = false;
+      if (near()) load();
+    };
+    new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) load(); }, { rootMargin: "400px" }).observe(more);
+  })();
+</script>

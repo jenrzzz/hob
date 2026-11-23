@@ -1,0 +1,16 @@
+<% @history.each do |row| %>
+  <tr>
+    <td class="muted" title="<%= row.created_at.utc.iso8601 %>"><%= row.created_at.strftime("%b %-d %H:%M") %></td>
+    <td><%= row.principal.name %></td>
+    <% if row.is_a?(SentinelRequest) %>
+      <td style="white-space: normal"><%= link_to admin_sentinel_request_path(row) do %><code><%= row.capability.name %></code><% end %>
+        <% if row.reason.present? %><span class="muted"><%= row.reason.truncate(70) %></span><% end %></td>
+    <% else %>
+      <td style="white-space: normal"><%= link_to "petition", admin_sentinel_petition_path(row) %><% if row.capability_name %> for <code><%= row.capability_name %></code><% end %>
+        <span class="muted"><%= row.want.truncate(70) %></span></td>
+    <% end %>
+    <td><span class="tag <%= "bad" if %w[denied failed].include?(row.status) %>"><%= row.status %></span>
+      <% if row.is_a?(Petition) && row.pull_request.present? %> <%= link_to "PR", row.pull_request %><% end %></td>
+    <td class="muted"><%= row.decider&.name || row.decided_by || "—" %></td>
+  </tr>
+<% end %>

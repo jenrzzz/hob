@@ -1,0 +1,1 @@
+<p id="history-more" class="muted"><% if @history_next %><%= link_to "Older", admin_sentinel_path(history_filters.merge(before: @history_next, anchor: "history")), "data-next": true %><% elsif @history.any? %>That's everything.<% end %></p>

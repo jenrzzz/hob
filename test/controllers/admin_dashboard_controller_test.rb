@@ -38,7 +38,7 @@ class AdminDashboardControllerTest < ActionDispatch::IntegrationTest
     get "/admin"
     assert_response :ok
     assert_select "#waiting .badge", "1"
-    assert_select "#waiting a[href='/admin/sentinel#request-#{request_id}']", /hob\.usage/
+    assert_select "#waiting a[href='/admin/sentinel/requests/#{request_id}']", /hob\.usage/
     assert_includes response.body, "budget &lt;check&gt;"
     assert_select "#missions", /Water the plants/
     assert_select "#usage", /\$0\.42/

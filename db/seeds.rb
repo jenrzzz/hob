@@ -79,19 +79,24 @@ end
   ModelRole.find_or_create_by!(role: role) { |mr| mr.chain = chain }
 end
 
-# USD per million tokens, Anthropic list prices. Prefix rows match dated
+# USD per million tokens, provider list prices. Prefix rows match dated
 # ids; cache rates default to 0.1x read / 1.25x write of input unless a third
-# value gives the read rate (Opus 5.5 reads cache at 0.05x). Seeds only
-# add missing rows: a live price is set with `hob:price` or PUT /v1/prices,
-# which also reprices the ledger. `hob:prices` lists what is still unpriced.
+# value gives the read rate (Opus 5.5 and Fable 5.2 read cache at 0.05x and
+# 0.025x; an embedding has no cache). Seeds only add missing rows: a live
+# price is set with `hob:price` or PUT /v1/prices, which also reprices the
+# ledger. `hob:prices` lists what is still unpriced.
 {
-  "claude-haiku-4-5"  => [ 1.00, 5.00 ],
-  "claude-sonnet-4-6" => [ 3.00, 15.00 ],
-  "claude-sonnet-5"   => [ 2.00, 10.00 ],
-  "claude-sonnet-5-5" => [ 2.00, 10.00 ],
-  "claude-opus-4-8"   => [ 5.00, 25.00 ],
-  "claude-opus-5"     => [ 5.00, 25.00 ],
-  "claude-opus-5-5"   => [ 4.00, 20.00, 0.20 ]
+  "claude-haiku-4-5"       => [ 1.00, 5.00 ],
+  "claude-sonnet-4-6"      => [ 3.00, 15.00 ],
+  "claude-sonnet-5"        => [ 2.00, 10.00 ],
+  "claude-sonnet-5-5"      => [ 2.00, 10.00 ],
+  "claude-opus-4-6"        => [ 5.00, 25.00 ],
+  "claude-opus-4-7"        => [ 5.00, 25.00 ],
+  "claude-opus-4-8"        => [ 5.00, 25.00 ],
+  "claude-opus-5"          => [ 5.00, 25.00 ],
+  "claude-opus-5-5"        => [ 4.00, 20.00, 0.20 ],
+  "claude-fable-5-2"       => [ 8.00, 40.00, 0.20 ],
+  "text-embedding-3-large" => [ 0.13, 0.00, 0.00 ]
 }.each do |model, (input, output, cache_read)|
   next if ModelPrice.exists?(model: model)
 

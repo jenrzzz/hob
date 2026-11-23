@@ -3570,6 +3570,13 @@ CREATE INDEX index_petitions_on_capability_name ON public.petitions USING btree 
 
 
 --
+-- Name: index_petitions_on_created_at_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_petitions_on_created_at_and_id ON public.petitions USING btree (created_at, id);
+
+
+--
 -- Name: index_petitions_on_decider_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3819,6 +3826,13 @@ CREATE UNIQUE INDEX index_sentinel_policies_on_principal_id_and_capability ON pu
 --
 
 CREATE INDEX index_sentinel_requests_on_capability_id ON public.sentinel_requests USING btree (capability_id);
+
+
+--
+-- Name: index_sentinel_requests_on_created_at_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sentinel_requests_on_created_at_and_id ON public.sentinel_requests USING btree (created_at, id);
 
 
 --
@@ -5587,6 +5601,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261124000004'),
 ('20261124000003'),
 ('20261124000002'),
 ('20261124000001'),

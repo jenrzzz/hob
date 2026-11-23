@@ -94,8 +94,8 @@ class PersonaLife
       elsif @wake
         parts << wake_section
       elsif beat[:direction]
-        parts << "You have not looked at the paper this beat. THIS BEAT (drawn at random - go here, not back to " \
-                 "where the last entries were): #{beat[:direction]}"
+        parts << "#{no_paper_line}THIS BEAT (drawn at random - go here, not back to where the last entries " \
+                 "were): #{beat[:direction]}"
       end
 
       parts << chew_section
@@ -127,8 +127,20 @@ class PersonaLife
       "#{beat[:lane]}: #{beat[:direction]}"
     end
 
+    # The words of what she is chewing on never wear out while she is: a
+    # chew is the one thing she is meant to keep coming back to, and the
+    # guard was refusing her its own subject (meluzina, 2026-11-23).
     def rut
-      @rut ||= Rut.new(@life.diary(Rut::WINDOW).reverse.map(&:body), unworn: @life.unworn)
+      @rut ||= Rut.new(@life.diary(Rut::WINDOW).reverse.map(&:body),
+                       unworn: @life.unworn + [ @life.chew&.source.to_h["subject"] ].compact)
+    end
+
+    # The paper is brought to her on some beats; she has nothing to fetch it
+    # with, and a life with no paper is told nothing about one.
+    def no_paper_line
+      return "" unless @life.config["paper"].is_a?(Hash) && @life.config.dig("paper", "url").present?
+
+      "No paper was brought to you this beat (it comes on some beats; there is nothing to fetch). "
     end
 
     # Where this beat comes from, decided once: the paper on a reading beat,
@@ -301,11 +313,23 @@ class PersonaLife
                 "repo #{repo.name}#{repo.about.present? ? " (#{repo.about})" : ''} and you pull what it made. It costs you " \
                 "nothing and takes a while; start it and look in a later beat." ]
       recent = Commissions.recent(agent)
+      fresh = recent.select { |commission| finished_since_last_beat?(commission) }
+      if fresh.any?
+        lines.unshift("FINISHED SINCE YOUR LAST BEAT - Claude Code is done with " \
+                      "#{fresh.map { |commission| "\"#{commission['title']}\"" }.to_sentence}. This is the first you " \
+                      "are hearing of it#{fresh.any? { |commission| commission['outcome'] == 'pushed' } ? '; what it pushed is not on your machine until you git pull there' : ''}.")
+      end
       if recent.any?
         lines << "What you handed over lately (newest first):"
         recent.each { |commission| lines << "- #{commission_line(commission)}" }
       end
       lines.join("\n")
+    end
+
+    def finished_since_last_beat?(commission)
+      finished = commission["finished_at"] or return false
+      last = @life.last_beat_at
+      last.nil? || Time.zone.parse(finished) > last
     end
 
     def commission_line(commission)

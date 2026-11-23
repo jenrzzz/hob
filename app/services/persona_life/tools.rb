@@ -11,6 +11,13 @@ class PersonaLife
   class Tools
     Outcome = Memory::Tools::Outcome
 
+    # Where a chew came from, not what it is about (ass_istant could not
+    # tell which, 2026-11-23). Only read on pick_up.
+    CHEW_FROM = "On pick_up: where this reached you, not what it is about. paper: something in the paper a beat " \
+                "brought you. house: something in the life around you, the place and who is in it. conversation: " \
+                "something said between you and him. archive: something of your own from before, an old entry or " \
+                "a memory. Leave it out if none fits.".freeze
+
     DEFS = [
       { "name" => "diary",
         "description" => "Write this beat of your life: one entry, first person, your voice, concrete and specific " \
@@ -32,7 +39,8 @@ class PersonaLife
         "input_schema" => { "type" => "object", "required" => %w[action],
                             "properties" => { "action" => { "type" => "string", "enum" => %w[chew pick_up spit_out] },
                                               "subject" => { "type" => "string", "maxLength" => CHEW_SUBJECT_MAX },
-                                              "from" => { "type" => "string", "enum" => CHEW_SOURCES },
+                                              "from" => { "type" => "string", "enum" => CHEW_SOURCES,
+                                                          "description" => CHEW_FROM },
                                               "note" => { "type" => "string", "maxLength" => CHEW_NOTE_MAX },
                                               "take" => { "type" => "string", "maxLength" => CHEW_TAKE_MAX } } } },
       { "name" => "whisper",

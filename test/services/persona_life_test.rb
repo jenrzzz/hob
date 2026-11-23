@@ -367,5 +367,33 @@ class PersonaLifeTest < ActiveSupport::TestCase
     end
     text = prompt.call
     assert_match(/What you handed over lately \(newest first\):\n- Nov 21, 1:31am, "A front page" \(#{ids.last}\): waiting\n- Nov 21, 1:30am, "A guestbook" \(#{ids.first}\): done, 2 commits on main\. It said: Made app\.rb\./, text)
+    assert_match(/\AFINISHED SINCE YOUR LAST BEAT - Claude Code is done with "A guestbook"\. This is the first you are hearing of it; what it pushed is not on your machine until you git pull there\./,
+                 text[/FINISHED SINCE.*/m], "said first, and that she has to pull")
+
+    Clearance.with("personal") { life.write_diary!("pulled the guestbook and looked at it", lane: "kitchen", at: 1.minute.from_now) }
+    refute_match(/FINISHED SINCE YOUR LAST BEAT/, prompt.call, "said once: a beat since has had it")
+  end
+
+  test "what she is chewing on never wears out while she chews it" do
+    4.times { |i| @life.write_diary!("the strike again, #{%w[one two three four][i]} pickets by the pantry", lane: "cats", at: (5 - i).hours.ago) }
+    prompt = -> { PersonaLife::Beat.new(PersonaLife.new(@mel.reload), now: Time.current, rng: Random.new(1)).prompt }
+    assert_match(/strike/, prompt.call[/WORN OUT[^\n]*/])
+
+    @life.chew!(action: "pick_up", subject: "the strike", from: "paper")
+    worn = prompt.call[/WORN OUT[^\n]*/]
+    refute_match(/strike/, worn)
+    assert_match(/pantry/, worn, "everything else wears as before")
+  end
+
+  test "a beat speaks of the paper only to a life that takes one, and chew says what from means" do
+    prompt = -> { PersonaLife::Beat.new(PersonaLife.new(@mel.reload), now: Time.current, rng: Random.new(1)).prompt }
+    assert_match(/^THIS BEAT \(drawn at random/, prompt.call)
+    refute_match(/paper/i, prompt.call[/^.*THIS BEAT.*$/])
+
+    @mel.update!(life: @mel.life.merge("paper" => { "url" => "https://paper.example/feed.json", "odds" => 1_000_000 }))
+    assert_match(/^No paper was brought to you this beat \(it comes on some beats; there is nothing to fetch\)\. THIS BEAT/, prompt.call)
+
+    from = PersonaLife::Tools::DEFS.find { |d| d["name"] == "chew" }.dig("input_schema", "properties", "from")
+    PersonaLife::CHEW_SOURCES.each { |source| assert_match(/#{source}: /, from["description"]) }
   end
 end

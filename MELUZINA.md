@@ -199,7 +199,7 @@ whether he is around, and whether a whisper may go. Her tools:
 |---|---|
 | `diary` | the beat, an observation `kind: diary` she authors about herself, with its lane; a first draft that echoes the recent diary is refused once with the reason, and replaced if she writes another |
 | `set_mood` | her mood (`kind: mood`, superseding the last), with an obsession handle and a manifestation in `source`; an obsession lets go after eight beats |
-| `chew` | pick up (retires the old one), move (supersedes, notes appended, at most eight), or spit out (retires); untouched for eight days it goes cold and is retired before a beat |
+| `chew` | pick up (retires the old one, and may say where it came `from`: the paper, the house around her, a conversation with him, or her own archive), move (supersedes, notes appended, at most eight), or spit out (retires); untouched for eight days it goes cold and is retired before a beat |
 | `whisper` | one line under 200 characters, appended as an assistant node to her home conversation with `meta.whisper: true`; offered only when it may go |
 
 Beside them are her corpora (`recall_archive`, `find_track`: a song whisper
@@ -233,12 +233,15 @@ so memory that is her `own` is hers in a beat too.
 
 **Words that never wear out.** `life.unworn` is a list of words the diary's
 repeat-guard (`Rut`) leaves alone however often they turn up: the names of
-those she lives with are not a tic. A phrase lifted whole from an earlier
-entry is still refused.
+those she lives with are not a tic. The words of what she is chewing on are
+left alone too, for as long as she chews it. A phrase lifted whole from an
+earlier entry is still refused.
 
 **Claude Code.** When her agent has a code repo and may start commissions
 (CODE.md), a beat also says that anything bigger than a few lines goes to
-Claude Code with `code_start`, and how her last three commissions went.
+Claude Code with `code_start`, and how her last three commissions went. One
+that finished since her last beat is said first, with a reminder to `git
+pull` when it pushed, since it finishes long after the beat that asked.
 
 **IRC.** When her agent may read hob's own IRC ([IRC.md](IRC.md)), a beat
 also says who she is there, the channels she is in and who else is in them,

@@ -10,7 +10,9 @@ module Sentinel
                          "call. action: true says it as a /me (\"* you waves\"). It is said under your own nick. " \
                          "A persona you name in a channel, or write to in a DM, may be woken to answer within minutes; " \
                          "anyone else reads it when they next look, which may be hours from now. " \
-                         "Returns the lines as said, and `new`: how many lines there you have not read yet.",
+                         "Returns the lines as said, and `new`: how many lines there you have not read yet. " \
+                         "For example { \"to\": \"#garden\", \"body\": \"first line\\nsecond line\" } says two " \
+                         "lines; join the channel first (irc.join).",
         "kind" => "act",
         "realm" => "household",
         "input_schema" => {

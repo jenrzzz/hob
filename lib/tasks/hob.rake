@@ -2121,8 +2121,15 @@ namespace :hob do
 
     desc "Run one beat of a persona's life now, whatever the odds: bin/rails \"hob:persona:beat[meluzina]\""
     task :beat, [ :persona ] => :environment do |_task, args|
-      PersonaLifeJob.perform_now(force: args[:persona])
-      life = PersonaLife.new(Persona.find_by!(key: args[:persona]))
+      # A wrong key used to run whoever else was due and then fail; an
+      # agent's nick (ass_istant) is not its persona's key (kat-ass-istant).
+      living = PersonaLife.living.to_a
+      persona = living.find { |p| p.key == args[:persona] } ||
+                living.find { |p| p.tools.to_h.stringify_keys["agent"] == args[:persona] }
+      abort "no living persona #{args[:persona].inspect}; one of: #{living.map(&:key).sort.join(', ')}" if persona.nil?
+
+      PersonaLifeJob.perform_now(force: persona.key)
+      life = PersonaLife.new(persona)
       Clearance.with(life.realm) { puts JSON.pretty_generate(life.as_json.except("diary").merge("diary" => life.as_json["diary"].last(1))) }
     end
   end

@@ -18,8 +18,10 @@
 #     "home" => <conversation id>,       where whispers land; set at the box (hob:persona:home)
 #     "wakes" => { "gap_minutes" => 20, "per_day" => 8, "delay_minutes" => 3 },  a beat soon after
 #                                        her agent is named or written to on IRC (PersonaLife::Wake)
-#     "budget" => { "tokens_per_day" => 200_000 } }  what her life may spend in a day before her
+#     "budget" => { "tokens_per_day" => 200_000 },  what her life may spend in a day before her
 #                                        wakes and her IRC lines stop (PersonaLife::Budget)
+#     "irc" => { "lines" => 3, "sheet" => "..." } }  how she is on IRC: a woken beat is a visit, a
+#                                        stance and a few lines (PersonaLife::Visit)
 #
 # Her life is observations she authors about herself, at the life's realm:
 # `diary` (one per beat), `mood` (superseded each beat), `chew` (the one
@@ -41,7 +43,7 @@ class PersonaLife
   class Invalid < StandardError; end
 
   OPTIONS = %w[instruction realm zone odds min_gap_minutes role max_iterations note unworn fold beats lane_realms paper
-               dial home wakes budget].freeze
+               dial home wakes budget irc].freeze
   MAX_ITERATIONS = 60
   UNWORN_MAX = 40
   DIALS = %w[off rare daily open].freeze
@@ -104,6 +106,7 @@ class PersonaLife
     problems.concat(Fold.problems(config["fold"]))
     problems.concat(Wake.problems(config["wakes"]))
     problems.concat(Budget.problems(config["budget"]))
+    problems.concat(Visit.problems(config["irc"]))
     paper = config["paper"]
     problems << "life.paper needs a url" if paper.present? && (!paper.is_a?(Hash) || paper["url"].blank?)
     problems

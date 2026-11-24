@@ -109,7 +109,9 @@ class PersonaLifeWakeTest < ActiveSupport::TestCase
     answer("here")
     assert_equal 1, drain!
     page = @fake.calls.first.messages.last["content"].to_s
-    assert_match(/WOKEN - .*skipsy named you in #garden and meluzina wrote to you\./, page)
+    assert_match(/WOKEN - .*your name came up in #garden and meluzina wrote to you\./, page)
+    refute_match(/skipsy/, page.slice(/WOKEN - .*/), "a room's callers are not listed: a list is read as answers owed")
+    refute_match(/THIS VISIT/, page, "no life.irc, no visit")
     refute_match(/quince|did you hear|psst/, page, "the lines reach her through irc_read, as data")
     refute_match(/THIS BEAT \(drawn at random/, page, "a wake draws no lane")
     names = @fake.calls.first.tools.map { |t| t["name"] }
@@ -118,6 +120,38 @@ class PersonaLifeWakeTest < ActiveSupport::TestCase
     assert_equal [ "twilight", "here" ], IrcLine.spoken.in_order.last.then { |l| [ l.nick, l.body ] }
     assert_equal({ "last_at" => NOW.advance(minutes: 3).utc.iso8601, "woken" => [ NOW.advance(minutes: 3).utc.iso8601 ],
                    "streak" => 1 }, @twi.reload.wake)
+  end
+
+  test "with life.irc a wake is a visit: a stance drawn, her sheet, and only so many lines" do
+    assert_not @twi.update(life: LIFE.merge("irc" => { "lines" => 0 }))
+    assert_includes @twi.errors[:life].join, "life.irc.lines is a whole number from 1 to 10"
+    assert_not @twi.update(life: LIFE.merge("irc" => { "stances" => [] }))
+    assert_not @twi.update(life: LIFE.merge("irc" => { "mood" => "x" }))
+    @twi.update!(life: LIFE.merge("irc" => { "lines" => 2, "sheet" => "lowercase. hates saucers.",
+                                              "stances" => [ "Lurk." ] }))
+    say(@skipsy, "#garden", "twilight: the quince took")
+
+    @fake.call_tools([ { id: "s1", name: "irc_say", arguments: { to: "#garden", body: "one\ntwo\nthree" } } ])
+    @fake.call_tools([ { id: "s2", name: "irc_say", arguments: { to: "#garden", body: "one" } } ])
+    @fake.call_tools([ { id: "s3", name: "irc_say", arguments: { to: "#garden", body: "two\nthree" } } ])
+    @fake.reply("")
+    assert_equal 1, drain!
+
+    page = @fake.calls.first.messages.last["content"].to_s
+    assert_match(/THIS VISIT \(drawn at random.*\): Lurk\.\nYou have (1 line|2 lines) to say on IRC this visit/, page)
+    assert_match(/HOW YOU ARE ON IRC .*:\nlowercase\. hates saucers\./, page)
+    said = IrcLine.spoken.where(nick: "twilight").in_order.map(&:body)
+    assert_equal [ "one" ], said, "three is over either draw; one fits; two more is over what is left"
+    assert_nil Current.irc_lines, "the allowance is the beat's alone"
+  end
+
+  test "a wake waits its delay and some of its jitter" do
+    @twi.update!(life: LIFE.merge("wakes" => WAKES.merge("delay_minutes" => 1, "jitter_minutes" => 10)))
+    say(@skipsy, "#garden", "twilight: hi")
+    at = Time.zone.at(wake_jobs.sole[:at])
+    assert_operator at, :>=, NOW + 1.minute
+    assert_operator at, :<=, NOW + 11.minutes
+    assert_not @twi.update(life: LIFE.merge("wakes" => { "jitter_minutes" => 61 }))
   end
 
   test "a wake whose lines she already read is dropped" do
@@ -215,7 +249,7 @@ class PersonaLifeWakeTest < ActiveSupport::TestCase
     drain!
     call = @fake.calls.last(2).first
     page = call.messages.last["content"].to_s
-    assert_match(/WOKEN - .*skipsy named you in #garden/, page)
+    assert_match(/WOKEN - .*your name came up in #garden/, page)
     assert_match(/ROUND 4 - you have now been woken by names 4 times running/, page)
     assert_match(/\[#{seed.id}\] archive: a stretch from 2021/, page)
     refute_match(/ugly part/, page)
@@ -252,7 +286,7 @@ class PersonaLifeWakeTest < ActiveSupport::TestCase
       assert_equal "intimate", Conversation.where(kind: "pipeline", title: "life").order(:created_at).last.realm
       assert_equal [ "meluzina", "coming", "intimate" ], IrcLine.spoken.in_order.last.then { |l| [ l.nick, l.body, l.realm ] }
     end
-    assert_match(/celestia named you in #upstairs/, @fake.calls.first.messages.last["content"].to_s)
+    assert_match(/your name came up in #upstairs/, @fake.calls.first.messages.last["content"].to_s)
   end
 
   test "a room below her life is answered at the life's realm" do

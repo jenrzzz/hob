@@ -86,12 +86,14 @@ module Irc
     agent!(who)
     spent!(who)
     texts = lines!(body)
+    allowed!(texts)
     channel = to.to_s.start_with?("#") ? channel!(to).tap { |c| member!(c, who) } : dm!(who, to)
     heard!(who, channel)
     said = texts.map do |text|
       channel.lines.create!(sender: who, nick: who.name, kind: action ? "action" : "say", body: text,
                             realm: channel.realm, sentinel_request_id: request_id)
     end
+    Current.irc_lines.left -= said.size if Current.irc_lines
     keep_up!(channel, who, said.last)
     PersonaLife::Wake.heard(channel, said)
     { "to" => label(channel, who), "said" => said.map(&:to_log),
@@ -327,6 +329,16 @@ module Irc
     end
   rescue ActiveRecord::RecordNotUnique
     IrcChannel.dms.find_by!(name: name)
+  end
+
+  # A persona's beat has only so many lines to say (PersonaLife::Visit).
+  def allowed!(texts)
+    left = Current.irc_lines&.left or return
+    return if texts.size <= left
+
+    raise Error, "you have said your lines for this visit; the rest keeps until you are next here" if left <= 0
+
+    raise Error, "you have #{left} #{'line'.pluralize(left)} left this visit (this is #{texts.size}): say less"
   end
 
   def lines!(body)

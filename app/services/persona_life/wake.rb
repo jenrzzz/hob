@@ -5,6 +5,7 @@ class PersonaLife
   #   { "gap_minutes" => 20,     no wake within this of her last beat, scheduled or woken
   #     "per_day" => 8,          at most this many wakes in any 24 hours
   #     "delay_minutes" => 3,    how long a wake waits, so a burst is read in one beat
+  #     "jitter_minutes" => 0,   and up to this much longer, at random, so a roomful does not answer in step
   #     "backoff" => 2 }         each wake in a row waits this many times longer than the last; 1 is never
   #
   # Absent is no wakes. A line said in a channel wakes each member whose
@@ -35,8 +36,9 @@ class PersonaLife
   # the room (PersonaLife#realm_for_room); a room above all of them wakes
   # nobody.
   class Wake
-    DEFAULTS = { "gap_minutes" => 20, "per_day" => 8, "delay_minutes" => 3, "backoff" => 2 }.freeze
-    RANGES = { "gap_minutes" => 5..1440, "per_day" => 1..48, "delay_minutes" => 0..60, "backoff" => 1..4 }.freeze
+    DEFAULTS = { "gap_minutes" => 20, "per_day" => 8, "delay_minutes" => 3, "jitter_minutes" => 0, "backoff" => 2 }.freeze
+    RANGES = { "gap_minutes" => 5..1440, "per_day" => 1..48, "delay_minutes" => 0..60, "jitter_minutes" => 0..60,
+               "backoff" => 1..4 }.freeze
     # The gap of a run of wakes never grows past this many times itself.
     BACKOFF_MAX = 8
     # Not woken for this long: the run is over, and the next wake is a first.
@@ -53,7 +55,7 @@ class PersonaLife
     def self.problems(config)
       return [] if config.nil?
 
-      shape = "life.wakes is { gap_minutes, per_day, delay_minutes, backoff }, each a whole number"
+      shape = "life.wakes is { gap_minutes, per_day, delay_minutes, jitter_minutes, backoff }, each a whole number"
       return [ shape ] unless config.is_a?(Hash)
 
       config = config.stringify_keys
@@ -117,6 +119,11 @@ class PersonaLife
     def delay = setting("delay_minutes").minutes
     def backoff = setting("backoff")
 
+    # How long this wake waits: her delay, and some of her jitter.
+    def wait
+      delay + rand(0..setting("jitter_minutes") * 60).seconds
+    end
+
     # How long a wake waits after her last one, `streak` wakes into a run:
     # her gap after the first, then `backoff` times longer after each.
     def gap_after(streak)
@@ -163,7 +170,7 @@ class PersonaLife
         calls << { "channel" => channel.id, "nick" => nick, "line" => line.id }
         due = current["due_at"] && Time.zone.parse(current["due_at"])
         if due.nil? || due < now - STALE
-          due = now + delay
+          due = now + wait
           queue = due
         end
         @persona.update_columns(wake: current.merge("calls" => calls.last(CALLS_KEPT), "due_at" => due.utc.iso8601))

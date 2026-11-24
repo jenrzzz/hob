@@ -172,6 +172,7 @@ class IrcPulseTest < ActiveSupport::TestCase
     @garden.update!(pulse: { "host" => "twi" })
     anyones, = plant("a story's best lines")
     hers = @garden.seeds.create!(kind: "thread", title: "a night at the lectern", body: "the spell, read aloud", meant_for: @twilight)
+    @garden.seeds.create!(kind: "thread", title: "a night at the lectern", body: "the spell, again", key: "t2", meant_for: @twilight)
     mels = @garden.seeds.create!(kind: "archive", title: "houston", body: "the hurricane", meant_for: @meluzina)
     say(@trixie, "anyone?")
     travel 4.hours
@@ -185,7 +186,8 @@ class IrcPulseTest < ActiveSupport::TestCase
 
     page = @fake.calls.first.messages.last["content"].to_s
     assert_match(/Those who live there take turns hosting/, page)
-    assert_match(/- \[#{hers.id}\] thread \(yours\): a night at the lectern\n- \[#{anyones.id}\] archive: stretch 0/, page)
+    assert_match(/PULLED FROM THE TRAY FOR YOU - thread, a night at the lectern/, page, "one of hers is dealt whole")
+    assert_match(/- \[\d+\] thread \(yours\): a night at the lectern\n- \[#{anyones.id}\] archive: stretch 0/, page)
     refute_match(/houston/, page)
     assert_nil mels.reload.taken_at, "not hers to take"
     assert_equal @twilight, hers.reload.taken_by
@@ -228,6 +230,29 @@ class IrcPulseTest < ActiveSupport::TestCase
     assert_equal @meluzina, seed.taken_by
     assert_equal [ "meluzina", "a wish, from the archive" ], IrcLine.spoken.in_order.last.then { |l| [ l.nick, l.body ] }
     assert_nil @mel.reload.wake["pulse"], "the pulse is answered by the beat"
+  end
+
+  test "hosting, a seed meant for her is taken and put in her page whole, and she has a host's lines" do
+    @mel.update!(life: LIFE.merge("irc" => { "lines" => 1 }))
+    open, = plant("A library thing for anyone.")
+    hers = @garden.seeds.create!(kind: "thread", title: "from a scene you were in", body: "Mel: the ugly part too.",
+                                 key: "t1", meant_for: @meluzina)
+    @garden.seeds.create!(kind: "thread", title: "twilight's", body: "Twilight: mine.", key: "t2", meant_for: @twilight)
+    say(@twilight, "anyone?")
+    travel 4.hours
+    Irc::Pulse.sweep
+
+    @fake.call_tools([ { id: "s1", name: "irc_say", arguments: { to: "#garden", body: "a\nb\nc\nd" } } ])
+    @fake.reply("")
+    travel 3.minutes
+    assert_equal :woken, PersonaLife::Wake.new(PersonaLife.new(@mel.reload)).run!
+
+    page = @fake.calls.first.messages.last["content"].to_s
+    assert_match(/PULLED FROM THE TRAY FOR YOU - thread, from a scene you were in\..*\n---\nMel: the ugly part too\.\n---/, page)
+    assert_match(/\[#{open.id}\] archive: stretch 0/, page, "the rest of the tray is still offered")
+    refute_match(/Twilight: mine|THIS VISIT/, page)
+    assert_equal @meluzina, hers.reload.taken_by
+    assert_equal 4, IrcLine.spoken.where(nick: "meluzina").count, "a host is not held to a visit's line or two"
   end
 
   test "a wake that is dropped clears the pulse with it, and the room is not charged" do

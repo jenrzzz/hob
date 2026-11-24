@@ -49,7 +49,17 @@ Rails.application.routes.draw do
     end
   end
 
+  # A podcast app's way in (CASTS.md, "Listening"): the token is the key.
+  get "casts/:token/feed.xml", to: "cast_feeds#show", as: :cast_feed, format: false
+  get "casts/:token/episodes/:id.mp3", to: "cast_feeds#audio", as: :cast_audio, format: false
+
   namespace :v1 do
+    # Casts (CASTS.md): the shows hob produces, and their episodes.
+    resources :casts, param: :slug, only: %i[index show create update] do
+      resources :episodes, only: %i[index show create], controller: "cast_episodes" do
+        post :retry, on: :member
+      end
+    end
     resources :completions, only: %i[create show]
     resources :app_sessions, only: :create
     post "plugins/announce", to: "plugin_announcements#create", as: :plugin_announcement

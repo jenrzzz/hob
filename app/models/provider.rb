@@ -1,5 +1,7 @@
 class Provider < ApplicationRecord
-  KINDS = %w[anthropic openai_compat].freeze
+  # elevenlabs is a voice provider (Voice, CASTS.md): it makes audio, never
+  # completions, so only the voice-* roles name it.
+  KINDS = %w[anthropic openai_compat elevenlabs].freeze
 
   validates :slug, presence: true, uniqueness: true
   validates :kind, inclusion: { in: KINDS }

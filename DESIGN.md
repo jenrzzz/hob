@@ -204,7 +204,7 @@ kat-whisper-worker and kat-tagging-worker already froze the right protocol twice
 - **Voices belong to personas.** Saffron has a voice; kat companions have voices; `speak` is a native tool.
 - **Cache by content hash:** messages are already content-addressed, so TTS audio caches at `H(message_hash, voice_id, settings)` — never pay ElevenLabs twice for the same line. (kat's `eleven_labs` + `generated_audio` services extract nearly whole.)
 - **Provider-abstracted like everything else:** `tts-default` is a model role — ElevenLabs today, an XTTS queue on the rig tomorrow. Metered in the usage ledger.
-- Free killer app: feedcurator's morning briefing → persona voice → private podcast feed.
+- Free killer app: feedcurator's morning briefing → persona voice → private podcast feed. Built: [CASTS.md](CASTS.md).
 
 ---
 

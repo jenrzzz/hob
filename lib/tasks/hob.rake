@@ -2090,6 +2090,43 @@ namespace :hob do
     end
   end
 
+  desc "Make (or retitle) a show hob produces (CASTS.md) and print its feed's address: " \
+       "bin/rails \"hob:cast[briefing,The Morning Hob,personal]\" DESCRIPTION=... CONFIG='{\"minutes\":6}'"
+  task :cast, [ :slug, :title, :realm ] => :environment do |_task, args|
+    abort "usage: bin/rails \"hob:cast[slug,title,realm]\" DESCRIPTION= CONFIG=" if args[:slug].blank?
+
+    top = Realm.order(rank: :desc).pick(:slug)
+    Clearance.with(top) do
+      cast = Cast.find_or_initialize_by(slug: args[:slug])
+      abort "a new cast needs a title" if cast.new_record? && args[:title].blank?
+      cast.title = args[:title] if args[:title].present?
+      cast.realm = args[:realm].presence || "personal" if cast.new_record?
+      cast.description = ENV["DESCRIPTION"] if ENV["DESCRIPTION"].present?
+      cast.config = cast.config.merge(JSON.parse(ENV["CONFIG"])).compact if ENV["CONFIG"].present?
+      cast.save!
+      base = ENV["HOB_CLIENT_URL"].presence&.chomp("/") || "http://localhost:3000"
+      puts "#{cast.slug} (#{cast.realm}): #{cast.title}"
+      puts "  hosts   #{cast.hosts.map { |h| "#{h['name']} (#{h['voice_id']})" }.join(', ')}"
+      puts "  feed    #{Casts::Feed.url(cast, base)}"
+      puts "  voice   #{Voice.available? ? 'ready' : 'unavailable: is ELEVENLABS_API_KEY set?'}"
+      puts "  mixer   #{Casts::Mixer.available? ? 'ready' : 'unavailable: ffmpeg is not installed'}"
+    end
+  end
+
+  desc "The casts, their latest episodes, and what is failing"
+  task casts: :environment do
+    Clearance.with(Realm.order(rank: :desc).pick(:slug)) do
+      Cast.order(:slug).each do |cast|
+        puts "#{cast.slug} (#{cast.realm}): #{cast.title}"
+        cast.episodes.newest.limit(5).each do |episode|
+          length = episode.duration_ms ? format("%d:%02d", *(episode.duration_ms / 1000).divmod(60)) : "-"
+          puts "  #{episode.edition.ljust(12)} #{episode.status.ljust(8)} #{length.rjust(6)}  #{episode.title.truncate(60)}" \
+               "#{episode.error ? "\n    #{episode.error}" : ''}"
+        end
+      end
+    end
+  end
+
   namespace :persona do
     desc "Let a persona ask the sentinel as an agent, in her own turns (MELUZINA.md, \"Her agent\"): " \
          "bin/rails \"hob:persona:agent[meluzina,meluzina]\"; no agent unlinks"

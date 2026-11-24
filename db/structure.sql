@@ -95,6 +95,24 @@ CREATE TABLE public.ar_internal_metadata (
 
 
 --
+-- Name: audio_clips; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audio_clips (
+    realm character varying NOT NULL,
+    key character varying NOT NULL,
+    kind character varying NOT NULL,
+    media_type character varying DEFAULT 'audio/mpeg'::character varying NOT NULL,
+    bytes bytea NOT NULL,
+    size integer NOT NULL,
+    meta jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.audio_clips FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: authorization_claims; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -374,6 +392,53 @@ CREATE SEQUENCE public.capabilities_id_seq
 --
 
 ALTER SEQUENCE public.capabilities_id_seq OWNED BY public.capabilities.id;
+
+
+--
+-- Name: cast_episodes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cast_episodes (
+    id character varying NOT NULL,
+    cast_id character varying NOT NULL,
+    edition character varying NOT NULL,
+    title character varying NOT NULL,
+    summary text,
+    status character varying DEFAULT 'queued'::character varying NOT NULL,
+    error text,
+    realm character varying NOT NULL,
+    surface character varying,
+    source jsonb DEFAULT '{}'::jsonb NOT NULL,
+    script jsonb DEFAULT '{}'::jsonb NOT NULL,
+    production jsonb DEFAULT '{}'::jsonb NOT NULL,
+    audio_key character varying,
+    audio_size integer,
+    duration_ms integer,
+    published_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.cast_episodes FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: casts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.casts (
+    id character varying NOT NULL,
+    slug character varying NOT NULL,
+    title character varying NOT NULL,
+    description text,
+    realm character varying NOT NULL,
+    token character varying NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.casts FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -2163,6 +2228,14 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 
 --
+-- Name: audio_clips audio_clips_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audio_clips
+    ADD CONSTRAINT audio_clips_pkey PRIMARY KEY (realm, key);
+
+
+--
 -- Name: authorization_claims authorization_claims_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2248,6 +2321,22 @@ ALTER TABLE ONLY public.calendar_events
 
 ALTER TABLE ONLY public.capabilities
     ADD CONSTRAINT capabilities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cast_episodes cast_episodes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cast_episodes
+    ADD CONSTRAINT cast_episodes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: casts casts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.casts
+    ADD CONSTRAINT casts_pkey PRIMARY KEY (id);
 
 
 --
@@ -2801,6 +2890,13 @@ CREATE UNIQUE INDEX index_api_keys_on_token_digest ON public.api_keys USING btre
 
 
 --
+-- Name: index_audio_clips_on_kind_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_audio_clips_on_kind_and_created_at ON public.audio_clips USING btree (kind, created_at);
+
+
+--
 -- Name: index_authorization_claims_on_principal_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2994,6 +3090,34 @@ CREATE INDEX index_capabilities_on_plugin_id ON public.capabilities USING btree 
 --
 
 CREATE UNIQUE INDEX index_capabilities_on_plugin_id_and_remote_name ON public.capabilities USING btree (plugin_id, remote_name) WHERE (plugin_id IS NOT NULL);
+
+
+--
+-- Name: index_cast_episodes_on_cast_id_and_edition; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cast_episodes_on_cast_id_and_edition ON public.cast_episodes USING btree (cast_id, edition);
+
+
+--
+-- Name: index_cast_episodes_on_cast_id_and_published_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cast_episodes_on_cast_id_and_published_at ON public.cast_episodes USING btree (cast_id, published_at);
+
+
+--
+-- Name: index_casts_on_slug; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_casts_on_slug ON public.casts USING btree (slug);
+
+
+--
+-- Name: index_casts_on_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_casts_on_token ON public.casts USING btree (token);
 
 
 --
@@ -4572,6 +4696,14 @@ ALTER TABLE ONLY public.record_versions
 
 
 --
+-- Name: cast_episodes fk_rails_9156b951dd; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cast_episodes
+    ADD CONSTRAINT fk_rails_9156b951dd FOREIGN KEY (cast_id) REFERENCES public.casts(id);
+
+
+--
 -- Name: agent_messages fk_rails_92352b2e86; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4996,6 +5128,12 @@ ALTER TABLE ONLY public.consoles
 
 
 --
+-- Name: audio_clips; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.audio_clips ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: authorization_claims; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -5036,6 +5174,18 @@ ALTER TABLE public.budget_backends ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.calendar_backends ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cast_episodes; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cast_episodes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: casts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.casts ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: code_repos; Type: ROW SECURITY; Schema: public; Owner: -
@@ -5182,6 +5332,15 @@ ALTER TABLE public.petitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.prompt_snapshots ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: audio_clips realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.audio_clips USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (audio_clips.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
 -- Name: authorization_claims realm_visibility; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -5242,6 +5401,24 @@ CREATE POLICY realm_visibility ON public.budget_backends USING ((( SELECT realms
 CREATE POLICY realm_visibility ON public.calendar_backends USING ((( SELECT realms.rank
    FROM public.realms
   WHERE ((realms.slug)::text = (calendar_backends.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: cast_episodes realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.cast_episodes USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (cast_episodes.realm)::text)) <= public.app_clearance_rank()));
+
+
+--
+-- Name: casts realm_visibility; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY realm_visibility ON public.casts USING ((( SELECT realms.rank
+   FROM public.realms
+  WHERE ((realms.slug)::text = (casts.realm)::text)) <= public.app_clearance_rank()));
 
 
 --
@@ -5617,6 +5794,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261124000006'),
 ('20261124000005'),
 ('20261124000004'),
 ('20261124000003'),

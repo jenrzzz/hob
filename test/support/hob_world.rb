@@ -36,6 +36,24 @@ module HobWorld
     @token = ApiKey.issue!(principal: @principal, surface: "test", default_clearance: "intimate")
   end
 
+  # The voice plane (CASTS.md): the provider, the roles, a writer, and
+  # FakeVoice behind Voice::ElevenLabs.transport. -> the fake
+  def voice!
+    ENV["HOB_TEST_ELEVENLABS_KEY"] = "xi-test"
+    Provider.find_or_create_by!(slug: "elevenlabs") { |p| p.kind = "elevenlabs"; p.config = { "api_key_env" => "HOB_TEST_ELEVENLABS_KEY" } }
+    { "voice-dialogue" => "eleven_v4", "voice-sound" => "eleven_text_to_sound_v2", "voice-music" => "music_v1" }.each do |role, model|
+      ModelRole.find_or_create_by!(role: role) { |mr| mr.chain = [ { "provider" => "elevenlabs", "model" => model } ] }
+    end
+    ModelRole.find_or_create_by!(role: "cast-writer") { |mr| mr.chain = [ { "provider" => "anthropic", "model" => "claude-sonnet-5" } ] }
+    FakeVoice.new.tap { |fake| Voice::ElevenLabs.transport = fake.to_proc }
+  end
+
+  # A cast row (CASTS.md).
+  def cast!(slug = "briefing", realm: "personal", **config)
+    Cast.create!(slug: slug, title: "The Morning Hob", description: "The day's news, talked through.", realm: realm,
+                 config: { "theme_seconds" => 16 }.merge(config.deep_stringify_keys))
+  end
+
   # An external agent (SENTINEL.md) with a key at the given clearance.
   # -> [principal, token]
   def agent(name = "muse", clearance: "household")

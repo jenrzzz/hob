@@ -81,6 +81,10 @@ jobs:
         with:
           bundler-cache: true
 
+      # The mixer's tests (CASTS.md) render real audio; without ffmpeg they skip.
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install --no-install-recommends -y ffmpeg
+
       # pgvector goes into template1 as the superuser, so every database `hob`
       # creates inherits it and structure.sql's CREATE EXTENSION is a no-op.
       - name: Create the non-superuser database role

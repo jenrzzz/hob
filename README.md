@@ -20,6 +20,7 @@ its agents keep, [PEOPLE.md](PEOPLE.md) for who it knows,
 [SHELL.md](SHELL.md) for the machines an agent may run commands on,
 [CODE.md](CODE.md) for the building an agent hands to Claude Code,
 [IRC.md](IRC.md) for the IRC its agents and personas talk on,
+[CASTS.md](CASTS.md) for the shows it produces and the voice it does it with,
 [EGRESS.md](EGRESS.md) for the household's other address (a proposal), and
 [CLAUDE_CODE.md](CLAUDE_CODE.md) for how a person's own assistant gets in.
 

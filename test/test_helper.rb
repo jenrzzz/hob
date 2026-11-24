@@ -2,6 +2,7 @@ ENV["RAILS_ENV"] ||= "test"
 require_relative "../config/environment"
 require "rails/test_help"
 require_relative "support/hob_world"
+require_relative "support/fake_voice"
 
 # A superuser (or a BYPASSRLS role) skips row-level security, and the realm
 # tests then fail as though clearance were broken. Connect the way CI does.
@@ -24,6 +25,7 @@ module ActiveSupport
 
     teardown do
       Gateway.transport = nil
+      Voice::ElevenLabs.transport = nil
       Current.reset
     end
   end

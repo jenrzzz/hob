@@ -21,6 +21,12 @@ Provider.find_or_create_by!(slug: "openrouter") do |p|
   p.config = { "api_key_env" => "HOB_OPENROUTER_KEY", "base_url" => "https://openrouter.ai/api/v1" }
 end
 
+# Voice (CASTS.md): speech, sound effects, and music. Only voice-* roles use it.
+Provider.find_or_create_by!(slug: "elevenlabs") do |p|
+  p.kind = "elevenlabs"
+  p.config = { "api_key_env" => "ELEVENLABS_API_KEY" }
+end
+
 # Model roles. Per-role params ride on the chain link; `strict` links fail
 # the request rather than fall through (the question is the product).
 {
@@ -74,7 +80,16 @@ end
   "ward-triage" => [
     { "provider" => "anthropic", "model" => "claude-sonnet-5-5", "params" => { "max_tokens" => 2048 } },
     { "provider" => "anthropic", "model" => "claude-haiku-4-5-20251001", "params" => { "max_tokens" => 2048 } }
-  ]
+  ],
+  # CASTS.md: rewrites a briefing as two people talking; one call an episode.
+  "cast-writer" => [
+    { "provider" => "anthropic", "model" => "claude-opus-5-5", "params" => { "max_tokens" => 16_384 } },
+    { "provider" => "anthropic", "model" => "claude-sonnet-5-5", "params" => { "max_tokens" => 16_384 } }
+  ],
+  # CASTS.md, "Voice": what speaks, what makes a stinger, what composes a theme.
+  "voice-dialogue" => [ { "provider" => "elevenlabs", "model" => "eleven_v4" } ],
+  "voice-sound" => [ { "provider" => "elevenlabs", "model" => "eleven_text_to_sound_v2" } ],
+  "voice-music" => [ { "provider" => "elevenlabs", "model" => "music_v1" } ]
 }.each do |role, chain|
   ModelRole.find_or_create_by!(role: role) { |mr| mr.chain = chain }
 end

@@ -1989,7 +1989,7 @@ namespace :hob do
 
     desc "Give a channel a pulse (IRC.md, \"The pulse\"): when it goes quiet or loops, its host persona is woken to " \
          "bring it something. bin/rails \"hob:irc:pulse[#upstairs,meluzina]\" QUIET=180 LOOP_LINES=24 LOOP_NICKS=2 " \
-         "STALE=40 GAP=240 PER_DAY=3; OFF=1 stops it; with no host, shows it"
+         "STALE=40 GAP=240 PER_DAY=3 ROTATE=1 (each persona there in turn; 0 for the one host); OFF=1 stops it; with no host, shows it"
     task :pulse, [ :name, :host ] => :environment do |_task, args|
       abort "usage: bin/rails \"hob:irc:pulse[#channel,persona]\"" if args[:name].blank?
 
@@ -2006,6 +2006,7 @@ namespace :hob do
             "STALE" => "stale_lines", "GAP" => "gap_minutes", "PER_DAY" => "per_day" }.each do |env, key|
             config[key] = Integer(ENV[env]) if ENV[env].present?
           end
+          config["rotate"] = ENV["ROTATE"] == "1" if ENV["ROTATE"].present?
           problems = Irc::Pulse.problems(config)
           abort problems.join("; ") if problems.any?
 
@@ -2017,11 +2018,14 @@ namespace :hob do
         end
         pulse = Irc::Pulse.new(channel)
         abort "#{channel.name} has no pulse" if channel.pulse.nil?
-        puts "#{channel.name}: hosted by #{channel.pulse['host']}, " +
+        turns = pulse.rotate? ? "in turn by #{pulse.hosts.map(&:key).join(', ').presence || 'nobody yet'}" : "by #{channel.pulse['host']}"
+        puts "#{channel.name}: hosted #{turns}, " +
              Irc::Pulse::DEFAULTS.keys.map { |key| "#{key} #{pulse.setting(key)}" }.join(", ")
         puts "  last: #{channel.pulse_state['last_at'] || 'never'}#{" (#{channel.pulse_state['reason']})" if channel.pulse_state['reason']}"
         puts "  now: #{pulse.reason || 'the room is fine, or the pulse is resting'}"
-        puts "  tray: #{channel.seeds.waiting.count} waiting, #{channel.seeds.where.not(taken_at: nil).count} taken"
+        own = channel.seeds.waiting.where.not(meant_for_id: nil).joins(:meant_for).group("principals.name").count
+        puts "  tray: #{channel.seeds.waiting.count} waiting#{" (#{own.map { |nick, n| "#{n} for #{nick}" }.join(', ')})" if own.any?}, " \
+             "#{channel.seeds.where.not(taken_at: nil).count} taken"
       end
     end
 

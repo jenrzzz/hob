@@ -236,7 +236,8 @@ class PersonaLife
                                       "woken" => (woken_since(now) + (hosting ? [] : [ now ])).map { |at| at.utc.iso8601 } })
       if hosting
         Clearance.with(@life.top_realm) do
-          Irc::Pulse.new(IrcChannel.find(wake[:pulse][:channel_id])).fired!(now: now, reason: wake[:pulse][:reason])
+          Irc::Pulse.new(IrcChannel.find(wake[:pulse][:channel_id])).fired!(now: now, reason: wake[:pulse][:reason],
+                                                                                 host: @persona.key)
         end
       end
       Rails.logger.info("wake #{@persona.key}: woken at #{wake[:realm]} by " +

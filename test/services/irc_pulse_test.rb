@@ -137,6 +137,60 @@ class IrcPulseTest < ActiveSupport::TestCase
     assert wake_job_queued?
   end
 
+  test "rotating, each living persona in the room hosts in turn, and one who cannot is passed over" do
+    twi = persona("twi")
+    twi.update!(life: LIFE, tools: { "agent" => "twilight" })
+    @garden.update!(pulse: { "host" => "mel", "rotate" => true, "gap_minutes" => 30, "per_day" => 24 })
+    assert_includes Irc::Pulse.problems("host" => "mel", "rotate" => "yes").join, "rotate is true or false"
+    assert_equal %w[mel twi], pulse.hosts.map(&:key), "the named host first, then by turn; trixie is nobody's agent"
+
+    hosted = 3.times.map do
+      say(@trixie, "anyone?")
+      travel 4.hours
+      assert_equal({ "#garden" => :pulsed }, Irc::Pulse.sweep)
+      travel 3.minutes
+      who = [ @mel, twi ].find { |p| p.reload.wake["pulse"] }
+      @fake.reply("")
+      assert_equal :woken, PersonaLife::Wake.new(PersonaLife.new(who)).run!
+      who.key
+    end
+    assert_equal %w[mel twi mel], hosted
+    assert_equal "mel", @garden.reload.pulse_state["host"]
+    assert_equal %w[mel twi], @garden.pulse_state["hosted"].keys.sort
+
+    twi.update!(life: LIFE.merge("budget" => { "tokens_per_day" => 1_000 }))
+    UsageEvent.create!(ref: "persona/twi/life", created_at: Time.current, status: "success", units: { "input_tokens" => 2_000 })
+    say(@trixie, "anyone?")
+    travel 4.hours
+    Irc::Pulse.sweep
+    assert @mel.reload.wake["pulse"], "twi's turn, but her tokens are spent"
+  end
+
+  test "a seed meant for one agent is in her tray alone, hers first" do
+    twi = persona("twi")
+    twi.update!(life: LIFE, tools: { "agent" => "twilight" })
+    @garden.update!(pulse: { "host" => "twi" })
+    anyones, = plant("a story's best lines")
+    hers = @garden.seeds.create!(kind: "thread", title: "a night at the lectern", body: "the spell, read aloud", meant_for: @twilight)
+    mels = @garden.seeds.create!(kind: "archive", title: "houston", body: "the hurricane", meant_for: @meluzina)
+    say(@trixie, "anyone?")
+    travel 4.hours
+    Irc::Pulse.sweep
+
+    @fake.call_tools([ { id: "t1", name: "take_seed", arguments: { id: mels.id } } ])
+    @fake.call_tools([ { id: "t2", name: "take_seed", arguments: { id: hers.id } } ])
+    @fake.reply("")
+    travel 3.minutes
+    assert_equal :woken, PersonaLife::Wake.new(PersonaLife.new(twi.reload)).run!
+
+    page = @fake.calls.first.messages.last["content"].to_s
+    assert_match(/Those who live there take turns hosting/, page)
+    assert_match(/- \[#{hers.id}\] thread \(yours\): a night at the lectern\n- \[#{anyones.id}\] archive: stretch 0/, page)
+    refute_match(/houston/, page)
+    assert_nil mels.reload.taken_at, "not hers to take"
+    assert_equal @twilight, hers.reload.taken_by
+  end
+
   test "a host whose agent is not in the room, or without wakes, is not woken" do
     @garden.update!(pulse: { "host" => "nobody" })
     travel 4.hours

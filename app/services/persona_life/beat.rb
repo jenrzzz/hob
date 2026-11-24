@@ -425,7 +425,8 @@ class PersonaLife
     def tray_channel
       return @tray_channel if defined?(@tray_channel)
 
-      @tray_channel = pulse_channel || (named_rooms.detect { |channel| channel.seeds.waiting.exists? } if deep?)
+      @tray_channel = pulse_channel ||
+                      (named_rooms.detect { |channel| channel.seeds.waiting.open_to(@life.agent).exists? } if deep?)
     end
 
     # The channels (not DMs) she was named in.
@@ -447,13 +448,15 @@ class PersonaLife
       lines.join("\n")
     end
 
-    # What a room's tray holds: what each seed is, never its words.
+    # What a room's tray holds for her: what each seed is, never its words.
+    # The ones mined from her own threads come first, and are only hers.
     def tray_lines(channel)
-      seeds = channel&.seeds&.waiting&.order(Arel.sql("random()"))&.limit(TRAY_SHOWN).to_a
+      seeds = channel&.seeds&.waiting&.open_to(@life.agent)&.order(Arel.sql("random()"))&.limit(TRAY_SHOWN).to_a
       return nil if seeds.blank?
 
-      tray = seeds.map { |seed| "- [#{seed.id}] #{seed.kind}: #{seed.preview}" }
-      "The tray (things mined from the house for #{channel.name}; take_seed gives you one whole):\n#{tray.join("\n")}"
+      tray = seeds.map { |seed| "- [#{seed.id}] #{seed.kind}#{' (yours)' if seed.meant_for_id}: #{seed.preview}" }
+      "The tray (things mined from the house for #{channel.name}, the ones marked yours from your own threads; " \
+        "take_seed gives you one whole):\n#{tray.join("\n")}"
     end
 
     # The channel whose pulse woke her, for its tray.
@@ -468,9 +471,9 @@ class PersonaLife
     # with take_seed.
     def pulse_section
       where = @wake[:pulse][:where]
-      lines = [ "HOSTING - #{where} needs something: #{@wake[:pulse][:reason]}. You host there now and then; this " \
-                "beat is that. Read the room with irc_read first, then bring it something with irc_say: a seed from " \
-                "the tray, a stretch of your own archive, a prompt or a game you run, a question nobody has asked. " \
+      lines = [ "HOSTING - #{where} needs something: #{@wake[:pulse][:reason]}. Those who live there take turns " \
+                "hosting; this beat is yours. Read the room with irc_read first, then bring it something with irc_say: a seed from " \
+                "the tray, a stretch of your own past, a prompt or a game you run, a question nobody has asked. " \
                 "One good thing, said like you, not a menu and not an announcement. If the room is better left " \
                 "alone right now, leave it." ]
       lines << (tray_lines(pulse_channel) || "The tray is empty: bring something of your own.")

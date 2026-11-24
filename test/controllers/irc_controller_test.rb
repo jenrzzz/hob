@@ -87,6 +87,14 @@ class IrcControllerTest < ActionDispatch::IntegrationTest
 
     post "/v1/irc/seeds", params: { target: "#upstairs", seeds: [ { kind: "Not a kind!", body: "x" } ] }, headers: auth, as: :json
     assert_response :unprocessable_entity
+
+    nick = Clearance.with("intimate") { IrcChannel.find_by!(name: "#upstairs").members.first.name }
+    post "/v1/irc/seeds", params: { target: "#upstairs", seeds: [ { kind: "thread", body: "hers", for: nick } ] }, headers: auth, as: :json
+    assert_response :created
+    get "/v1/irc/seeds", params: { target: "#upstairs" }, headers: auth
+    assert_equal [ nil, nil, nick ], body["waiting"].map { |seed| seed["for"] }
+    post "/v1/irc/seeds", params: { target: "#upstairs", seeds: [ { kind: "thread", body: "whose", for: "nobody" } ] }, headers: auth, as: :json
+    assert_response :unprocessable_entity
   end
 
   test "a key below the channel cannot plant there" do

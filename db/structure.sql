@@ -716,7 +716,8 @@ CREATE TABLE public.irc_seeds (
     taken_by_id bigint,
     taken_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    meant_for_id bigint
 );
 
 ALTER TABLE ONLY public.irc_seeds FORCE ROW LEVEL SECURITY;
@@ -3248,6 +3249,13 @@ CREATE INDEX index_irc_seeds_on_irc_channel_id_and_taken_at ON public.irc_seeds 
 
 
 --
+-- Name: index_irc_seeds_on_meant_for_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_irc_seeds_on_meant_for_id ON public.irc_seeds USING btree (meant_for_id);
+
+
+--
 -- Name: index_irc_seeds_on_taken_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3433,7 +3441,7 @@ CREATE INDEX index_people_events_on_recorded_by_id ON public.people_events USING
 -- Name: index_people_events_on_source_kind_and_source_ref; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY ((ARRAY['text'::character varying, 'mail'::character varying, 'calendar'::character varying])::text[])));
+CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY (ARRAY[('text'::character varying)::text, ('mail'::character varying)::text, ('calendar'::character varying)::text])));
 
 
 --
@@ -4201,6 +4209,14 @@ ALTER TABLE ONLY public.situation_observations
 
 ALTER TABLE ONLY public.schedules
     ADD CONSTRAINT fk_rails_1b0dc14136 FOREIGN KEY (assignee_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: irc_seeds fk_rails_23e84ce464; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.irc_seeds
+    ADD CONSTRAINT fk_rails_23e84ce464 FOREIGN KEY (meant_for_id) REFERENCES public.principals(id);
 
 
 --
@@ -5601,6 +5617,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261124000005'),
 ('20261124000004'),
 ('20261124000003'),
 ('20261124000002'),

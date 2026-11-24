@@ -162,7 +162,7 @@ class PersonaLife
       taken = @done["take_seed"].to_i
       return { "error" => "#{SEEDS_TAKEN_MAX} seeds a beat" } if taken >= SEEDS_TAKEN_MAX
 
-      seed = @seeds.seeds.waiting.find_by(id: args["id"].to_i)
+      seed = @seeds.seeds.waiting.open_to(@life.agent).find_by(id: args["id"].to_i)
       return { "error" => "no seed #{args['id']} waiting in #{@seeds.name}'s tray" } if seed.nil?
 
       seed.update!(taken_at: @now, taken_by: @life.agent)

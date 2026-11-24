@@ -9,6 +9,7 @@ module Irc
   # `irc_channels.pulse`:
   #
   #   { "host" => "meluzina",      the persona woken; her agent must be in the channel
+  #     "rotate" => true,          or each in turn: every living persona in the room who wakes
   #     "quiet_minutes" => 180,    nothing said for this long
   #     "loop_lines" => 24,        or the last this many lines ...
   #     "loop_nicks" => 2,         ... came from this few nicks
@@ -33,9 +34,10 @@ module Irc
 
       config = config.stringify_keys
       problems = []
-      unknown = config.keys - DEFAULTS.keys - [ "host" ]
+      unknown = config.keys - DEFAULTS.keys - %w[host rotate]
       problems << "a pulse has unknown keys: #{unknown.join(', ')}" if unknown.any?
       problems << "a pulse needs a host, a persona's key" if config["host"].blank?
+      problems << "pulse rotate is true or false" unless [ nil, true, false ].include?(config["rotate"])
       RANGES.each do |key, range|
         value = config[key]
         next if value.nil? || (value.is_a?(Integer) && range.cover?(value))
@@ -75,8 +77,27 @@ module Irc
       @host ||= Persona.find_by(key: config["host"])
     end
 
+    def rotate?
+      config["rotate"] == true
+    end
+
+    # Who may host, next first. Rotating: every living persona who wakes
+    # and whose agent is in the room, the one who hosted longest ago (or
+    # never) first. Otherwise the one host.
+    def hosts
+      return [ host ].compact unless rotate?
+
+      # Before turns were kept, the one host took every pulse there was.
+      hosted = { config["host"] => state["last_at"] }.compact.merge(state["hosted"].to_h)
+      PersonaLife.living.where("jsonb_typeof(life->'wakes') = 'object'")
+                 .where("tools->>'agent' IN (?)", @channel.members.map(&:name))
+                 .sort_by { |persona| [ hosted[persona.key].to_s, persona.key == config["host"] ? 0 : 1, persona.id ] }
+    end
+
+    # The agent of whoever hosted last, or of the one host.
     def host_agent
-      host && PersonaLife.new(host).agent
+      last = (key = state["host"]) ? Persona.find_by(key: key) : host
+      last && PersonaLife.new(last).agent
     end
 
     def state
@@ -94,9 +115,13 @@ module Irc
       [ last, @channel.seeds.maximum(:taken_at) ].compact.max
     end
 
-    # Her hosted beat is running (PersonaLife::Wake): the pulse is counted now.
-    def fired!(now: Time.current, reason: nil)
-      @channel.update_columns(pulse_state: { "last_at" => now.utc.iso8601, "reason" => reason,
+    # Her hosted beat is running (PersonaLife::Wake): the pulse is counted
+    # now, and her turn with it.
+    def fired!(now: Time.current, reason: nil, host: nil)
+      hosted = state["hosted"].to_h
+      hosted = hosted.merge(host => now.utc.iso8601) if host
+      @channel.update_columns(pulse_state: { "last_at" => now.utc.iso8601, "reason" => reason, "host" => host,
+                                             "hosted" => hosted.presence,
                                              "fired" => (fired_since(now) + [ now ]).map { |at| at.utc.iso8601 } }.compact)
     end
 
@@ -133,20 +158,28 @@ module Irc
     # Calls the host when the room needs her; the pulse is counted when her
     # beat runs (#fired!). -> :pulsed, :fine, or why not.
     def beat!(now: Time.current)
-      return :no_host if host.nil?
+      return :no_host if host.nil? && !rotate?
 
       why = reason(now: now) or return :fine
-      life = PersonaLife.new(host)
-      return :host_not_living unless PersonaLife.living.exists?(id: host.id)
+      refused = :no_host
+      hosts.each do |persona|
+        refused = call!(persona, why, now)
+        next unless refused == :queued
 
-      queued = PersonaLife::Wake.new(life).pulse!(@channel, reason: why, now: now)
-      return queued unless queued == :queued
-
-      Rails.logger.info("irc pulse #{@channel.name}: calling #{host.key}, #{why}")
-      :pulsed
+        Rails.logger.info("irc pulse #{@channel.name}: calling #{persona.key}, #{why}")
+        return :pulsed
+      end
+      refused
     end
 
     private
+
+    # -> :queued, or why she cannot host now.
+    def call!(persona, why, now)
+      return :host_not_living unless PersonaLife.living.exists?(id: persona.id)
+
+      PersonaLife::Wake.new(PersonaLife.new(persona)).pulse!(@channel, reason: why, now: now)
+    end
 
     def span(seconds)
       hours = (seconds / 1.hour).round

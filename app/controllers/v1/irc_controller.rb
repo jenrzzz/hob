@@ -54,6 +54,7 @@ module V1
       channel = target or return
       render json: {
         channel: channel.name, pulse: channel.pulse, pulse_state: channel.pulse_state.presence,
+        hosts: channel.pulse && Irc::Pulse.new(channel).hosts.filter_map { |persona| PersonaLife.new(persona).agent&.name },
         waiting: channel.seeds.waiting.order(:id).map { |seed| seed_json(seed) },
         taken: channel.seeds.where.not(taken_at: nil).order(taken_at: :desc).limit(TAKEN_SHOWN).map { |seed| seed_json(seed) }
       }.compact
@@ -76,7 +77,8 @@ module V1
           end
 
           planted << channel.seeds.create!(kind: row["kind"].to_s.strip.downcase, title: row["title"].to_s.strip.presence,
-                                           body: row["body"].to_s.strip, key: key, source: row["source"].to_h)
+                                           body: row["body"].to_s.strip, key: key, source: row["source"].to_h,
+                                           meant_for: meant_for(channel, row["for"]))
         end
       end
       render json: { planted: planted.map(&:id), skipped: skipped, waiting: channel.seeds.waiting.count }, status: :created
@@ -90,8 +92,17 @@ module V1
       channel
     end
 
+    # The member a seed is for, by nick; nil for anyone's.
+    def meant_for(channel, nick)
+      nick = nick.to_s.strip.downcase
+      return nil if nick.blank?
+
+      channel.members.find { |member| member.name == nick } or raise Gateway::Invalid, "#{nick} is not in #{channel.name}"
+    end
+
     def seed_json(seed)
       { id: seed.id, kind: seed.kind, title: seed.title, body: seed.body, key: seed.key, source: seed.source.presence,
+        for: seed.meant_for&.name,
         created_at: seed.created_at.utc.iso8601, taken_at: seed.taken_at&.utc&.iso8601, taken_by: seed.taken_by&.name }.compact
     end
   end

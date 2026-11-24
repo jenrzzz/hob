@@ -54,7 +54,8 @@ module V1
                                           odds: {}, paper: %i[url odds skip], beats: {}, unworn: [],
                                           fold: %i[instruction about quiet_hours],
                                           wakes: %i[gap_minutes per_day delay_minutes jitter_minutes backoff burst burst_minutes],
-                                          budget: %i[tokens_per_day], irc: [ :lines, :sheet, { stances: [] } ]).to_h
+                                          budget: %i[tokens_per_day], irc: [ :lines, :sheet, { stances: [] } ],
+                                          company: %i[room minutes]).to_h
           h[:life][:beats] = params[:life][:beats].permit!.to_h if params[:life][:beats].respond_to?(:permit!)
           h[:life][:odds] = params[:life][:odds].permit!.to_h if params[:life][:odds].respond_to?(:permit!)
           h[:life][:lane_realms] = params[:life][:lane_realms].permit!.to_h if params[:life][:lane_realms].respond_to?(:permit!)

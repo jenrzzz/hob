@@ -43,7 +43,7 @@ class PersonaLife
   class Invalid < StandardError; end
 
   OPTIONS = %w[instruction realm zone odds min_gap_minutes role max_iterations note unworn fold beats lane_realms paper
-               dial home wakes budget irc].freeze
+               dial home wakes budget irc company].freeze
   MAX_ITERATIONS = 60
   UNWORN_MAX = 40
   DIALS = %w[off rare daily open].freeze
@@ -107,6 +107,7 @@ class PersonaLife
     problems.concat(Wake.problems(config["wakes"]))
     problems.concat(Budget.problems(config["budget"]))
     problems.concat(Visit.problems(config["irc"]))
+    problems.concat(Irc::Company.problems(config["company"]))
     paper = config["paper"]
     problems << "life.paper needs a url" if paper.present? && (!paper.is_a?(Hash) || paper["url"].blank?)
     problems
@@ -190,6 +191,18 @@ class PersonaLife
 
   def elevated?(at)
     Realm.rank_of(at) > Realm.rank_of(realm)
+  end
+
+  # Whether the room her life is kept to has company (Irc::Company); a
+  # life kept to none always has. Asked at her highest realm, so a line in
+  # a lower room still finds the room she lives for.
+  def company?(now = Time.current)
+    kept = config["company"] or return true
+
+    Clearance.with(top_realm) do
+      room = IrcChannel.find_by(name: kept["room"])
+      room.present? && Irc::Company.new(room).within?(Irc::Company.minutes(kept), now)
+    end
   end
 
   def zone
@@ -509,6 +522,8 @@ class PersonaLife
   # A wake counts too: no scheduled beat within the wakes' gap of the last
   # one, whether or not that wake wrote in the diary.
   def due?(now: Time.current, rng: Random)
+    return false unless company?(now)
+
     last = last_beat_at
     gap = (config["min_gap_minutes"] || DEFAULT_GAP).to_i.minutes
     return false if last && last > now - gap

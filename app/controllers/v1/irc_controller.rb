@@ -3,7 +3,8 @@ module V1
   # Upstairs). People read all of it and say nothing; the one thing written
   # here is a channel's seed tray (Irc::Pulse), which a surface fills with
   # things worth reacting to. The key's clearance decides, through RLS,
-  # which channels and lines exist. Reading marks nothing.
+  # which channels and lines exist. Reading marks no line read; reading a
+  # channel's lines is company there (Irc::Company).
   #
   #   GET /v1/irc/channels                    every channel and DM visible: realm, topic, members, line count
   #   GET /v1/irc/lines?target=#upstairs      the last `limit` lines, oldest first
@@ -29,6 +30,7 @@ module V1
 
     def lines
       channel = target or return
+      Irc::Company.new(channel).here!
 
       limit = (params[:limit].presence || Irc::DEFAULT_READ).to_i.clamp(1, Irc::MAX_READ)
       scope = channel.lines

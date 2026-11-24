@@ -95,6 +95,7 @@ module Irc
     end
     Current.irc_lines.left -= said.size if Current.irc_lines
     keep_up!(channel, who, said.last)
+    Company.new(channel).said!(who)
     PersonaLife::Wake.heard(channel, said)
     { "to" => label(channel, who), "said" => said.map(&:to_log),
       **unread(channel.memberships.find_by(principal: who), who).slice("new") }

@@ -185,6 +185,44 @@ class PersonaLifeWakeTest < ActiveSupport::TestCase
     assert_equal before, wake_jobs.size, "the room's hour of overhearing is spent"
   end
 
+  test "a life kept to a room's company runs only while the room has some" do
+    kept = LIFE.merge("company" => { "room" => "#garden", "minutes" => 30 })
+    assert_not @twi.update(life: kept.merge("company" => { "room" => "garden" }))
+    assert_not @twi.update(life: kept.merge("company" => { "room" => "#garden", "minutes" => 2 }))
+    [ @mel, @twi ].each { |persona| persona.update!(life: kept) }
+    garden = Clearance.with("personal") { IrcChannel.find_by!(name: "#garden") }
+    garden.update!(pulse: { "host" => "mel", "overhear" => 2 })
+    company = -> { Irc::Company.new(garden.reload) }
+    due = -> { Clearance.with("personal") { PersonaLife.new(@twi.reload).due?(now: Time.current) } }
+
+    assert company.call.away?
+    assert_not due.call, "no scheduled beat in an empty room"
+    say(@meluzina, "#garden", "twilight: anyone?")
+    say(@meluzina, "#garden", "anyone at all")
+    assert_empty wake_jobs, "one kept to the room is not its company, named or overheard"
+    assert_equal :no_company, Clearance.with("personal") { Irc::Pulse.new(garden.reload).beat! }
+
+    Current.set(woken: true) { say(@skipsy, "#garden", "twilight: answering") }
+    assert company.call.away?, "what a wake said is not company"
+    assert_empty wake_jobs
+
+    say(@skipsy, "#garden", "twilight: i came by")
+    assert_not company.call.away?
+    assert woken?(@twi)
+    assert due.call
+    assert(enqueued_jobs.any? { |job| job[:job] == IrcPulseJob }, "company arriving runs the pulse")
+
+    travel 31.minutes
+    assert company.call.away?
+    assert_equal "her room has no company", PersonaLife::Wake.new(PersonaLife.new(@twi.reload)).run!
+    assert_empty @fake.calls
+    assert_not due.call
+
+    assert Clearance.with("personal") { company.call.here! }, "a person reading it"
+    assert_not Clearance.with("personal") { company.call.here! }, "already here"
+    assert due.call
+  end
+
   test "a burst: the first wakes of a run come minutes apart, then her gap and the backoff" do
     wake = PersonaLife::Wake.new(PersonaLife.new(@twi))
     assert_equal [ 20, 20, 40, 80 ], (0..3).map { |n| wake.gap_after(n) / 60 }, "no burst is the old pace"

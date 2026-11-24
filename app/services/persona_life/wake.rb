@@ -34,6 +34,10 @@ class PersonaLife
   # (Irc::Pulse#fresh_at). From DEEP wakes in a row her page says so and
   # offers the room's tray.
   #
+  # A life kept to a room's company (Irc::Company) is woken only while the
+  # room has some: a name said to her in an empty room waits for her next
+  # scheduled beat, which waits for company too.
+  #
   # A room's pulse (Irc::Pulse) wakes its host the same way, with the room
   # and why it needs something in place of who named her. Hosting is not
   # being talked to: it keeps her plain gap, is not counted toward
@@ -147,7 +151,7 @@ class PersonaLife
     # Whether she could be woken now by something not meant for her: wakes
     # on, an agent, nothing pending, and some of her day left.
     def free?(now)
-      return false unless on? && @life.agent
+      return false unless on? && @life.agent && @life.company?(now)
 
       due = state["due_at"] && Time.zone.parse(state["due_at"])
       (due.nil? || due < now - STALE) && woken_since(now).size < per_day
@@ -196,7 +200,7 @@ class PersonaLife
     # a wake `delay` from now, or joins the one pending.
     def call!(channel, nick:, line:, now: Time.current, overheard: false)
       agent = @life.agent
-      return unless on? && agent
+      return unless on? && agent && @life.company?(now)
       return if @life.realm_for_room(channel.realm).nil?
       return if Realm.rank_of(channel.realm) > Realm.rank_of(agent.max_clearance)
 
@@ -223,6 +227,7 @@ class PersonaLife
       agent = @life.agent
       return :wakes_off unless on?
       return :no_agent unless agent
+      return :no_company unless @life.company?(now)
       return :above_her if @life.realm_for_room(channel.realm).nil? || Realm.rank_of(channel.realm) > Realm.rank_of(agent.max_clearance)
       return :not_in_channel unless channel.memberships.exists?(principal: agent)
       return :over_budget if @life.budget.over?(now)
@@ -261,6 +266,7 @@ class PersonaLife
       due = state["due_at"] && Time.zone.parse(state["due_at"])
       return :nothing_pending if due.nil? || due > now
       return drop!("wakes are off") unless on?
+      return drop!("her room has no company") unless @life.company?(now)
 
       wake = Clearance.with(@life.top_realm) { waiting }
       return drop!("nothing is waiting for her") if wake.nil?

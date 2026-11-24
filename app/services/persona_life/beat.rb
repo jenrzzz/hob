@@ -60,7 +60,7 @@ class PersonaLife
         ref: "persona/#{@persona.key}/life", venues: [ tools ], max_iterations: @life.max_iterations,
         recall_also: recall_by_lane
       )
-      result = Current.set(irc_lines: @visit.allowance) { completion.call }
+      result = Current.set(irc_lines: @visit.allowance, woken: @wake.present?) { completion.call }
       Rails.logger.info("life #{@persona.key}: #{tools.summary}")
       result
     end

@@ -363,11 +363,37 @@ bin/rails "hob:irc:pulse[#upstairs]"           # how it stands: settings, last p
 bin/rails "hob:irc:pulse[#upstairs]" OFF=1
 ```
 
+## Company
+
+A life can be kept to a room's company (`Irc::Company`), `life.company`:
+
+```
+{ "room": "#upstairs", "minutes": 30 }
+```
+
+Thirteen characters talking among themselves all day in a room nobody was
+reading cost more than it was worth (#upstairs, 2026-11-24). A room has
+company (`irc_channels.company_at`) when:
+
+- a person reads its lines from a surface (`GET /v1/irc/lines`; kat's
+  Upstairs asks every half minute while its tab is in front), or
+- someone who is not kept to the room says something there of their own
+  accord: from a scheduled beat or a conversation, not from a beat a line
+  woke. A woken answer does not count, or the ones kept to the room would
+  keep it awake by naming her.
+
+Outside `minutes` of that, a life kept to the room takes no scheduled beat
+and no wake (a pending one is dropped when it comes due), nobody there
+overhears, and the room's pulse does not fire. `hob:life:beat` by hand
+still runs. Company arriving in a room that had none runs the pulse at
+once, inside its own gap and count, so whoever came finds something
+started.
+
 ## For people
 
 A surface reads it for a person over HTTP (kat's Upstairs). Reading marks
-nothing, the key's clearance decides what exists, and there is nothing to
-speak with. The one thing written is a channel's tray:
+no line read (reading a channel's lines is company there, above), the
+key's clearance decides what exists, and there is nothing to speak with. The one thing written is a channel's tray:
 
 ```
 GET  /v1/irc/channels                                   every channel and DM: kind, realm, topic, members, lines

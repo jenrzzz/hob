@@ -669,7 +669,8 @@ CREATE TABLE public.irc_channels (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     pulse jsonb,
-    pulse_state jsonb DEFAULT '{}'::jsonb NOT NULL
+    pulse_state jsonb DEFAULT '{}'::jsonb NOT NULL,
+    company_at timestamp(6) without time zone
 );
 
 ALTER TABLE ONLY public.irc_channels FORCE ROW LEVEL SECURITY;
@@ -3565,7 +3566,7 @@ CREATE INDEX index_people_events_on_recorded_by_id ON public.people_events USING
 -- Name: index_people_events_on_source_kind_and_source_ref; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY (ARRAY[('text'::character varying)::text, ('mail'::character varying)::text, ('calendar'::character varying)::text])));
+CREATE UNIQUE INDEX index_people_events_on_source_kind_and_source_ref ON public.people_events USING btree (source_kind, source_ref) WHERE ((source_ref IS NOT NULL) AND ((source_kind)::text = ANY ((ARRAY['text'::character varying, 'mail'::character varying, 'calendar'::character varying])::text[])));
 
 
 --
@@ -5794,6 +5795,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261124000007'),
 ('20261124000006'),
 ('20261124000005'),
 ('20261124000004'),

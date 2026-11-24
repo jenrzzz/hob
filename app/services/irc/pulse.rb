@@ -25,6 +25,9 @@ module Irc
   # living personas there, at random, no more than OVERHEARD_PER_HOUR an
   # hour so that a roomful overhearing each other runs down.
   #
+  # A room kept for company it does not have (Irc::Company#away?) has no
+  # pulse: nobody is there to bring anything to.
+  #
   # A pulse is a wake (PersonaLife::Wake#pulse!) on the room's count, not
   # hers: her gap and token budget still hold, her wakes a day do not. It
   # is counted when her beat runs (#fired!), so a pulse she could not take
@@ -190,6 +193,7 @@ module Irc
     # beat runs (#fired!). -> :pulsed, :fine, or why not.
     def beat!(now: Time.current)
       return :no_host if host.nil? && !rotate?
+      return :no_company if Company.new(@channel).away?(now)
 
       why = reason(now: now) or return :fine
       refused = :no_host

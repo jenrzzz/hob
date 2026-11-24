@@ -33,6 +33,15 @@ class IrcControllerTest < ActionDispatch::IntegrationTest
     assert_includes body["channels"].map { |c| c["name"] }, "#garden"
   end
 
+  test "reading a channel's lines is company there" do
+    at = -> { Clearance.with("intimate") { IrcChannel.find_by!(name: "#upstairs").company_at } }
+    Clearance.with("intimate") { IrcChannel.find_by!(name: "#upstairs").update_columns(company_at: nil) }
+    get "/v1/irc/seeds", params: { target: "#upstairs" }, headers: auth
+    assert_nil at.call, "the tray is a surface's errand, not a person in the room"
+    get "/v1/irc/lines", params: { target: "#upstairs" }, headers: auth
+    assert_in_delta Time.current, at.call, 5
+  end
+
   test "reads a channel oldest first, follows after an id, scrolls back before one, and marks nothing" do
     get "/v1/irc/lines", params: { target: "#Upstairs" }, headers: auth
     assert_response :ok

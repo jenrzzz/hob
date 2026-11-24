@@ -154,6 +154,56 @@ class PersonaLifeWakeTest < ActiveSupport::TestCase
     assert_not @twi.update(life: LIFE.merge("wakes" => { "jitter_minutes" => 61 }))
   end
 
+  test "a line that names nobody is overheard by a few of the room, when the room says so, and not for ever" do
+    say(@skipsy, "#garden", "anyone know a slow engine")
+    assert_empty wake_jobs, "no overhearing unless the room has it"
+
+    garden = Clearance.with("personal") { IrcChannel.find_by!(name: "#garden") }
+    garden.update!(pulse: { "host" => "mel", "overhear" => 1 })
+    assert_not garden.update(pulse: { "host" => "mel", "overhear" => 4 })
+    garden.reload
+    say(@skipsy, "#garden", "anyone know a slow engine")
+    assert_equal 1, wake_jobs.size, "one of the two living personas there"
+    woken = [ @mel, @twi ].find { |persona| persona.reload.wake["due_at"] }
+    assert woken.wake["calls"].sole["overheard"]
+
+    say(@skipsy, "#garden", "anyone at all")
+    assert_equal 2, wake_jobs.size, "the other; the first already has a wake pending"
+    say(@skipsy, "#garden", "hello?")
+    assert_equal 2, wake_jobs.size, "nobody is left free"
+
+    answer("i do")
+    drain!(limit: 4)
+    page = @fake.calls.first.messages.last["content"].to_s
+    assert_match(/WOKEN - .*you were around in #garden when someone spoke to the room\./, page)
+    refute_match(/your name came up/, page)
+
+    garden.update_columns(pulse_state: { "overheard" => Array.new(Irc::Pulse::OVERHEARD_PER_HOUR) { Time.current.utc.iso8601 } })
+    travel 30.minutes
+    before = wake_jobs.size
+    say(@skipsy, "#garden", "and now?")
+    assert_equal before, wake_jobs.size, "the room's hour of overhearing is spent"
+  end
+
+  test "a burst: the first wakes of a run come minutes apart, then her gap and the backoff" do
+    wake = PersonaLife::Wake.new(PersonaLife.new(@twi))
+    assert_equal [ 20, 20, 40, 80 ], (0..3).map { |n| wake.gap_after(n) / 60 }, "no burst is the old pace"
+
+    @twi.update!(life: LIFE.merge("wakes" => WAKES.merge("burst" => 2, "burst_minutes" => 2)))
+    wake = PersonaLife::Wake.new(PersonaLife.new(@twi.reload))
+    assert_equal [ 2, 2, 20, 20, 40, 80 ], (0..5).map { |n| wake.gap_after(n) / 60 }
+
+    say(@skipsy, "#garden", "twilight: one")
+    answer("one back")
+    assert_equal 1, drain!
+    first = Time.current
+    say(@skipsy, "#garden", "twilight: two")
+    answer("two back")
+    assert_equal 1, drain!
+    assert_operator Time.current - first, :<=, 5.minutes, "the second comes inside the burst, not a gap later"
+    assert_equal 2, @twi.reload.wake["streak"]
+  end
+
   test "a wake whose lines she already read is dropped" do
     say(@skipsy, "#garden", "twilight: hi")
     on(@twilight) { Irc.read(@twilight, target: "#garden") }

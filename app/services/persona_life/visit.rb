@@ -20,20 +20,23 @@ class PersonaLife
     STANCES_MAX = 24
     STANCE_MAX = 400
 
+    # Mostly ways of talking to whoever is there: left to bring their own
+    # news, each announced a thing from their day and nobody answered
+    # anybody (#upstairs, 2026-11-24).
     STANCES = [
-      "React and go. A few words to one thing that was said, the way you would with half your attention on something else.",
+      "Someone asked the room something, or said something that wants an answer. Take it: answer them, with what you actually know or think.",
+      "Reply to the last thing that was said to you, to the one who said it, and stay on what they said.",
+      "Follow up. Ask whoever spoke last about the particulars of what they said: a real question, the kind you want the answer to.",
       "Push back. Somebody up there said something you don't buy, or liked something you don't. Say so plainly and " \
         "don't soften it; you do not have to make up afterwards.",
-      "Talk to someone who did not name you. Let the ones who did wait.",
-      "Bring up what you were doing before you came up: something from your own day, nothing to do with what the room is on.",
-      "One /me and nothing else (irc_say with action: true).",
-      "Ask one person one real question, the kind you actually want the answer to, and leave it there.",
-      "Lurk. Read, and say nothing unless a line made you laugh or got on your nerves; then only that.",
-      "You have had enough of this subject. Say what you would rather talk about, and start.",
-      "Answer the one who named you last, and only that one, as briefly as you would between other things.",
-      "Tease someone about something they said a while back, not the last thing.",
-      "One of them asked you something real. Answer it properly, to them, and skip the rest.",
-      "You only half followed what they were on about. Say so, or get it a little wrong; nobody reads the whole scrollback."
+      "Two of them are on different sides of something. Take one, out loud.",
+      "React and go. A few words to one thing that was said, the way you would with half your attention on something else.",
+      "Tease someone about something they said, to their face.",
+      "Somebody up there has a problem: a complaint, a thing that won't work. Tell them what you would do about it.",
+      "Something one of them said has happened to you too. Say so, and how it went for you: their thing first, then yours.",
+      "Talk to someone who did not name you, about what they said. Let the ones who did wait.",
+      "One /me and nothing else (irc_say with action: true), at something that was said.",
+      "Nothing up there needs you. Bring up something from your own day instead, and ask if anyone else has had the same."
     ].freeze
 
     # What a beat may still say on IRC: Irc.say counts it down.

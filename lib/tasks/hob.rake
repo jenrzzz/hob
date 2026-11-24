@@ -2003,7 +2003,7 @@ namespace :hob do
           persona = Persona.find_by(key: args[:host]) or abort "no persona #{args[:host]}"
           config = channel.pulse.to_h.merge("host" => persona.key)
           { "QUIET" => "quiet_minutes", "LOOP_LINES" => "loop_lines", "LOOP_NICKS" => "loop_nicks",
-            "STALE" => "stale_lines", "GAP" => "gap_minutes", "PER_DAY" => "per_day" }.each do |env, key|
+            "STALE" => "stale_lines", "GAP" => "gap_minutes", "PER_DAY" => "per_day", "OVERHEAR" => "overhear" }.each do |env, key|
             config[key] = Integer(ENV[env]) if ENV[env].present?
           end
           config["rotate"] = ENV["ROTATE"] == "1" if ENV["ROTATE"].present?

@@ -15,7 +15,15 @@ module Irc
   #     "loop_nicks" => 2,         ... came from this few nicks
   #     "stale_lines" => 40,       or this many lines said since anything new was brought in
   #     "gap_minutes" => 240,      no pulse within this of the last
-  #     "per_day" => 3 }           at most this many in any 24 hours
+  #     "per_day" => 3,            at most this many in any 24 hours
+  #     "overhear" => 0 }          a line that names nobody wakes up to this many of the room
+  #
+  # Overhearing is the room's too (#overhearers): with only a name waking
+  # anyone, a question put to the room reached nobody for hours, and the
+  # ones who wanted an answer learned to name everyone (#upstairs,
+  # 2026-11-24). So a line that names nobody is overheard by a few of the
+  # living personas there, at random, no more than OVERHEARD_PER_HOUR an
+  # hour so that a roomful overhearing each other runs down.
   #
   # A pulse is a wake (PersonaLife::Wake#pulse!) on the room's count, not
   # hers: her gap and token budget still hold, her wakes a day do not. It
@@ -23,10 +31,11 @@ module Irc
   # costs the room nothing and the next sweep asks again.
   class Pulse
     DEFAULTS = { "quiet_minutes" => 180, "loop_lines" => 24, "loop_nicks" => 2, "stale_lines" => 40,
-                 "gap_minutes" => 240, "per_day" => 3 }.freeze
+                 "gap_minutes" => 240, "per_day" => 3, "overhear" => 0 }.freeze
     RANGES = { "quiet_minutes" => 15..10_080, "loop_lines" => 6..200, "loop_nicks" => 1..10, "stale_lines" => 10..500,
-               "gap_minutes" => 30..10_080, "per_day" => 1..24 }.freeze
+               "gap_minutes" => 30..10_080, "per_day" => 1..24, "overhear" => 0..3 }.freeze
     WINDOW = 24.hours
+    OVERHEARD_PER_HOUR = 8
 
     def self.problems(config)
       return [] if config.nil?
@@ -121,8 +130,30 @@ module Irc
       hosted = state["hosted"].to_h
       hosted = hosted.merge(host => now.utc.iso8601) if host
       @channel.update_columns(pulse_state: { "last_at" => now.utc.iso8601, "reason" => reason, "host" => host,
-                                             "hosted" => hosted.presence,
+                                             "hosted" => hosted.presence, "overheard" => state["overheard"],
                                              "fired" => (fired_since(now) + [ now ]).map { |at| at.utc.iso8601 } }.compact)
+    end
+
+    # Who overhears a line that named nobody: up to `overhear` of the
+    # living personas in the room, other than `except` (agents), who could
+    # be woken now, while the room's hour has any left. They are counted
+    # here, as picked.
+    def overhearers(except:, now: Time.current, rng: Random.new)
+      wanted = setting("overhear")
+      return [] unless wanted.positive?
+
+      recent = Array(state["overheard"]).select { |at| Time.zone.parse(at) > now - 1.hour }
+      left = OVERHEARD_PER_HOUR - recent.size
+      return [] unless left.positive?
+
+      names = @channel.members.map(&:name) - except.map(&:name)
+      picked = PersonaLife.living.where("jsonb_typeof(life->'wakes') = 'object'").where("tools->>'agent' IN (?)", names)
+                          .select { |persona| PersonaLife::Wake.new(PersonaLife.new(persona)).free?(now) }
+                          .sample([ wanted, left ].min, random: rng)
+      return [] if picked.empty?
+
+      @channel.update_columns(pulse_state: state.merge("overheard" => recent + picked.map { now.utc.iso8601 }))
+      picked
     end
 
     # Why the room needs something now, in words for her page; nil when it

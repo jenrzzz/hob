@@ -53,7 +53,7 @@ module V1
           h[:life] = params[:life].permit(:instruction, :realm, :zone, :min_gap_minutes, :role, :max_iterations, :dial, :note,
                                           odds: {}, paper: %i[url odds skip], beats: {}, unworn: [],
                                           fold: %i[instruction about quiet_hours],
-                                          wakes: %i[gap_minutes per_day delay_minutes jitter_minutes backoff],
+                                          wakes: %i[gap_minutes per_day delay_minutes jitter_minutes backoff burst burst_minutes],
                                           budget: %i[tokens_per_day], irc: [ :lines, :sheet, { stances: [] } ]).to_h
           h[:life][:beats] = params[:life][:beats].permit!.to_h if params[:life][:beats].respond_to?(:permit!)
           h[:life][:odds] = params[:life][:odds].permit!.to_h if params[:life][:odds].respond_to?(:permit!)

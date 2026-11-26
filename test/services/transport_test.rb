@@ -284,3 +284,119 @@ class TransportConductorTest < TransportTest
     fake&.send(:remove_method, :embed)
   end
 end
+
+# A gemini provider speaks Google's generateContent: its own finishReason,
+# a block as a refusal, and each function call's thought signature kept for
+# the replay Gemini 3 insists on.
+class TransportGeminiTest < ActiveSupport::TestCase
+  TOOLS = TransportToolsTest::TOOLS
+  StubbedPost = TransportTest::StubbedPost
+
+  setup do
+    RubyLLM::Transport::Connection.prepend(StubbedPost) unless RubyLLM::Transport::Connection.ancestors.include?(StubbedPost)
+    StubbedPost.payloads = []
+    StubbedPost.urls = []
+    StubbedPost.error = nil
+    ENV["HOB_TEST_GEMINI_KEY"] = "g-test"
+    provider = Provider.find_or_create_by!(slug: "gemini") do |p|
+      p.kind = "gemini"
+      p.config = { "api_key_env" => "HOB_TEST_GEMINI_KEY", "base_url" => "http://vertex.test/v1/publishers/google" }
+    end
+    @resolution = ModelRole::Resolution.new(provider: provider, model: "gemini-3.5-flash", params: {}, strict: false)
+    StubbedPost.sse = gemini_sse(
+      { candidates: [ { content: { role: "model", parts: [ { text: "Hello, " } ] } } ], modelVersion: "gemini-3.5-flash" },
+      { candidates: [ { content: { role: "model", parts: [ { text: "world." } ] }, finishReason: "STOP" } ],
+        usageMetadata: { promptTokenCount: 30, cachedContentTokenCount: 10, candidatesTokenCount: 4, thoughtsTokenCount: 6 },
+        modelVersion: "gemini-3.5-flash" }
+    )
+  end
+
+  def call(**opts, &on_delta)
+    Gateway::Transport.new.call(**{ resolution: @resolution, system: "Be kind.", schema: nil,
+                                    messages: [ user_message("hi") ], params: {} }.merge(opts), &on_delta)
+  end
+
+  def gemini_sse(*events)
+    events.map { |e| "data: #{JSON.generate(e)}\n\n" }.join
+  end
+
+  def tool_call_stream
+    gemini_sse(
+      { candidates: [ { content: { role: "model", parts: [
+        { functionCall: { name: "lookup", args: { q: "bees" } }, thoughtSignature: "sig-g1" },
+        { functionCall: { name: "lookup", args: { q: "wasps" } } }
+      ] }, finishReason: "STOP" } ], usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 8 }, modelVersion: "gemini-3.5-flash" }
+    )
+  end
+
+  test "streams text, keeps Gemini's own finishReason, counts tokens, and turns max_tokens into maxOutputTokens" do
+    deltas = []
+    result = call(params: { "max_tokens" => 2048, "generationConfig" => { "thinkingConfig" => { "thinkingLevel" => "low" } } }) { |d| deltas << d }
+
+    assert_equal "Hello, world.", result.content
+    assert_equal [ "Hello, ", "world." ], deltas
+    assert_equal "STOP", result.stop_reason
+    assert_equal [ 20, 10, 10 ], [ result.input_tokens, result.output_tokens, result.cache_read_tokens ]
+    assert_equal "gemini-3.5-flash", result.model
+
+    assert_equal "models/gemini-3.5-flash:streamGenerateContent?alt=sse", StubbedPost.urls.last
+    payload = StubbedPost.payloads.last
+    assert_equal({ maxOutputTokens: 2048, thinkingConfig: { thinkingLevel: "low" } }, payload[:generationConfig])
+    assert_nil payload[:max_tokens]
+    assert_equal({ parts: [ { text: "Be kind." } ] }, payload[:systemInstruction])
+  end
+
+  test "a blocked reply is a refusal, in Gemini's word" do
+    StubbedPost.sse = gemini_sse({ candidates: [ { finishReason: "SAFETY" } ], usageMetadata: { promptTokenCount: 9 } })
+    result = call
+    assert_equal "SAFETY", result.stop_reason
+    response = Gateway::Response.from_transport(result, resolution: @resolution, started: 0)
+    assert response.refused?
+    refute response.empty?
+  end
+
+  test "a function call comes back unexecuted, its thought signature kept by call id" do
+    StubbedPost.sse = tool_call_stream
+    result = call(tools: TOOLS)
+    assert_equal [ { "q" => "bees" }, { "q" => "wasps" } ], result.tool_calls.map { |tc| tc["arguments"] }
+    first, second = result.tool_calls.map { |tc| tc["id"] }
+    assert_equal({ "gemini" => { first => "sig-g1" } }, result.reasoning)
+    refute_includes result.reasoning["gemini"].keys, second
+  end
+
+  test "a resumed tool round replays each call with the signature Gemini gave it" do
+    StubbedPost.sse = [ tool_call_stream, StubbedPost.sse ]
+    first = call(tools: TOOLS)
+    ids = first.tool_calls.map { |tc| tc["id"] }
+    messages = [ user_message("bees?"),
+                 { "role" => "assistant", "content" => "", "tool_calls" => first.tool_calls, "reasoning" => first.reasoning },
+                 { "role" => "tool", "tool_call_id" => ids[1], "content" => "wasps: ok" },
+                 { "role" => "tool", "tool_call_id" => ids[0], "content" => "bees: no", "error" => true } ]
+    call(messages: messages, tools: TOOLS)
+
+    contents = StubbedPost.payloads.last[:contents]
+    assert_equal %w[user model user], contents.map { |c| c[:role] }
+    calls = contents[1][:parts]
+    assert_equal "sig-g1", calls[0][:thoughtSignature]
+    assert_nil calls[1][:thoughtSignature]
+    responses = contents[2][:parts].map { |p| p[:functionResponse] }
+    assert_equal %w[lookup lookup], responses.map { |r| r[:name] }
+    assert_equal [ "[tool error] bees: no", "wasps: ok" ], responses.map { |r| r.dig(:response, :content).first[:text] },
+                 "results go back in call order, a failure said in words"
+  end
+
+  test "a tool round another provider made reaches Gemini with the documented stand-in signature" do
+    messages = [ user_message("bees?"),
+                 { "role" => "assistant", "content" => "", "tool_calls" => [ { "id" => "toolu_1", "name" => "lookup", "arguments" => { "q" => "bees" } } ],
+                   "reasoning" => { "anthropic" => [ { "type" => "thinking", "thinking" => "hm", "signature" => "sig-a" } ] } },
+                 { "role" => "tool", "tool_call_id" => "toolu_1", "content" => "bees: ok" } ]
+    call(messages: messages, tools: TOOLS)
+    call_part = StubbedPost.payloads.last[:contents][1][:parts].first
+    assert_equal "skip_thought_signature_validator", call_part[:thoughtSignature]
+    refute StubbedPost.payloads.last[:contents][1][:parts].any? { |p| p[:thought] }, "Anthropic's thinking stays with Anthropic"
+  end
+
+  test "Gemini has no embeddings here" do
+    assert_raises(Gateway::Invalid) { Gateway::Transport.new.embed(resolution: @resolution, texts: %w[one]) }
+  end
+end

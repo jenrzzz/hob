@@ -50,13 +50,16 @@ Coolify the forge keeps current) and `HOB_FORGE_PRINCIPAL` (default
 checks, commit statuses, and metadata on those repos).
 
 Providers resolve API keys from env at request time (`ANTHROPIC_API_KEY`,
-`HOB_OPENAI_COMPAT_KEY` + `HOB_OPENAI_COMPAT_BASE`). A model role with no
+`HOB_OPENAI_COMPAT_KEY` + `HOB_OPENAI_COMPAT_BASE`, `GCLOUD_API_KEY` for the
+`gemini` provider, which speaks Google's own API). A model role with no
 available provider fails with a 422, and new models are config rows in
 `model_roles` — never code changes. At the box, `hob:provider[openrouter,
 openai_compat,HOB_OPENROUTER_KEY,https://openrouter.ai/api/v1]` registers a
 provider (an env var's name, never the key), `hob:role[grok,openrouter,
 x-ai/grok-4.5] PARAMS='{"max_tokens":4096}'` makes a role on it, and
-`hob:roles` lists them.
+`hob:roles` lists them. A Gemini link's params are Gemini's
+own (`{"generationConfig":{"thinkingConfig":{"thinkingLevel":"high"}}}`),
+except `max_tokens`, which becomes `maxOutputTokens`.
 
 With `SENTRY_DSN` set, errors go to Sentry: unhandled ones, and the ones hob
 rescues and carries on from (a failed stream, a sentinel request or petition

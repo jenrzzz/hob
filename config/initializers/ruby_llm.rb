@@ -5,7 +5,7 @@ module HobRubyLLM
   # reason off the stream itself now, but normalizes it (end_turn -> :stop,
   # refusal -> :content_filter); hob's callers and ledger are promised the
   # provider's own word, which only travels in Anthropic's message_delta /
-  # OpenAI's finish_reason.
+  # OpenAI's finish_reason / Gemini's finishReason.
   module RawChunks
     def build_chunk(data)
       super.tap { |chunk| chunk.instance_variable_set(:@raw, data) }
@@ -13,6 +13,6 @@ module HobRubyLLM
   end
 end
 
-# The two wire protocols Gateway::Transport speaks. build_chunk comes from a
+# The wire protocols Gateway::Transport speaks. build_chunk comes from a
 # module each includes, so the prepend has to sit on the class.
-[ RubyLLM::Protocols::Anthropic, RubyLLM::Protocols::ChatCompletions ].each { |protocol| protocol.prepend(HobRubyLLM::RawChunks) }
+[ RubyLLM::Protocols::Anthropic, RubyLLM::Protocols::ChatCompletions, RubyLLM::Protocols::Gemini ].each { |protocol| protocol.prepend(HobRubyLLM::RawChunks) }

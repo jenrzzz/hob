@@ -5795,6 +5795,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261126000001'),
 ('20261124000007'),
 ('20261124000006'),
 ('20261124000005'),

@@ -21,6 +21,13 @@ Provider.find_or_create_by!(slug: "openrouter") do |p|
   p.config = { "api_key_env" => "HOB_OPENROUTER_KEY", "base_url" => "https://openrouter.ai/api/v1" }
 end
 
+# Google's own API, not its OpenAI-compatible endpoint (Provider::KINDS),
+# reached through Vertex AI: GCLOUD_API_KEY is an express-mode key.
+Provider.find_or_create_by!(slug: "gemini") do |p|
+  p.kind = "gemini"
+  p.config = { "api_key_env" => "GCLOUD_API_KEY", "base_url" => "https://aiplatform.googleapis.com/v1/publishers/google" }
+end
+
 # Voice (CASTS.md): speech, sound effects, and music. Only voice-* roles use it.
 Provider.find_or_create_by!(slug: "elevenlabs") do |p|
   p.kind = "elevenlabs"
@@ -111,7 +118,15 @@ end
   "claude-opus-5"          => [ 5.00, 25.00 ],
   "claude-opus-5-5"        => [ 4.00, 20.00, 0.20 ],
   "claude-fable-5-2"       => [ 8.00, 40.00, 0.20 ],
-  "text-embedding-3-large" => [ 0.13, 0.00, 0.00 ]
+  "text-embedding-3-large" => [ 0.13, 0.00, 0.00 ],
+  "gemini-3.8-flash"       => [ 0.75, 3.75, 0.075 ],
+  "gemini-3.7-flash"       => [ 0.75, 3.75, 0.075 ],
+  "gemini-3.6-flash"       => [ 0.75, 3.75, 0.075 ],
+  "gemini-3.5-flash"       => [ 1.50, 9.00, 0.15 ],
+  "gemini-3.5-flash-lite"  => [ 0.30, 2.50, 0.03 ],
+  "gemini-3.1-pro"         => [ 2.00, 12.00, 0.20 ],
+  "gemini-3.1-flash-lite"  => [ 0.25, 1.50, 0.025 ],
+  "gemini-3-flash"         => [ 0.50, 3.00, 0.05 ]
 }.each do |model, (input, output, cache_read)|
   next if ModelPrice.exists?(model: model)
 

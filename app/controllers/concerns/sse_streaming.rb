@@ -42,6 +42,7 @@ module SseStreaming
   def sse_status_for(error)
     case error
     when Gateway::RateLimited then "rate_limited"
+    when Gateway::LimitReached then "limit_reached"
     when Gateway::Unavailable then "unavailable"
     when Gateway::Invalid, ArgumentError then "invalid"
     else "error"

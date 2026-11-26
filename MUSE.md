@@ -400,6 +400,7 @@ the channel is missed.
 | `404 { "error": "not found" }` | no such request, petition, mission, or capability at your clearance | check the id or name |
 | `422 { "error": "..." }` | a bad body; the message says what | fix and retry once |
 | `503 { "status": "rate_limited" }` with `Retry-After` | slow down | wait that many seconds |
+| `503 { "status": "limit_reached" }` | the model provider's spend limit or credit is used up (the message says until when) | stop; tell the user; retrying won't help until it is raised |
 | `503 { "status": "unavailable" }` | hob or its model is down | back off: 30s, 60s, 120s, then leave it to the next scheduled run |
 
 Never loop on an error faster than once per 30 seconds.

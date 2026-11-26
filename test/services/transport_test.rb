@@ -115,6 +115,18 @@ class TransportTest < ActiveSupport::TestCase
     StubbedPost.error = RubyLLM::BadRequestError.new("400")
     assert_raises(Gateway::Invalid) { call }
   end
+
+  test "a used-up spend limit or credit is LimitReached, whatever status it came with" do
+    [ RubyLLM::BadRequestError.new("You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC."),
+      RubyLLM::BadRequestError.new("Your credit balance is too low to access the Anthropic API."),
+      RubyLLM::RateLimitError.new("You exceeded your current quota, please check your plan and billing details."),
+      RubyLLM::PaymentRequiredError.new("This request requires more credits") ].each do |error|
+      StubbedPost.error = error
+      raised = assert_raises(Gateway::LimitReached) { call }
+      assert_equal error.message, raised.message
+      assert_kind_of Gateway::Unavailable, raised
+    end
+  end
 end
 
 class TransportToolsTest < TransportTest

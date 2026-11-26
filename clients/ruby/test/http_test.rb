@@ -25,6 +25,7 @@ class HTTPTest < Minitest::Test
     assert_instance_of Hob::Unavailable, errors.for_response(502, { "error" => "tally answered HTTP 418" }), "a todo backend failing"
     assert_instance_of Hob::Unavailable, errors.for_response(502, {})
     assert_instance_of Hob::Unavailable, errors.for_response(503, { "error" => "down", "status" => "unavailable" })
+    assert_instance_of Hob::LimitReached, errors.for_response(503, { "error" => "usage limits", "status" => "limit_reached" })
     limited = errors.for_response(503, { "error" => "429", "status" => "rate_limited" }, retry_after: 30)
     assert_instance_of Hob::RateLimited, limited
     assert_equal 30, limited.retry_after
@@ -38,6 +39,9 @@ class HTTPTest < Minitest::Test
     errors = Hob::HTTP::Errors
     assert_instance_of Hob::Unavailable, errors.for_event(Hob::Event.new("type" => "error", "status" => "unavailable", "message" => "x"))
     assert_instance_of Hob::Invalid, errors.for_event(Hob::Event.new("type" => "error", "status" => "invalid"))
+    spent = errors.for_event(Hob::Event.new("type" => "error", "status" => "limit_reached", "message" => "regain access on 2026-12-01"))
+    assert_instance_of Hob::LimitReached, spent
+    assert_kind_of Hob::Unavailable, spent
     assert_instance_of Hob::Error, errors.for_event(Hob::Event.new("type" => "error", "status" => "error"))
   end
 

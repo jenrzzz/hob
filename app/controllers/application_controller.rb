@@ -31,6 +31,11 @@ class ApplicationController < ActionController::API
     render json: { error: e.message, status: "unavailable" }, status: :service_unavailable
   end
 
+  # Declared after Unavailable, which it is, so this one wins.
+  rescue_from Gateway::LimitReached do |e|
+    render json: { error: e.message, status: "limit_reached" }, status: :service_unavailable
+  end
+
   # 502 is also what a todo backend's failure, a push that APNs refused, and a
   # proxy in front of a restarting hob answer; the status says which this is.
   rescue_from Gateway::Unauthorized do |e|

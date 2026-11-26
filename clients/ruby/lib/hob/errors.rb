@@ -14,6 +14,7 @@ module Hob
   class Unauthorized < Error; end   # 401: bad hob key; 502 with status unauthorized: the provider rejected hob's credentials
   class NotFound < Error; end       # 404
   class Unavailable < Error; end    # 503 / any other 5xx / network: no provider, upstream down, hob restarting behind its proxy
+  class LimitReached < Unavailable; end # 503 with status limit_reached: the provider's spend limit or credit is used up
 
   # 503 with status rate_limited (upstream 429); retry_after in seconds when known.
   class RateLimited < Error

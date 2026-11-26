@@ -21,6 +21,10 @@ module Gateway
     end
   end
   class Refused < Error; end        # the model declined: a metered, distinct outcome
+  # The provider account's spend limit or prepaid credit is used up. An
+  # Unavailable, so a chain falls through to its next provider; its own
+  # status so a client can say "out of credit" rather than "down".
+  class LimitReached < Unavailable; end
 
   # Older names, kept for callers and rescue_from lists.
   NoProviderError = Class.new(Unavailable)

@@ -101,6 +101,12 @@ class GatewayTest < ActiveSupport::TestCase
     assert_equal "Unavailable: overloaded", UsageEvent.order(:id).last(2).first.error
   end
 
+  test "a spent provider falls through to the next link" do
+    @fake.fail(Gateway::LimitReached.new("You have reached your specified API usage limits.")).reply("from backup")
+    assert_equal "backup", Gateway.complete(role: "extractor", messages: [ user_message("x") ]).provider
+    assert_equal "LimitReached: You have reached your specified API usage limits.", UsageEvent.order(:id).last(2).first.error
+  end
+
   test "rate limits fall through too and are metered as rate_limited" do
     @fake.fail(Gateway::RateLimited.new("slow down", retry_after: 7)).reply("ok")
     Gateway.complete(role: "extractor", messages: [ user_message("x") ])

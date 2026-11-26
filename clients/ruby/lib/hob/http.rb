@@ -106,6 +106,8 @@ module Hob
         when 503
           if data.is_a?(Hash) && data["status"] == "rate_limited"
             RateLimited.new(message, retry_after: retry_after, **opts)
+          elsif data.is_a?(Hash) && data["status"] == "limit_reached"
+            LimitReached.new(message, **opts)
           else
             Unavailable.new(message, **opts)
           end
@@ -118,6 +120,7 @@ module Hob
         message = event.message || "stream error"
         case event.status
         when "rate_limited" then RateLimited.new(message, body: event.to_h)
+        when "limit_reached" then LimitReached.new(message, body: event.to_h)
         when "unavailable" then Unavailable.new(message, body: event.to_h)
         when "invalid" then Invalid.new(message, body: event.to_h)
         else Error.new(message, body: event.to_h)

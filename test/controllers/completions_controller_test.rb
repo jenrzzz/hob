@@ -70,6 +70,18 @@ class CompletionsControllerTest < ActionDispatch::IntegrationTest
     assert_response :service_unavailable
     assert_equal "unavailable", body["status"]
 
+    spent = "You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC."
+    @fake.fail(Gateway::LimitReached.new(spent)).fail(Gateway::LimitReached.new(spent))
+    post "/v1/completions", params: { role: "extractor", messages: [ { role: "user", content: "x" } ] }, headers: auth, as: :json
+    assert_response :service_unavailable
+    assert_equal "limit_reached", body["status"], "so a client can tell an empty account from an outage"
+    assert_equal spent, body["error"]
+
+    @fake.fail(Gateway::LimitReached.new(spent)).fail(Gateway::LimitReached.new(spent))
+    post "/v1/completions", params: { role: "extractor", messages: [ { role: "user", content: "x" } ] },
+         headers: auth("Accept" => "text/event-stream"), as: :json
+    assert_equal({ "type" => "error", "message" => spent, "status" => "limit_reached" }, sse_events.last)
+
     @fake.fail(Gateway::RateLimited.new("429", retry_after: 30))
     post "/v1/completions", params: { role: "chat-default", messages: [ { role: "user", content: "x" } ] }, headers: auth, as: :json
     assert_response :service_unavailable

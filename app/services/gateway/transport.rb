@@ -9,6 +9,18 @@ module Gateway
   # tools in-process; hob's venue is the client session (C), so a tool call
   # ends the request instead.
   class Transport
+    # A provider error that means the account is out of money, whatever
+    # status it came with: Anthropic's spend limit and empty credit balance
+    # arrive as 400s, OpenAI's and Gemini's used-up quota as a 429,
+    # OpenRouter's as a 402. Matched as a rescue clause, so it runs first.
+    module SpendLimit
+      PATTERN = /usage limits|credit balance is too low|insufficient[ _](?:quota|credits)|exceeded your current quota|more credits/i
+
+      def self.===(error)
+        error.is_a?(RubyLLM::PaymentRequiredError) || (error.is_a?(RubyLLM::Error) && PATTERN.match?(error.message.to_s))
+      end
+    end
+
     Result = Struct.new(:content, :stop_reason, :input_tokens, :output_tokens, :cache_read_tokens,
                         :cache_creation_tokens, :model, :tool_calls, :reasoning, keyword_init: true)
 
@@ -64,12 +76,14 @@ module Gateway
         tool_calls: (message.tool_calls || {}).values.map { |tc| { "id" => tc.id, "name" => tc.name, "arguments" => tc.arguments } },
         reasoning: reasoning_from(message)
       )
+    rescue SpendLimit => e
+      raise LimitReached, e.message
     rescue RubyLLM::RateLimitError => e
       raise RateLimited.new(e.message, retry_after: retry_after_from(e))
     rescue RubyLLM::OverloadedError, RubyLLM::ServiceUnavailableError, RubyLLM::ServerError,
            Faraday::ConnectionFailed, Faraday::TimeoutError => e
       raise Unavailable, e.message
-    rescue RubyLLM::UnauthorizedError, RubyLLM::ForbiddenError, RubyLLM::PaymentRequiredError => e
+    rescue RubyLLM::UnauthorizedError, RubyLLM::ForbiddenError => e
       raise Unauthorized, e.message
     rescue RubyLLM::BadRequestError, RubyLLM::ContextLengthExceededError, RubyLLM::Error => e
       raise Invalid, e.message
@@ -88,12 +102,14 @@ module Gateway
       vectors = result.vectors
       vectors = [ vectors ] unless vectors.first.is_a?(Array)
       { vectors: vectors, model: result.model, input_tokens: result.tokens&.input }
+    rescue SpendLimit => e
+      raise LimitReached, e.message
     rescue RubyLLM::RateLimitError => e
       raise RateLimited.new(e.message, retry_after: retry_after_from(e))
     rescue RubyLLM::OverloadedError, RubyLLM::ServiceUnavailableError, RubyLLM::ServerError,
            Faraday::ConnectionFailed, Faraday::TimeoutError => e
       raise Unavailable, e.message
-    rescue RubyLLM::UnauthorizedError, RubyLLM::ForbiddenError, RubyLLM::PaymentRequiredError => e
+    rescue RubyLLM::UnauthorizedError, RubyLLM::ForbiddenError => e
       raise Unauthorized, e.message
     rescue RubyLLM::Error => e
       raise Invalid, e.message

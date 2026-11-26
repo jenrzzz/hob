@@ -233,7 +233,7 @@ personas          ulid, entity_id, prompt jsonb, voice_id, default_role,
                   memory jsonb (defaults), card_import jsonb?
 prompt_snapshots  hash PK, assembled jsonb                               [RLS]
 
-providers         id, kind(anthropic|openai_compat|elevenlabs|transient), config
+providers         id, kind(anthropic|openai_compat|gemini|elevenlabs|transient), config
 model_roles       role PK, chain jsonb                  -- ordered provider/model fallbacks
 usage_events      id, principal, surface, role, provider, units jsonb, cost, ref
 

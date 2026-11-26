@@ -2061,7 +2061,7 @@ namespace :hob do
   desc "Register (or retune) a model provider. bin/rails \"hob:provider[openrouter,openai_compat,HOB_OPENROUTER_KEY," \
        "https://openrouter.ai/api/v1]\" (the env var's name, never the key; base_url for openai_compat)"
   task :provider, [ :slug, :kind, :api_key_env, :base_url ] => :environment do |_task, args|
-    abort "usage: bin/rails \"hob:provider[slug,anthropic|openai_compat,API_KEY_ENV,base_url]\"" if args[:api_key_env].blank?
+    abort "usage: bin/rails \"hob:provider[slug,anthropic|openai_compat|gemini,API_KEY_ENV,base_url]\"" if args[:api_key_env].blank?
 
     provider = Provider.find_or_initialize_by(slug: args[:slug])
     provider.update!(kind: args[:kind], config: { "api_key_env" => args[:api_key_env], "base_url" => args[:base_url].presence }.compact)

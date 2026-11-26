@@ -34,12 +34,19 @@ module Gateway
     end
     RubyLLM::Protocols::Anthropic::Tools.singleton_class.prepend(ErrorFlag)
 
+    # Gemini 3 refuses a replayed function call without the thought signature
+    # it came with. A call that never had one (a turn another provider made,
+    # before a fallback reached Gemini) carries the value Google documents
+    # for histories it did not produce.
+    FOREIGN_THOUGHT_SIGNATURE = "skip_thought_signature_validator".freeze
+
     def call(resolution:, system:, messages:, schema:, params:, tools: [], tool_choice: nil, &on_delta)
-      anthropic = resolution.provider.kind == "anthropic"
+      kind = resolution.provider.kind
+      anthropic = kind == "anthropic"
       chat = build_chat(resolution, params)
       chat = chat.with_instructions(system) if system.present?
       chat = chat.with_schema(schema) if schema
-      messages.each { |m| chat.add_message(message_for(m, anthropic: anthropic)) }
+      messages.each { |m| chat.add_message(message_for(m, kind: kind)) }
       # One explicit breakpoint where the caller marked the stable prefix
       # ends (the last history message), else at the last message, so each
       # round of a tool loop reads the previous round's prefix from cache.
@@ -62,7 +69,7 @@ module Gateway
         cache_read_tokens: message.tokens&.cache_read, cache_creation_tokens: message.tokens&.cache_write,
         model: message.model,
         tool_calls: (message.tool_calls || {}).values.map { |tc| { "id" => tc.id, "name" => tc.name, "arguments" => tc.arguments } },
-        reasoning: reasoning_from(message)
+        reasoning: reasoning_from(message, kind)
       )
     rescue RubyLLM::RateLimitError => e
       raise RateLimited.new(e.message, retry_after: retry_after_from(e))
@@ -78,12 +85,11 @@ module Gateway
     # -> { vectors:, model:, input_tokens: }
     def embed(resolution:, texts:)
       provider = resolution.provider
-      raise Invalid, "#{provider.slug} (#{provider.kind}) has no embeddings" if provider.kind == "anthropic"
+      # Gemini through Vertex embeds by :predict, which ruby_llm's Gemini
+      # protocol does not speak; only openai_compat embeds here.
+      raise Invalid, "#{provider.slug} (#{provider.kind}) has no embeddings" unless provider.kind == "openai_compat"
 
-      context = RubyLLM.context do |config|
-        config.openai_api_key = provider.api_key
-        config.openai_api_base = provider.config["base_url"]
-      end
+      context = RubyLLM.context { |config| configure(config, provider) }
       result = context.embed(texts, model: resolution.model, provider: :openai, assume_model_exists: true)
       vectors = result.vectors
       vectors = [ vectors ] unless vectors.first.is_a?(Array)
@@ -101,13 +107,33 @@ module Gateway
 
     private
 
-    # Anthropic's thinking blocks, verbatim with their signatures, as the
-    # provider returned them. A tool-use turn produced with thinking must be
-    # replayed with these blocks first in the assistant turn, so hob keeps
-    # them on the node (MEMORY.md, "Thinking and tools").
-    def reasoning_from(message)
-      raw = message.raw_reasoning
-      raw.is_a?(Hash) && raw["anthropic"].present? ? { "anthropic" => raw["anthropic"] } : nil
+    # What a provider needs back to resume a tool-use turn, keyed by kind so
+    # a fallback to another provider ignores it. Anthropic: its thinking
+    # blocks, verbatim with their signatures, replayed first in the assistant
+    # turn (MEMORY.md, "Thinking and tools"). Gemini: each function call's
+    # thought signature, by call id, replayed on the call.
+    def reasoning_from(message, kind)
+      case kind
+      when "anthropic"
+        raw = message.raw_reasoning
+        raw.is_a?(Hash) && raw["anthropic"].present? ? { "anthropic" => raw["anthropic"] } : nil
+      when "gemini"
+        signatures = (message.tool_calls || {}).values.select(&:thought_signature).to_h { |tc| [ tc.id, tc.thought_signature ] }
+        signatures.present? ? { "gemini" => signatures } : nil
+      end
+    end
+
+    def configure(config, provider)
+      case provider.kind
+      when "anthropic"
+        config.anthropic_api_key = provider.api_key
+      when "openai_compat"
+        config.openai_api_key = provider.api_key
+        config.openai_api_base = provider.config["base_url"]
+      when "gemini"
+        config.gemini_api_key = provider.api_key
+        config.gemini_api_base = provider.config["base_url"] if provider.config["base_url"].present?
+      end
     end
 
     def mark_cache_boundary(chat, messages)
@@ -117,28 +143,32 @@ module Gateway
 
     def build_chat(resolution, params)
       provider = resolution.provider
-      context = RubyLLM.context do |config|
-        case provider.kind
-        when "anthropic"
-          config.anthropic_api_key = provider.api_key
-        when "openai_compat"
-          config.openai_api_key = provider.api_key
-          config.openai_api_base = provider.config["base_url"]
-        end
-      end
+      context = RubyLLM.context { |config| configure(config, provider) }
 
       # assume_model_exists: a new model release is a config row, never a code
       # change. The cost is that ruby_llm's registry can't gate features, so
       # thinking and max_tokens ride in as raw params (see EXTRACTION.md A2).
       # An openai_compat server speaks chat completions; left to itself
-      # ruby_llm would send OpenAI's Responses API at it.
-      chat = context.chat(
-        model: resolution.model,
-        provider: provider.kind == "anthropic" ? :anthropic : :openai,
-        protocol: provider.kind == "anthropic" ? nil : :chat_completions,
-        assume_model_exists: true
-      )
+      # ruby_llm would send OpenAI's Responses API at it. Gemini is spoken to
+      # natively (generateContent), for its thought signatures and finish
+      # reasons.
+      chat = case provider.kind
+      when "anthropic" then context.chat(model: resolution.model, provider: :anthropic, assume_model_exists: true)
+      when "gemini" then context.chat(model: resolution.model, provider: :gemini, assume_model_exists: true)
+      else context.chat(model: resolution.model, provider: :openai, protocol: :chat_completions, assume_model_exists: true)
+      end
+      params = gemini_params(params) if provider.kind == "gemini"
       params.present? ? chat.with_provider_options(params.deep_symbolize_keys) : chat
+    end
+
+    # Raw params are the provider's own vocabulary, so a Gemini link says
+    # generationConfig.thinkingConfig itself. The one exception is
+    # max_tokens, which nearly every chain link and preset carries: it is
+    # Gemini's maxOutputTokens.
+    def gemini_params(params)
+      return params unless params.key?("max_tokens")
+
+      params.except("max_tokens").deep_merge("generationConfig" => { "maxOutputTokens" => params["max_tokens"] })
     end
 
     # Chat#generate asks once and returns the message with its tool calls
@@ -153,7 +183,8 @@ module Gateway
     # the thinking that preceded them), or a tool result (role "tool", which
     # each provider renders its own way). Images ride as attachments, their
     # bytes read from Blob by digest at the last moment.
-    def message_for(m, anthropic:)
+    def message_for(m, kind:)
+      anthropic = kind == "anthropic"
       attachments = attachments_for(m)
       case m["role"]
       when "tool"
@@ -164,8 +195,10 @@ module Gateway
         ToolResultMessage.new(role: :tool, content: content, tool_call_id: m["tool_call_id"],
                               attachments: attachments, hob_error: m["error"] && anthropic)
       when "assistant"
+        signatures = kind == "gemini" ? gemini_signatures(m) : {}
         calls = Array(m["tool_calls"]).to_h do |tc|
-          [ tc["id"], RubyLLM::ToolCall.new(id: tc["id"], name: tc["name"], arguments: tc["arguments"] || {}) ]
+          [ tc["id"], RubyLLM::ToolCall.new(id: tc["id"], name: tc["name"], arguments: tc["arguments"] || {},
+                                            thought_signature: signatures[tc["id"]]) ]
         end
         reasoning = anthropic ? m["reasoning"] : nil
         content = calls.empty? ? m["content"] : m["content"].presence
@@ -173,6 +206,17 @@ module Gateway
       else
         RubyLLM::Message.new(role: :user, content: m["content"], attachments: attachments)
       end
+    end
+
+    # The signatures Gemini gave this turn's calls; for a turn it did not
+    # make, the documented stand-in on the first call (only the first of a
+    # parallel set carries one).
+    def gemini_signatures(m)
+      stored = m.dig("reasoning", "gemini")
+      return stored if stored.is_a?(Hash) && stored.present?
+
+      first = Array(m["tool_calls"]).first
+      first ? { first["id"] => FOREIGN_THOUGHT_SIGNATURE } : {}
     end
 
     EXTENSIONS = { "image/png" => "png", "image/jpeg" => "jpg", "image/gif" => "gif", "image/webp" => "webp" }.freeze
@@ -187,10 +231,13 @@ module Gateway
 
     # Anthropic: message_delta.delta.stop_reason (stream) / stop_reason (sync).
     # OpenAI-compatible: choices[0].finish_reason on both paths.
+    # Gemini: candidates[0].finishReason, or promptFeedback.blockReason when
+    # the prompt itself was blocked and no candidate came back.
     def stop_reason_from(data)
       return nil unless data.is_a?(Hash)
 
-      data.dig("delta", "stop_reason") || data["stop_reason"] || data.dig("choices", 0, "finish_reason")
+      data.dig("delta", "stop_reason") || data["stop_reason"] || data.dig("choices", 0, "finish_reason") ||
+        data.dig("candidates", 0, "finishReason") || data.dig("promptFeedback", "blockReason")
     end
 
     def retry_after_from(error)

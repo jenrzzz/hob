@@ -1,7 +1,13 @@
 module Gateway
   # The normalized outcome of one provider call (A1).
   class Response
-    REFUSAL_STOP_REASONS = %w[refusal content_filter].freeze
+    # Anthropic's refusal, OpenAI's content_filter, and Gemini's blocks (as
+    # a finishReason or a prompt's blockReason).
+    REFUSAL_STOP_REASONS = %w[
+      refusal content_filter
+      SAFETY RECITATION BLOCKLIST PROHIBITED_CONTENT SPII IMAGE_SAFETY IMAGE_RECITATION
+      IMAGE_PROHIBITED_CONTENT MODEL_ARMOR
+    ].freeze
 
     attr_accessor :content, :parsed, :stop_reason, :input_tokens, :output_tokens, :cache_read_tokens,
                   :cache_creation_tokens, :model, :provider, :duration_ms, :tool_calls, :reasoning

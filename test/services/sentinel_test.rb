@@ -211,6 +211,23 @@ class SentinelTest < ActiveSupport::TestCase
     Sentinel::Webhook.transport = nil
   end
 
+  test "a webhook's _images go to the caller, not the row, and only well-formed raster ones pass" do
+    Capability.create!(name: "kat.item", description: "Look", kind: "read", realm: "household",
+                       venue: "webhook", config: { "url" => "https://kat.test/hob/capabilities/kat.item", "secret" => "s3cret" })
+    policy!(nil, "kat.item", "allow")
+    jpeg = { "data" => "AAAA", "mimeType" => "image/jpeg" }
+    answer = { "id" => 7, "_images" => [ jpeg, { "data" => "PHN2Zz4=", "mimeType" => "image/svg+xml" }, "nonsense" ] + [ jpeg ] * 5 }
+    Sentinel::Webhook.transport = ->(*) { [ "200", JSON.generate(answer) ] }
+
+    request = submit("kat.item", { "id" => 7 })
+    assert_equal "completed", request.status
+    assert_equal({ "id" => 7 }, request.result)
+    assert_equal [ jpeg ] * Sentinel::Executor::WEBHOOK_IMAGE_LIMIT, request.images
+    assert_empty SentinelRequest.find(request.id).images
+  ensure
+    Sentinel::Webhook.transport = nil
+  end
+
   test "the gate denies a capability nobody has accepted, whatever rule matches" do
     cap = Capability.create!(name: "mise.pantry.scan", description: "Pantry", kind: "read", realm: "household",
                              venue: "webhook", enabled: false, accepted_at: nil,

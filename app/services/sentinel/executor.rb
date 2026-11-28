@@ -16,7 +16,7 @@ module Sentinel
       as_agent(request) do
         case capability.venue
         when "native" then finish_native!(request, capability.handler.new(request).call)
-        when "webhook" then request.finish!(Webhook.deliver(capability, request))
+        when "webhook" then finish_webhook!(request, Webhook.deliver(capability, request))
         when "poll" then dispatch(request, capability)
         end
       end
@@ -36,6 +36,20 @@ module Sentinel
     def finish_native!(request, result)
       result, images = Native.split_images(result)
       request.images = images
+      request.finish!(result)
+    end
+
+    # A surface may hand back images the same way (`_images`: [{ data, mimeType }]),
+    # so a library can show an agent what it found. Only well-formed raster
+    # images pass, and only a few; the rest of the answer is stored as usual.
+    WEBHOOK_IMAGE_TYPES = %w[image/jpeg image/png image/gif image/webp].freeze
+    WEBHOOK_IMAGE_LIMIT = 4
+
+    def finish_webhook!(request, result)
+      result, images = Native.split_images(result)
+      request.images = images.select do |image|
+        image.is_a?(Hash) && image["data"].is_a?(String) && WEBHOOK_IMAGE_TYPES.include?(image["mimeType"])
+      end.first(WEBHOOK_IMAGE_LIMIT)
       request.finish!(result)
     end
 

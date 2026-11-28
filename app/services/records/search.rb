@@ -19,7 +19,8 @@ module Records
     module_function
 
     # -> [Hit], best first. With no query, `sample` instead.
-    def search(collection, query:, limit: DEFAULT_LIMIT)
+    # warp: 0..1, a dose (Dose), as in Memory.recall.
+    def search(collection, query:, limit: DEFAULT_LIMIT, warp: 0.0)
       limit = limit.to_i.clamp(1, MAX_LIMIT)
       base = collection.records.live
       rows = {}
@@ -39,10 +40,8 @@ module Records
 
       if collection.embed_path && (embedded = Memory::Embedder.query(query))
         vector, model = embedded
-        base.where(embedding_model: model).where.not(embedding: nil)
-            .select(Record.sanitize_sql_array([ "records.*, (records.embedding <=> ?::vector) AS distance", vector ]))
-            .order(Arel.sql("distance ASC")).limit(CANDIDATES).each do |r|
-          similarity = 1.0 - r.attributes["distance"].to_f
+        near = base.where(embedding_model: model).where.not(embedding: nil)
+        Memory::Embedder.nearest(near, column: "records.embedding", vector: vector, limit: CANDIDATES, warp: warp).each do |r, similarity|
           next if similarity < MIN_SIMILARITY
 
           rows[r.id] = r
@@ -51,7 +50,7 @@ module Records
         end
       end
 
-      rows.values.map { |r| Hit.new(record: r, score: (0.65 * hits[r.id][:sim] + 0.35 * hits[r.id][:kw]).round(4),
+      rows.values.map { |r| Hit.new(record: r, score: (0.65 * hits[r.id][:sim] + 0.35 * (1.0 - warp.to_f) * hits[r.id][:kw]).round(4),
                                     reasons: hits[r.id][:reasons]) }
           .sort_by { |hit| [ -hit.score, hit.record.key ] }
           .first(limit)

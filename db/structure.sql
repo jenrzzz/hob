@@ -1248,7 +1248,8 @@ CREATE TABLE public.personas (
     clock jsonb DEFAULT '{}'::jsonb NOT NULL,
     tools jsonb DEFAULT '{}'::jsonb NOT NULL,
     life jsonb DEFAULT '{}'::jsonb NOT NULL,
-    wake jsonb DEFAULT '{}'::jsonb NOT NULL
+    wake jsonb DEFAULT '{}'::jsonb NOT NULL,
+    dose jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 
@@ -5795,6 +5796,7 @@ ALTER TABLE public.usage_payloads ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261128000001'),
 ('20261126000001'),
 ('20261124000007'),
 ('20261124000006'),

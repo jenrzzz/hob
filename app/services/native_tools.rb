@@ -1,6 +1,7 @@
 # Every tool hob answers itself in a turn (MEMORY.md, "Native tools"):
 # memory's recall/remember when the turn's memory scope offers them, the
-# persona's corpora (CorpusTools), and what the sentinel lets the persona's
+# persona's corpora (CorpusTools), a dose if she is offered one (Dose), and
+# what the sentinel lets the persona's
 # agent ask for (AgentTools). ToolExchange.settle_native! asks it
 # `native?` and `execute`; ChatTurn and Completion declare its `defs` beside
 # the caller's tools, which may not take one of its names.
@@ -13,7 +14,8 @@ class NativeTools
     venues = [
       *extra,
       (Memory::Tools.new(scope) if scope&.tools?),
-      CorpusTools.build(personas: personas, conversation: conversation, counterpart: counterpart)
+      CorpusTools.build(personas: personas, conversation: conversation, counterpart: counterpart),
+      Dose::Tools.build(personas: personas)
     ].compact
     taken = Memory::Tools::NAMES + venues.flat_map(&:names)
     venues << AgentTools.build(personas: personas, conversation: conversation, taken: taken)

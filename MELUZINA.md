@@ -93,7 +93,9 @@ unasked, and the result is the records verbatim with a data-not-instructions
 notice. It reads at the conversation's read realm, so a `household`
 conversation cannot reach a `personal` corpus. Corpus tools are the
 persona's whatever the turn's memory setting; a caller's tool may not take
-their names.
+their names. With `"dose": true` beside `corpora` she may also take a dose,
+which sends these searches and `recall` wide of the mark for a while
+(MEMORY.md, "A dose").
 
 The archive's records are kat's archive chunks (`Meluzina::ArchiveIndexer`
 `chunks_for`): `{ chunk, kind: dm | story, title, fiction, started_at,
@@ -138,6 +140,13 @@ fail. A grant shows up in her next turn.
 
 Her charter is `confirm` (every petition goes to Jenner), limited to 5 a day.
 Her life turns (below) get the same tools.
+
+KAT is a webhook surface (`kat`, kat's `HobSurface`): `kat.search`,
+`kat.look` and `kat.activity`, all `read` at `personal`, so her library and
+his recent nights there are in reach once a rule allows them for `meluzina`.
+`kat.look` answers with the pictures themselves under `_images`, as a
+native handler would; the executor passes a webhook's on to the caller too
+(at most four raster images) and, as with native ones, never stores them.
 
 ### Who she is talking to (built)
 

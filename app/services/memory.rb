@@ -172,7 +172,10 @@ module Memory
   # about:  entities (ids/refs/names) the caller is asking about
   # author: a persona's entity; scope "mine" keeps only what she authored
   # budget: characters of rendered lines (Memory.line) to return at most
-  def recall(query: nil, about: [], author: nil, scope: "all", limit: RECALL_LIMIT, budget: RECALL_BUDGET, now: Time.current)
+  # warp:   0..1, how far a dose has her recall off true (Dose): the
+  #         neighbours overshoot (Embedder.nearest) and her words hold less
+  def recall(query: nil, about: [], author: nil, scope: "all", limit: RECALL_LIMIT, budget: RECALL_BUDGET, now: Time.current,
+             warp: 0.0)
     raise Gateway::Invalid, "scope is all or mine" unless %w[all mine].include?(scope.to_s)
     raise Gateway::Invalid, "scope mine needs a persona" if scope.to_s == "mine" && author.nil?
 
@@ -204,14 +207,12 @@ module Memory
 
     if query.present? && (embedded = Embedder.query(query))
       vector, model = embedded
-      base.where(embedding_model: model).where.not(embedding: nil)
-          .select(Observation.sanitize_sql_array([ "observations.*, (embedding <=> ?::vector) AS distance", vector ]))
-          .order(Arel.sql("distance ASC")).limit(CANDIDATES).each do |o|
-        similarity = 1.0 - o.attributes["distance"].to_f
+      near = base.where(embedding_model: model).where.not(embedding: nil)
+      Embedder.nearest(near, column: "observations.embedding", vector: vector, limit: CANDIDATES, warp: warp).each do |o, similarity|
         next if similarity < MIN_SIMILARITY && !rows.key?(o.id)
 
         rows[o.id] = o
-        hits[o.id][:sim] = [ 1.0 - o.attributes["distance"].to_f, 0.0 ].max
+        hits[o.id][:sim] = [ similarity, 0.0 ].max
         hits[o.id][:reasons] << "similar"
       end
     end
@@ -227,7 +228,7 @@ module Memory
       h = hits[o.id]
       age_days = [ (now - o.observed_at) / 1.day, 0 ].max
       recency = 0.5**(age_days / RECENCY_HALF_LIFE_DAYS)
-      score = (0.45 * h[:sim]) + (0.25 * h[:kw]) + (0.2 * h[:about]) + (0.1 * recency)
+      score = (0.45 * h[:sim]) + (0.25 * (1.0 - warp.to_f) * h[:kw]) + (0.2 * h[:about]) + (0.1 * recency)
       Hit.new(observation: o, score: score.round(4), reasons: h[:reasons].uniq)
     end
     scored.sort_by! { |hit| [ -hit.score, -hit.observation.observed_at.to_f ] }

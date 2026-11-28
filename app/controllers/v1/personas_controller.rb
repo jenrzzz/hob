@@ -46,8 +46,8 @@ module V1
         # Memory defaults (MEMORY.md): off unless set; a turn's memory: overrides.
         h[:memory] = params[:memory].permit(:recall, :tools, :budget, :own, about: [], review: %i[every_days realm]).to_h if params[:memory].respond_to?(:permit)
         # Native corpus tools (MELUZINA.md, "Searchable collections"); {} turns them off.
-        # Not `agent`: that link is set with hob:persona:agent only.
-        h[:tools] = params[:tools].permit(corpora: [ :tool, :collection, :description, { with: [] } ]).to_h if params[:tools].respond_to?(:permit)
+        # Not `agent`: that link is set with hob:persona:agent only. `dose`: MEMORY.md, "A dose".
+        h[:tools] = params[:tools].permit(:dose, corpora: [ :tool, :collection, :description, { with: [] } ]).to_h if params[:tools].respond_to?(:permit)
         # Her life between conversations (PersonaLife); {} turns it off. Not `home`.
         if params[:life].respond_to?(:permit)
           h[:life] = params[:life].permit(:instruction, :realm, :zone, :min_gap_minutes, :role, :max_iterations, :dial, :note,

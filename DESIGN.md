@@ -98,7 +98,7 @@ Every request's context is composed by an ordered pipeline of **stages**, each w
 persona → world/lore → memory recall → surface context → history → tool schemas
 ```
 
-*(As built: `persona → memory → scenario → history → clock → situation → instruction`; the persona stage also renders the persona's sheet after its constitution (MEMORY.md), and `clock` runs only for a persona that keeps one (MELUZINA.md).)*
+*(As built: `persona → memory → scenario → history → clock → dose → situation → instruction`; the persona stage also renders the persona's sheet after its constitution (MEMORY.md), and `clock` runs only for a persona that keeps one (MELUZINA.md), `dose` only while she is on one (MEMORY.md, "A dose").)*
 
 - Stages are pluggable units registered in hob; surfaces and personas can override the stage list or budgets, but the *defaults are opinionated* — this is where ST's prompt-manager spaghetti goes to die.
 - **History** is budget-aware: newest-first fill, with rolling summarization of the evicted middle (summaries are themselves realm-tainted derived artifacts).

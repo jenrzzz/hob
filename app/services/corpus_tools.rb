@@ -6,7 +6,7 @@
 #
 # Each entry is a tool beside recall/remember that searches its collection
 # and returns the records verbatim, so a persona can quote what is really
-# there. With no query it brings something up unasked (Records::Search.sample).
+# there (on a dose, Dose, the search is off true; the records are not). With no query it brings something up unasked (Records::Search.sample).
 # Reads run at the conversation's read realm, like memory's: what comes back
 # lands in the conversation's nodes, which anyone cleared for the
 # conversation can read.
@@ -55,12 +55,13 @@ class CorpusTools
 
     corpora = Array(personas.first.tools.to_h["corpora"]).map { |c| c.to_h.stringify_keys }
     corpora = corpora.select { |c| counterpart.among?(c["with"]) } if counterpart
-    corpora.any? ? new(corpora: corpora, conversation: conversation) : nil
+    corpora.any? ? new(corpora: corpora, conversation: conversation, persona: personas.first) : nil
   end
 
-  def initialize(corpora:, conversation:)
+  def initialize(corpora:, conversation:, persona: nil)
     @corpora = corpora.index_by { |c| c["tool"] }
     @conversation = conversation
+    @persona = persona
   end
 
   def names
@@ -95,7 +96,8 @@ class CorpusTools
       collection = Records.collection!(corpus["collection"])
       query = args["query"].to_s.strip
       hits = if query.present?
-        Records::Search.search(collection, query: query, limit: args["limit"] || Records::Search::DEFAULT_LIMIT)
+        Records::Search.search(collection, query: query, limit: args["limit"] || Records::Search::DEFAULT_LIMIT,
+                               warp: Dose.warp(@persona))
       else
         Records::Search.sample(collection, limit: args["limit"] || 1)
       end

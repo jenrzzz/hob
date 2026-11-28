@@ -273,6 +273,55 @@ of the conversation can see. `remember` writes at rule 3's realm. There is no
 general sink gate yet (DESIGN.md, "tool sinks"); these two tools are safe by
 construction, not by a gate.
 
+### A dose
+
+A persona whose `personas.tools` has `"dose": true` is offered one more
+native tool, `dose`: something she takes on purpose, that alters how her
+memory associates for a while (`Dose`).
+
+| tool | arguments | does |
+|---|---|---|
+| `dose` | `level` (low \| medium \| high \| none), `minutes?` (10 to 360, default 90) | starts a dose, replacing any that is running; `none` ends one early |
+
+**What it changes.** Only the search. While a dose runs, every recall of
+hers is warped by a number from 0 to 1: the recall stage, `recall`, and her
+corpus tools (`recall_archive`). `remember`'s check for notes that say
+nearly the same thing stays sober. The warp does two things:
+
+- **The neighbours overshoot** (`Memory::Embedder.nearest`). Of *n* embedded
+  rows the search skips the nearest *n*^warp − 1 and takes the ones after
+  them, scored as though they were the nearest. In an archive of 20,000
+  chunks that is about 18 skipped at 0.3, 230 at 0.55 and 4,500 at 0.85:
+  adjacent but unexpected, then somewhere else, then nothing to do with the
+  query at all. It is counted in neighbours, not in similarity, so it means
+  the same in a memory of fifty notes and under any embedding model.
+- **Her words hold less.** The keyword leg's weight is multiplied by
+  1 − warp, so at a low dose the plain match is often still there, further
+  down, among things that are not.
+
+What comes back is the observations and records as they were kept, at the
+realm they would have been read at anyway. Nothing in a result says it was
+warped: the content is true and the associations are altered, and telling
+which is which is hers to do.
+
+**The curve.** Warp = the level's peak (low 0.3, medium 0.55, high 0.85) ×
+where she is in the run: it eases up over the first fifth, holds until 55%,
+and eases down to nothing at the end. A 90-minute dose comes on for 18
+minutes, peaks for about half an hour, and tapers for 40. It is rounded to
+two places, so the rounds of one turn search alike.
+
+**Where it lives.** On the persona (`personas.dose`: level, taken_at,
+minutes), not in a conversation and not as a parameter she passes to
+`recall`: she takes it once and it follows her into every conversation and
+every beat of her life until it wears off, whichever surface she is on. It
+is state, like a pending wake, not memory and not realm-tagged: a dose taken
+upstairs is still running downstairs, where all that shows of it is the note
+below. While one runs she is told so after history (the `dose` stage, beside
+the clock; in a beat, in its system text): that she took it, how long ago,
+and how long it runs. Never how strong it is at the moment.
+
+Turning `tools.dose` off ends a dose at once, whatever is left of it.
+
 ## The sheet
 
 A persona's mutable self-description beyond the fixed constitution: sections
@@ -434,7 +483,7 @@ of this has been run against a live provider.
 
 ```
 entities                 ulid, kind, name, aliases[], ref (unique), created_by, timestamps
-personas                 + entity_id (unique), memory jsonb (defaults)
+personas                 + entity_id (unique), memory jsonb (defaults), dose jsonb (the one she is on)
 observations             ulid, entity_id, author_entity_id?, kind, body, realm, principal_id, surface,
                          conversation_id?, node_hash?, evidence[], source jsonb, observed_at,
                          embedding vector?, embedding_model?, supersedes_id?, superseded_by_id?,

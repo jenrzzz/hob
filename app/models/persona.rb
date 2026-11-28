@@ -72,7 +72,7 @@ class Persona < ApplicationRecord
   private
 
   def tools_read
-    (CorpusTools.problems(tools || {}) + AgentTools.problems(tools || {})).each { |problem| errors.add(:tools, problem) }
+    (CorpusTools.problems(tools || {}) + AgentTools.problems(tools || {}) + Dose.problems(tools || {})).each { |problem| errors.add(:tools, problem) }
   end
 
   def relations_read

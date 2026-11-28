@@ -12,6 +12,7 @@ module Assembly
       { "name" => "scenario", "enabled" => true, "budget" => 2_000 },
       { "name" => "history", "enabled" => true, "budget" => 8_000 },
       { "name" => "clock", "enabled" => true, "budget" => 300 },
+      { "name" => "dose", "enabled" => true, "budget" => 100 },
       { "name" => "situation", "enabled" => true, "budget" => 400 },
       { "name" => "instruction", "enabled" => true, "budget" => 1_000 }
     ].freeze
@@ -57,6 +58,12 @@ module Assembly
         at = (@stage_config.index { |c| c["name"] == "history" } || @stage_config.size - 1) + 1
         @stage_config = @stage_config.dup.insert(at, { "name" => "clock", "enabled" => true, "budget" => 300 })
       end
+      # And a dose she is on (Dose): after the clock, or after history.
+      if dose && @stage_config.none? { |c| c["name"] == "dose" }
+        at = (@stage_config.index { |c| c["name"] == "clock" } || @stage_config.index { |c| c["name"] == "history" } ||
+              @stage_config.size - 1) + 1
+        @stage_config = @stage_config.dup.insert(at, { "name" => "dose", "enabled" => true, "budget" => 100 })
+      end
     end
 
     def assemble
@@ -91,6 +98,7 @@ module Assembly
       when "scenario" then scenario_stage(config["budget"])
       when "history" then history_stage(config["budget"] || 8_000)
       when "clock" then clock_stage
+      when "dose" then dose_stage
       when "situation" then situation_stage(config["budget"] || 400)
       when "instruction" then instruction_stage
       end
@@ -148,7 +156,7 @@ module Assembly
       query = @head&.ancestry&.find { |n| n.role == "user" && n.kind == "text" }&.content
       hits = @memory.read do
         Memory.recall(query: query, about: @memory.about, author: @memory.author, scope: @memory.recall_scope,
-                      budget: budget * 4)
+                      budget: budget * 4, warp: dose&.warp || 0.0)
       end
       return nil if hits.empty?
 
@@ -281,6 +289,23 @@ module Assembly
       return @clock if defined?(@clock)
 
       @clock = @personas.one? ? Clock.for(@personas.first) : nil
+    end
+
+    # The dose the one persona of this turn is on (Dose), if any.
+    def dose
+      return @dose if defined?(@dose)
+
+      @dose = @personas.one? ? Dose.of(@personas.first) : nil
+    end
+
+    # That she took something, said after history like the clock: it changes
+    # by the minute, and the recall stage above it is already bent by it.
+    def dose_stage
+      return nil unless dose
+
+      text = dose.note
+      { "name" => "dose", "level" => dose.level, tokens: Assembly.estimate_tokens(text),
+        messages: [ { "role" => "user", "content" => text } ] }
     end
 
     # Prefix the marked user lines, in the assembled copy only.

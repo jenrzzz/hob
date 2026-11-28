@@ -300,12 +300,16 @@ module Assembly
 
     # That she took something, said after history like the clock: it changes
     # by the minute, and the recall stage above it is already bent by it.
+    # Its frame, while in force, ends the system text: it changes twice in a
+    # dose, so the prefix above it stays cached.
     def dose_stage
       return nil unless dose
 
       text = dose.note
-      { "name" => "dose", "level" => dose.level, tokens: Assembly.estimate_tokens(text),
-        messages: [ { "role" => "user", "content" => text } ] }
+      frame = dose.wrap(@personas.first)
+      { "name" => "dose", "level" => dose.level, "frame" => (dose.frame if frame),
+        tokens: Assembly.estimate_tokens([ text, frame ].compact.join("\n")),
+        system: frame, messages: [ { "role" => "user", "content" => text } ] }.compact
     end
 
     # Prefix the marked user lines, in the assembled copy only.

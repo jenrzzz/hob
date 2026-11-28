@@ -39,7 +39,7 @@ module V1
     def persona_params
       params.permit(:key, :name, :model_role, :voice_id).to_h.tap do |h|
         if params[:prompt].present?
-          h[:prompt] = params[:prompt].permit(:system_core, :instruction, greetings: [], examples: []).to_h
+          h[:prompt] = params[:prompt].permit(:system_core, :instruction, greetings: [], examples: [], frames: %i[tight loose]).to_h
           # Who a particular someone is to her (Assembly::Counterpart), keyed by ref.
           h[:prompt][:relations] = params[:prompt][:relations].permit!.to_h if params[:prompt][:relations].respond_to?(:permit!)
         end

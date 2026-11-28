@@ -94,8 +94,9 @@ notice. It reads at the conversation's read realm, so a `household`
 conversation cannot reach a `personal` corpus. Corpus tools are the
 persona's whatever the turn's memory setting; a caller's tool may not take
 their names. With `"dose": true` beside `corpora` she may also take a dose,
-which sends these searches and `recall` wide of the mark for a while
-(MEMORY.md, "A dose").
+which sends these searches and `recall` wide of the mark for a while, and
+may loosen or tighten the frame she speaks inside (MEMORY.md, "A dose").
+kat may push her own wording of the two frames as `prompt.frames`.
 
 The archive's records are kat's archive chunks (`Meluzina::ArchiveIndexer`
 `chunks_for`): `{ chunk, kind: dm | story, title, fiction, started_at,

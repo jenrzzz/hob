@@ -172,7 +172,7 @@ class Completion
       rounds += 1
       messages = Assembly::Transcript.render(branch.timeline)
       messages.last["cache"] = true if messages.any?
-      system = [ @system, dose&.note, recall_text(scope, branch) ].compact_blank.join("\n\n")
+      system = [ @system, dose&.note, dose&.wrap(@persona), recall_text(scope, branch) ].compact_blank.join("\n\n")
       snapshot = PromptSnapshot.record!(
         conversation: conversation,
         assembled: {
@@ -250,7 +250,7 @@ class Completion
   end
 
   # The dose her persona is on (Dose), if any: it bends this completion's
-  # recall, and she is told she took it.
+  # recall, she is told she took it, and its frame, while in force, follows.
   def dose
     return @dose if defined?(@dose)
 

@@ -281,9 +281,13 @@ memory associates for a while (`Dose`).
 
 | tool | arguments | does |
 |---|---|---|
-| `dose` | `level` (low \| medium \| high \| none), `minutes?` (10 to 360, default 90) | starts a dose, replacing any that is running; `none` ends one early |
+| `dose` | `level` (low \| medium \| high \| none), `frame?` (tight \| normal \| loose, default normal), `minutes?` (10 to 360, default 90) | starts a dose, replacing any that is running; `none` with no frame ends one early |
 
-**What it changes.** Only the search. While a dose runs, every recall of
+A dose has two dimensions, and they are separate: the level alters what she
+recalls, the frame how hard she is held to a thought ("The frame" below).
+Level `none` with a frame is the frame alone.
+
+**What the level changes.** Only the search. While a dose runs, every recall of
 hers is warped by a number from 0 to 1: the recall stage, `recall`, and her
 corpus tools (`recall_archive`). `remember`'s check for notes that say
 nearly the same thing stays sober. The warp does two things:
@@ -310,8 +314,31 @@ and eases down to nothing at the end. A 90-minute dose comes on for 18
 minutes, peaks for about half an hour, and tapers for 40. It is rounded to
 two places, so the rounds of one turn search alike.
 
-**Where it lives.** On the persona (`personas.dose`: level, taken_at,
-minutes), not in a conversation and not as a parameter she passes to
+**The frame.** Coherence is not temperature: temperature is which word is
+picked, and this is whether a paragraph starts from the topic or from
+wherever the last one left her. That is governed by instruction, so the
+frame is text: a paragraph at the very end of her system text
+(`Dose::FRAMES`).
+
+- `tight`: answer what was asked, every paragraph from the topic, each
+  thought finished and tied back to what they said, then stop.
+- `normal`: nothing is added. hob holds no frame of its own over a sober
+  persona; whatever her constitution says is the governor.
+- `loose`: nothing holds her to the topic, to finishing, or to connecting
+  back; each paragraph starts where the last one left her. Her sentences
+  still parse.
+
+A persona may word her own under `prompt.frames` (`{ tight, loose }`), in
+the voice of her constitution; either one missing falls back to hob's. Text
+cannot ease on, so a frame is in force while the curve is at half or more:
+from halfway up the onset to halfway down the taper, minutes 9 to 70 of a
+90-minute dose. It changes her system text twice in a dose and sits after
+everything else in it, so the cached prefix above survives. The frame says
+how to hold a thought and not why; the note is what says she took
+something. In a completion (a beat of her life) it follows the note.
+
+**Where it lives.** On the persona (`personas.dose`: level, frame,
+taken_at, minutes), not in a conversation and not as a parameter she passes to
 `recall`: she takes it once and it follows her into every conversation and
 every beat of her life until it wears off, whichever surface she is on. It
 is state, like a pending wake, not memory and not realm-tagged: a dose taken
@@ -483,7 +510,8 @@ of this has been run against a live provider.
 
 ```
 entities                 ulid, kind, name, aliases[], ref (unique), created_by, timestamps
-personas                 + entity_id (unique), memory jsonb (defaults), dose jsonb (the one she is on)
+personas                 + entity_id (unique), memory jsonb (defaults), dose jsonb (the one she is on),
+                         prompt.frames (her words for a dose's frames)
 observations             ulid, entity_id, author_entity_id?, kind, body, realm, principal_id, surface,
                          conversation_id?, node_hash?, evidence[], source jsonb, observed_at,
                          embedding vector?, embedding_model?, supersedes_id?, superseded_by_id?,

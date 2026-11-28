@@ -1,7 +1,7 @@
 class Persona < ApplicationRecord
   validates :key, presence: true, uniqueness: true
   validates :name, presence: true
-  validate :clock_reads, :tools_read, :life_reads, :relations_read
+  validate :clock_reads, :tools_read, :life_reads, :relations_read, :frames_read
 
   belongs_to :entity, optional: true
   has_many :sheet_revisions, class_name: "PersonaSheetRevision", dependent: :restrict_with_exception
@@ -27,7 +27,8 @@ class Persona < ApplicationRecord
 
   # prompt keys: system_core (required), greetings [], examples [],
   # instruction (optional trailing user-turn text, B3), relations (who a
-  # particular someone is to her, Assembly::Counterpart)
+  # particular someone is to her, Assembly::Counterpart), frames (her own
+  # words for a dose's tight and loose frames, Dose)
   def system_core
     prompt["system_core"].to_s
   end
@@ -73,6 +74,11 @@ class Persona < ApplicationRecord
 
   def tools_read
     (CorpusTools.problems(tools || {}) + AgentTools.problems(tools || {}) + Dose.problems(tools || {})).each { |problem| errors.add(:tools, problem) }
+  end
+
+  # Her own words for a dose's frames (Dose, `prompt.frames`).
+  def frames_read
+    Dose.frame_problems(prompt.to_h["frames"]).each { |problem| errors.add(:prompt, problem) }
   end
 
   def relations_read

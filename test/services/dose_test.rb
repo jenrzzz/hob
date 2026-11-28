@@ -122,6 +122,65 @@ class DoseTest < ActiveSupport::TestCase
     assert_nil JSON.parse(call.({ level: "none" })["content"])["ended"]
   end
 
+  test "a frame is in force from mid-onset to mid-taper, and is hers to word" do
+    dose = Dose.take!(@robyn, level: "medium", minutes: 100, frame: "loose", now: T0)
+    wrap = ->(minutes) { dose.wrap(@robyn, T0 + minutes.minutes) }
+
+    assert_nil wrap.(0)
+    assert_nil wrap.(9)
+    assert_equal Dose::FRAMES["loose"], wrap.(10)
+    assert_equal Dose::FRAMES["loose"], wrap.(77)
+    assert_nil wrap.(78)
+    assert_nil wrap.(100)
+    assert_equal 0.55, dose.warp(T0 + 30.minutes), "the level is its own thing"
+    assert_match(/You took a medium, loose-frame dose 30 min ago/, dose.note(T0 + 30.minutes))
+
+    assert_nil Dose.take!(@robyn, level: "high", minutes: 100, now: T0).wrap(@robyn, T0 + 30.minutes), "normal says nothing"
+
+    @robyn.update!(prompt: @robyn.prompt.merge("frames" => { "tight" => "Answer him. Then stop." }))
+    tight = Dose.take!(@robyn, level: "none", minutes: 100, frame: "tight", now: T0)
+    assert_equal "Answer him. Then stop.", tight.wrap(@robyn, T0 + 30.minutes)
+    assert_equal 0.0, tight.warp(T0 + 30.minutes), "the frame alone"
+    assert_match(/You took a tight-frame dose 30 min ago/, tight.note(T0 + 30.minutes))
+    assert_no_match(/recall/, tight.note(T0 + 30.minutes))
+    travel_to(T0 + 30.minutes) { assert_equal "tight", Dose.of(@robyn.reload).frame }
+
+    assert_not @robyn.update(prompt: @robyn.prompt.merge("frames" => { "slack" => "x" }))
+    assert_not @robyn.update(prompt: @robyn.prompt.merge("frames" => { "loose" => "" }))
+  end
+
+  test "she takes a frame with the tool, and it ends her system text while in force" do
+    convo = conversation(realm: "personal")
+    turn = lambda do |arguments = nil|
+      @fake.call_tools([ { id: "f#{rand(9999)}", name: "dose", arguments: arguments } ]) if arguments
+      @fake.reply("mm")
+      ChatTurn.new(conversation: convo, branch: convo.branch, persona: @robyn.reload, content: "and then?").call
+    end
+
+    travel_to(T0) do
+      taken = JSON.parse(turn.({ level: "none", frame: "loose", minutes: 60 }).native.first["content"])
+      assert_equal %w[none loose], taken.values_at("taken", "frame")
+      assert_no_match(/hold a thought/, @fake.calls.last.system, "not yet")
+      assert_match(/frame is tight, loose or normal/, turn.({ level: "low", frame: "slack" }).native.first["content"])
+    end
+
+    travel_to(T0 + 20.minutes) do
+      result = turn.()
+      assert @fake.calls.last.system.end_with?(Dose::FRAMES["loose"])
+      assert_match(/You took a loose-frame dose 20 min ago/, @fake.calls.last.messages.to_json)
+      stage = PromptSnapshot.find_by!(digest: result.snapshot).assembled["stages"].find { |s| s["name"] == "dose" }
+      assert_equal "loose", stage["frame"]
+
+      @fake.reply("fine")
+      Completion.new(role: "chat-default", persona: @robyn, realm: "personal", messages: [ user_message("well?") ]).call
+      assert_includes @fake.calls.last.system, Dose::FRAMES["loose"]
+
+      assert_equal "none", JSON.parse(turn.({ level: "none" }).native.first["content"])["ended"]
+      turn.()
+      assert_no_match(/hold a thought/, @fake.calls.last.system)
+    end
+  end
+
   test "only a persona offered one has the tool, and turning it off ends a dose" do
     Dose.take!(@robyn, level: "high", minutes: 60, now: T0)
     travel_to(T0 + 20.minutes) do
